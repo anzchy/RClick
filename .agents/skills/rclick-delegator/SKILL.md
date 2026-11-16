@@ -110,10 +110,14 @@ Full reference: [references/guide.md](references/guide.md). Read it once before 
      if you are a Codex delegator), then `gh pr create -R anzchy/RClick --base main`. The body has Summary
      (`Closes #<issue>`), Review (both auditors' rounds and Still open), Gates, and Device (`PASS`, `n/a` or the
      NOT VERIFIED reason).
+     When the item touches `.agents/**`, `scripts/**`, `.codex/**` or `agent-tooling.yml`, add the `Linux-Preflight`
+     line from `ci-linux-preflight` at the PR head, outside Gates. It is supplementary: the GitHub checks bind, and
+     an unreachable or busy host is NOT VERIFIED and never blocks the merge.
    - Merge with `gh pr merge --rebase` when no Critical or High blocks, the head shows `DONE overall=0`, the
-     required checks (`Build & Test (macOS)`, `Localization`; branch protection, `strict`) passed on that head, and
-     the device check is PASS or n/a, then `git pull --ff-only origin main` in the main checkout. Never `--admin`.
-     A red required check gets an issue, not a blind rerun (guide, "Required checks").
+     required checks (`Build & Test (macOS)`, `Localization`; branch protection, `strict`) passed on that head,
+     `Agent tooling` is not red when it ran, and the device check is PASS or n/a, then `git pull --ff-only origin
+     main` in the main checkout. Never `--admin`. A red check gets an issue, not a blind rerun (guide, "Required
+     checks").
    - After every merge, `git fetch` and run `$SK/scripts/overlap-check.py trial` to catch combinations early.
 10. **Log.** Append to `~/.rclick-roster/handoff.md`, recording user decisions verbatim.
     - Tell the user, in Chinese, what landed, what's next, and which human tickets are now waiting on them.

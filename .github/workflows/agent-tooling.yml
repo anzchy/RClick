@@ -1,0 +1,72 @@
+name: Agent tooling
+
+# Portable tests of the agent tooling (delegator scripts, Codex role rules, rclick-verify, ci-linux-preflight).
+# Not a required check, so the paths filter is safe. Fork-only: upstream wflixu/RClick does not carry the roster.
+# The ci-linux-preflight skill parses this job and runs its `pr-head` steps on the Linux preflight host, so keep
+# the step shapes it accepts (see .agents/skills/ci-linux-preflight/scripts/workflow.mjs): no env/shell/if on steps,
+# literal `run: |` blocks, and the checkout/setup/provision steps exactly as they are.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.agents/**'
+      - 'scripts/**'
+      - '.codex/**'
+      - '.github/workflows/agent-tooling.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.agents/**'
+      - 'scripts/**'
+      - '.codex/**'
+      - '.github/workflows/agent-tooling.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  agent-tooling:
+    name: Agent tooling
+    if: github.repository == 'anzchy/RClick'
+    runs-on: ubuntu-latest
+    # The preflight host (2 vCPU) runs the test steps in about 1 minute (56 s measured).
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: pr-head
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      # 3.10 is the preflight host's python3 and the oldest version the scripts support.
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.10'
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y zsh
+      # The delegator's shell scripts are zsh; the tests drive them through fake herdr/codex binaries.
+      - name: Test delegator scripts
+        working-directory: pr-head
+        run: |
+          python3 -m unittest discover -s .agents/skills/rclick-delegator/scripts -p 'test_*.py'
+      - name: Test Codex role rules
+        working-directory: pr-head
+        run: |
+          python3 -m unittest discover -s scripts/codex-rules -p 'test_*.py'
+      # macos-device-test is not here: its tests drive macOS tools (screencapture, osascript, pluginkit) and the
+      # Mac-only desktop GUI lock, and run in scripts/gates.sh on the Mac.
+      - name: Test rclick-verify and ci-linux-preflight
+        working-directory: pr-head
+        run: |
+          node --test .agents/skills/rclick-verify/tests/*.test.mjs .agents/skills/ci-linux-preflight/tests/*.test.mjs

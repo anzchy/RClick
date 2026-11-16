@@ -70,6 +70,12 @@ failure: fix it and rerun from the top. Run a single lane with `scripts/gates.sh
 - **localization**: `scripts/check-localization.py --languages zh-Hans ja es fr` over both catalogs.
 - **skill-tooling**: the Python and Node tests under `.agents/skills/*/` and `scripts/codex-rules/`; SKIP when none.
 
+When the change touches `.agents/**`, `scripts/**`, `.codex/**` or `.github/workflows/agent-tooling.yml`, also run
+`ci-linux-preflight` on the committed head after the gates pass, because the Mac does not catch Linux-only failures
+such as a Homebrew path, BSD-vs-GNU flags or a slow-host timeout. Put its `Linux-Preflight` line in the evidence
+comment as supplementary; NOT VERIFIED (host unreachable or busy) is recorded with its reason and does not block the
+handoff. A Linux FAIL is a failure to fix.
+
 ## 2. Test integrity
 
 ```sh

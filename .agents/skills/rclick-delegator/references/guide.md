@@ -43,6 +43,12 @@ pass; neither replaces the other. A red required check gets an issue, not a blin
 failure is clearly infrastructure (runner lost, download failed) and say so in the PR. `enforce_admins` is off so
 the owner can sync `main` from upstream; never use an admin bypass (`gh pr merge --admin`) to land roster work.
 
+The fork's `Agent tooling` workflow (`agent-tooling.yml`, Linux) runs only when `.agents/**`, `scripts/**` or
+`.codex/**` change, so it is not a required check (a path-filtered required check would hang other PRs as pending);
+when it ran, red blocks the merge the same way. The `Linux-Preflight` line (`ci-linux-preflight`, §5.7) is
+supplementary only: it never overrides a GitHub check, and an unreachable or busy host is NOT VERIFIED, which never
+blocks a merge.
+
 **Fork and upstream.** `origin` is the fork `anzchy/RClick`: issues, PRs and merges happen there. `upstream` is
 `wflixu/RClick`, read-only for the roster. `gh` picks `upstream` unless `gh repo set-default anzchy/RClick` ran in
 that clone or worktree, so setup runs it everywhere and commands that write pass `-R anzchy/RClick`. Offering a
@@ -423,7 +429,11 @@ worktree can be cleaned (ask first; pane-home worktrees stay).
 
 PR body sections: **Summary** (what and why, `Closes #<issue>`); **Review** (both auditors' rounds plus a
 **Still open** list); **Gates** (the owner-gates summary lines at the PR head); **Device** (`PASS run=<id>`, `n/a`
-with the reason, or NOT VERIFIED with the reason); the attribution line. Add a `CHANGELOG.md` `[Unreleased]` line in
+with the reason, or NOT VERIFIED with the reason); the attribution line. When the item touches `.agents/**`,
+`scripts/**`, `.codex/**` or `.github/workflows/agent-tooling.yml`, run `ci-linux-preflight` at the PR head and put
+its `Linux-Preflight (supplementary; GitHub required checks remain binding): …` line after Gates, outside it; refresh
+or drop it on every re-push. Its FAIL is a finding to fix like a red check; its NOT VERIFIED is recorded, not waited
+on. Add a `CHANGELOG.md` `[Unreleased]` line in
 the item itself (the implementer's commit) for every user-visible change.
 
 Push the reviewed topic branch from the implementer's worktree, after the gates at that exact head:
@@ -442,7 +452,8 @@ worktree, where the guard won't run.
 Then `gh pr create -R anzchy/RClick --base main --head <branch>`, rerun `owner-gates.sh` on the exact PR head if
 anything changed, and `gh pr merge <P> -R anzchy/RClick --rebase` (authorised when there is no blocking C/H,
 `DONE overall=0` at the head, the required checks `Build & Test (macOS)` and `Localization` passed on that head,
-and the device check is PASS or n/a; never `--admin`);
+`Agent tooling` is not red when it ran, and the device check is PASS or n/a; never `--admin`; the Linux-Preflight
+line is never a merge condition);
 `git pull --ff-only origin main` in the main checkout. Confirm the ticket closed (the `Closes` line), then run
 `overlap-check.py trial` (§5.6) and update the handoff log. Ask the user before removing the merged branch's worktree
 (the pane-home worktree stays).
