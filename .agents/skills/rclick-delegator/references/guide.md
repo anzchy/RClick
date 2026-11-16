@@ -34,9 +34,14 @@ goes to the implementer, verdicts come from the two auditors. The delegator itse
    body, the issue, the handoff log).
 
 Merge authority: merge without asking when the merged audit shows no blocking Critical/High, the owner gates pass
-at the PR head and the device check is PASS or n/a. The fork's `PR Build & Test` workflow
-(`.github/workflows/pr-build.yml`) may also run on the PR; a red CI run blocks the merge like a failed gate, but the
-delegator's `owner-gates.sh` summary at the PR head is the gate of record.
+at the PR head, both required checks passed, and the device check is PASS or n/a.
+
+**Required checks.** Branch protection on `anzchy/RClick` `main` requires `Build & Test (macOS)` and `Localization`
+(`.github/workflows/pr-build.yml`), with `strict` on: the PR head must contain the current `main`, so rebase and
+let the checks rerun when `main` moved. Both checks and the delegator's `owner-gates.sh` summary at the PR head must
+pass; neither replaces the other. A red required check gets an issue, not a blind rerun: rerun once only when the
+failure is clearly infrastructure (runner lost, download failed) and say so in the PR. `enforce_admins` is off so
+the owner can sync `main` from upstream; never use an admin bypass (`gh pr merge --admin`) to land roster work.
 
 **Fork and upstream.** `origin` is the fork `anzchy/RClick`: issues, PRs and merges happen there. `upstream` is
 `wflixu/RClick`, read-only for the roster. `gh` picks `upstream` unless `gh repo set-default anzchy/RClick` ran in
@@ -436,7 +441,8 @@ worktree, where the guard won't run.
 
 Then `gh pr create -R anzchy/RClick --base main --head <branch>`, rerun `owner-gates.sh` on the exact PR head if
 anything changed, and `gh pr merge <P> -R anzchy/RClick --rebase` (authorised when there is no blocking C/H,
-`DONE overall=0` at the head, the fork's PR workflow is not red, and the device check is PASS or n/a);
+`DONE overall=0` at the head, the required checks `Build & Test (macOS)` and `Localization` passed on that head,
+and the device check is PASS or n/a; never `--admin`);
 `git pull --ff-only origin main` in the main checkout. Confirm the ticket closed (the `Closes` line), then run
 `overlap-check.py trial` (§5.6) and update the handoff log. Ask the user before removing the merged branch's worktree
 (the pane-home worktree stays).
