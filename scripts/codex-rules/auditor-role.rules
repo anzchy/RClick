@@ -1,0 +1,24 @@
+# Auditor-only additions, appended after restricted-role.rules. Auditors read GitHub, never write it.
+
+prefix_rule(
+    pattern = ["gh", "issue", "comment"],
+    decision = "forbidden",
+    justification = "Roster: auditors are read-only; read evidence with gh issue view <issue> --comments.",
+    match = ["gh issue comment 2 --body x"],
+    not_match = ["gh issue view 2 --comments"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", ["comment", "review", "edit", "ready", "reopen", "checkout"]],
+    decision = "forbidden",
+    justification = "Roster: auditors never write to PRs; they write only their report file.",
+    match = ["gh pr comment 3 --body x", "gh pr review 3 --approve"],
+    not_match = ["gh pr view 3"],
+)
+
+prefix_rule(
+    pattern = ["gh", "api"],
+    decision = "forbidden",
+    justification = "Roster: gh api can write (-f implies POST); auditors use gh issue view only.",
+    match = ["gh api repos/anzchy/RClick/issues/2/comments -f body=x"],
+)

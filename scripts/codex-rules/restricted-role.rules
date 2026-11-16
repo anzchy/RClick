@@ -1,0 +1,24 @@
+# Implementor/auditor role overlay. Installed before starting Codex.
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "forbidden",
+    justification = "Roster: only the delegator pushes. Commit on your branch and hand the SHA to the delegator.",
+    match = ["git push", "git push -f origin main", "git push origin p0-01/x"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", ["merge", "create", "close"]],
+    decision = "forbidden",
+    justification = "Roster: the delegator opens, merges and closes PRs.",
+    match = ["gh pr merge 12", "gh pr create"],
+    not_match = ["gh pr view 12", "gh pr diff 12"],
+)
+
+prefix_rule(
+    pattern = ["gh", "issue", ["close", "reopen", "edit", "delete", "transfer", "lock", "unlock", "pin", "unpin", "create", "develop"]],
+    decision = "forbidden",
+    justification = "Roster: the only GitHub write an implementer makes is its rclick-verify evidence comment (gh issue comment).",
+    match = ["gh issue close 2", "gh issue edit 2 --add-label x", "gh issue create"],
+    not_match = ["gh issue view 2 --comments", "gh issue comment 2 --body-file evidence.md"],
+)
