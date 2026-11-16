@@ -65,6 +65,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @AppLog(category: "AppDelegate")
     private var logger
 
+    /// Records entry into the real launch side-effect section, including in a hosted test.
+    private(set) static var launchSideEffectsStarted = false
+    private var isTestHost = TestHost.isActive
+    private var sendQuit: () -> Void = { Messager.shared.sendQuitNotification() }
+
     /// 惰性求值：`AppState.shared` 会一路构造到 `ModelContext(sharedModelContainer)`，
     /// 所以必须等 `init` 里 `bootstrap()` 成功之后才碰它。写成默认值属性会在 init 体
     /// 之前求值，正好把顺序反过来。
@@ -89,6 +94,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Inject the outbound system boundary without launching a second app instance.
+    convenience init(isTestHost: Bool, sendQuit: @escaping () -> Void) {
+        self.init()
+        self.isTestHost = isTestHost
+        self.sendQuit = sendQuit
+    }
+
     // MARK: - 重连机制状态
 
     /// 最大重试次数
@@ -102,10 +114,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 先收敛成一个；如果另一个副本更该留下，这里直接退出。
         guard SingleInstanceGuard.enforceTermination() else { return }
 
-        guard LaunchSideEffects.shouldRun() else {
+        guard LaunchSideEffects.shouldRun(isTestHost: isTestHost) else {
             logger.notice("Test host: skipping launch side effects")
             return
         }
+
+        Self.launchSideEffectsStarted = true
 
         // 设置窗口打开策略。注意 RClick 是 LSUIElement 应用，启动时系统不会
         // 激活它（NSApp.isActive 恒为 false），无法用激活状态区分启动来源，
@@ -233,8 +247,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard LaunchSideEffects.shouldRun() else { return }
-        messager.sendQuitNotification()
+        guard LaunchSideEffects.shouldRun(isTestHost: isTestHost) else { return }
+        sendQuit()
         logger.info("applicationWillTerminate")
     }
 
