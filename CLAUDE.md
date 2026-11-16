@@ -187,6 +187,30 @@ RClick/
 - Use `@StateObject` instead of `@ObservedObject` for view-owned objects
 - Remember `AppState.shared` is a singleton - use `@StateObject` appropriately
 
+## Agent skills
+
+Skills live in `.agents/skills/` (one copy for Claude, Codex and Kimi); `.claude/skills` is a symlink to it.
+
+### Issue tracker
+
+GitHub issues on the fork `anzchy/RClick`, never upstream `wflixu/RClick`. Run `gh repo set-default anzchy/RClick` in every clone and worktree. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily. See `docs/agents/domain.md`.
+
+### Delivery flow
+
+- Engineering skills (Matt Pocock set): `/ask-matt` routes between them; `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` or `/tdd`, then `/code-review` and `/pr`.
+- `rclick-delegator`: runs the herdr roster (`gpt-imple`, `opus-auditor`, `gpt-auditor`, one item in flight) from ticket to merged PR. Roster state lives in `~/.rclick-roster/`.
+- `rclick-verify`: what an implementer runs before handoff (`scripts/gates.sh`, test-integrity review, RClick-specific checks).
+- `macos-device-test`: real-desktop checks of the Finder menu, under the GUI lock shared with other projects on this Mac.
+- Audit dimensions for both auditors: `docs/agents/audit-dimensions.md`.
+
 ## Documentation References
 
 - **Feature Specifications**: [specs/](specs/)

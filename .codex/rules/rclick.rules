@@ -1,0 +1,146 @@
+# Shared safety rules for RClick's Codex roster; push/PR ownership is in the local rclick-role.rules.
+# Provision every worktree with scripts/codex-rules/install-role.py before starting Codex.
+# The installer defaults to implementor; only explicit delegator setup omits the PR bans.
+#
+# Codex runs no role-guard hook, so these prefix rules stand in for the roster's
+# delegator-only actions (.agents/skills/rclick-delegator/references/guide.md §7).
+# Loaded only when this project's .codex/ layer is trusted; restart Codex after a change.
+# Check by hand: codex execpolicy check --rules .codex/rules/rclick.rules -- <command...>
+#
+# Limits: a rule matches the argv prefix only. `git -C <dir> push`, sudo/env
+# wrappers, and bash -c scripts using $(...), redirection or variables slip past;
+# execpolicy does not split shell commands. These rules are a backstop, not the boundary.
+
+# --- destructive commands ------------------------------------------------------
+
+prefix_rule(
+    pattern = ["rm", ["-rf", "-fr", "-r", "-R", "--recursive", "-Rf", "-fR"]],
+    decision = "forbidden",
+    justification = "Roster (guide §7): recursive delete needs the user's confirmation. Ask the delegator, naming the exact path.",
+    match = ["rm -rf RClick/Model", "rm -r docs/old", "rm --recursive tmp"],
+    not_match = ["rm -f a.txt", "rm a.txt"],
+)
+
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Roster (guide §7): destroys uncommitted work. Use `git stash` and ask the delegator.",
+    match = ["git reset --hard HEAD~1"],
+    not_match = ["git reset --soft HEAD~1", "git reset HEAD RClick/AppState.swift"],
+)
+
+prefix_rule(
+    pattern = ["git", ["checkout", "restore"], "."],
+    decision = "forbidden",
+    justification = "Roster (guide §7): discards all local changes. Use `git stash`, or restore named paths only.",
+    match = ["git checkout .", "git restore ."],
+    not_match = ["git checkout RClick/AppState.swift", "git restore RClick/AppState.swift"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean", ["-f", "-fd", "-df", "-fdx", "-xdf", "-fx", "-xf", "-ffdx"]],
+    decision = "forbidden",
+    justification = "Roster (guide §7): removes untracked files permanently. Ask the delegator.",
+    match = ["git clean -f", "git clean -fd", "git clean -fdx"],
+    not_match = ["git clean -n"],
+)
+
+prefix_rule(
+    pattern = ["git", "branch", ["-D", "--delete", "-d"]],
+    decision = "forbidden",
+    justification = "branches are deleted by the delegator after landing.",
+    match = ["git branch -D ticket-01/x", "git branch -d ticket-01/x"],
+    not_match = ["git branch --show-current", "git branch"],
+)
+
+prefix_rule(
+    pattern = ["git", "worktree", "remove"],
+    decision = "forbidden",
+    justification = "Roster: the delegator removes worktrees with the user's confirmation.",
+    match = ["git worktree remove ../RClick-wt/x"],
+    not_match = ["git worktree list"],
+)
+
+# --- Roster: implementor limits (role-guard.sh equivalents) -----------------
+
+prefix_rule(
+    pattern = ["git", "add", ["-A", "--all", ".", "-u", "--update"]],
+    decision = "forbidden",
+    justification = "Roster: stage only paths you can name (`git add <path>...`), never the user's dirty files.",
+    match = ["git add -A", "git add .", "git add -u"],
+    not_match = ["git add RClick/Runtime/ActionService.swift RClickTests/ActionServiceTests.swift"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit", ["-a", "-am", "--all"]],
+    decision = "forbidden",
+    justification = "Roster: no blanket staging. Stage named paths, then `git commit -m`.",
+    match = ["git commit -a -m x", "git commit -am x"],
+    not_match = ["git commit -m 'feat(core): x'"],
+)
+
+prefix_rule(
+    pattern = ["git", ["checkout", "switch"], ["main"]],
+    decision = "forbidden",
+    justification = "Roster: never work on main. Stay on your own branch in your worktree.",
+    match = ["git checkout main", "git switch main"],
+    not_match = ["git checkout -b ticket-01/x", "git switch ticket-01/x"],
+)
+
+prefix_rule(
+    pattern = ["gh", ["release", "workflow"]],
+    decision = "forbidden",
+    justification = "Roster: releases and workflow runs are the owner's call, never an agent's. Ask the delegator.",
+    match = ["gh release create v1", "gh workflow run release.yml"],
+)
+
+prefix_rule(
+    pattern = ["gh", "repo", ["set-default", "fork", "delete", "edit", "rename", "archive"]],
+    decision = "forbidden",
+    justification = "Roster: the delegator sets each worktree's gh default to anzchy/RClick at setup; agents never change repo settings or point gh at upstream wflixu/RClick.",
+    match = ["gh repo set-default wflixu/RClick", "gh repo edit --enable-issues"],
+    not_match = ["gh repo view"],
+)
+
+# --- macOS: shared desktop and system state -----------------------------------
+
+prefix_rule(
+    pattern = [["killall", "pkill"]],
+    decision = "forbidden",
+    justification = "Roster: never kill a process you didn't start (Finder, the user's installed RClick.app, another project's app). Device runs go through the macos-device-test skill under the GUI lock.",
+    match = ["killall Finder", "pkill -f RClick", "killall RClick"],
+)
+
+prefix_rule(
+    pattern = ["pluginkit", ["-e", "-a", "-r"]],
+    decision = "forbidden",
+    justification = "Roster: enabling, adding or removing Finder extensions changes the user's system. Device setup is the delegator's, with the user's approval.",
+    match = ["pluginkit -e use -i com.example.FinderSyncExt", "pluginkit -r /tmp/x.appex"],
+    not_match = ["pluginkit -m -i com.example.FinderSyncExt"],
+)
+
+prefix_rule(
+    pattern = [["tccutil", "sfltool"]],
+    decision = "forbidden",
+    justification = "Roster: never reset privacy permissions or login items; ask the delegator.",
+    match = ["tccutil reset Accessibility", "sfltool resetbtm"],
+)
+
+prefix_rule(
+    pattern = ["defaults", ["write", "delete"]],
+    decision = "forbidden",
+    justification = "Roster: never change the user's preferences or RClick's App Group defaults; tests use their own suite.",
+    match = ["defaults write com.apple.finder AppleShowAllFiles YES", "defaults delete group.x"],
+    not_match = ["defaults read com.apple.finder"],
+)
+
+# Prefix rules cannot inspect options after the remote or force refspecs. Direct
+# push is denied for every role; the delegator uses the argument-checking
+# scripts/codex-rules/push-guard.py entry point.
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "forbidden",
+    justification = "Use the delegator's scripts/codex-rules/push-guard.py for an ordinary branch push; it rejects force, mirror and ref deletion forms. Implementors and auditors hand off commits.",
+    match = ["git push origin topic", "git push origin --force main", "git push origin --mirror", "git push origin +HEAD:topic"],
+)

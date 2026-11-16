@@ -1,0 +1,3 @@
+interface:
+  display_name: "RClick delegator"
+  short_description: "Run the RClick herdr roster: briefs, blind dual audits, gates, device checks, merges"

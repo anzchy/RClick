@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { gateVerdict, notVerifiedGates } from './gate-policy.mjs';
+
+const [mode, input] = process.argv.slice(2);
+function privacyHits(body) {
+  return [
+    ['/Users/', /\/Users\//], ['/private/', /\/private\//], ['/var/folders/', /\/var\/folders\//],
+    ['secret-like string', /(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|secret|token|password)\s*[:=]\s*["']?[A-Za-z0-9+/_=-]{12,})/i],
+  ].filter(([, re]) => re.test(body)).map(([label]) => label);
+}
+function render(d) {
+  const sha7 = d.head.slice(0, 7);
+  const gates = d.gates.map(g => `- \`${g.command}\` → exit ${g.exitCode}; ${g.keyLine || 'no decisive line recorded'}${g.notVerified ? ` (NOT VERIFIED: ${g.notVerified})` : ''}`).join('\n');
+  const rows = d.byType.map(x => `| ${x.behavior} | ${x.expected} | ${x.actual} | ${x.result} |`).join('\n');
+  const shots = d.screenshots?.length ? `\n\n#### Screenshots (UI changes only)\n| State | Before (base \`${d.base?.slice(0, 7)}\`) | After (head \`${sha7}\`) | Machine |\n|---|---|---|---|\n${d.screenshots.map(s => `| ${s.state} | ${s.before} | ${s.after} | ${s.machine} |`).join('\n')}` : '';
+  return `<!-- rclick-verify issue=${d.issue} task=${d.task} head=${d.head} -->\n### rclick-verify: #${d.issue} · \`${d.task}\` · \`${d.branch}\` @ \`${sha7}\`\n\nToolchain: ${d.toolchain || 'NOT VERIFIED'}; machine: ${d.machine || 'NOT VERIFIED'}; sandbox (Codex): ${d.sandbox || 'n/a'}\n\n#### Gates\n${gates}\n\n#### Test integrity\n${d.integrity}\n\n#### Checks by change type\n| Behaviour (brief) | Expected | Seen | Result |\n|---|---|---|---|\n${rows}${shots}\n\n#### NOT VERIFIED\n${d.notVerified.map(x => `- ${x}`).join('\n')}\n`;
+}
+function head() { const r = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }); if (r.status) throw new Error('not a git repo'); return r.stdout.trim(); }
+// Pinned to the fork, never upstream wflixu/RClick. No network lookup:
+// implementer panes may have no network, so the delegator opens the comment by hand.
+export const COMMENT_REPO = 'anzchy/RClick';
+const commentPattern = issue => new RegExp(`^https://github\\.com/${COMMENT_REPO.replace('/', '\\/')}/issues/${issue}#issuecomment-\\d+$`);
+// Manual acceptance check the delegator runs before audit and before merge (there is no hook).
+function check(args) {
+  const usage = 'usage: evidence.mjs check --head <sha> --issue <n> [--worktree <wt>]';
+  let want, issue, worktree = process.cwd();
+  while (args.length) {
+    const flag = args.shift(), value = args.shift();
+    if (flag === '--head' && value && !want) want = value;
+    else if (flag === '--issue' && value && issue === undefined) issue = value;
+    else if (flag === '--worktree' && value) worktree = value;
+    else throw new Error(usage);
+  }
+  if (!want || !/^[0-9a-f]{7,40}$/i.test(want) || !issue || !/^[1-9]\d*$/.test(issue)) throw new Error(usage);
+  const git = (...a) => { const r = spawnSync('git', a, { cwd: worktree, encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : null; };
+  const current = git('rev-parse', 'HEAD');
+  if (!current) throw new Error(`not a git worktree: ${worktree}`);
+  const named = git('rev-parse', '--verify', '--quiet', `${want}^{commit}`);
+  if (!named) throw new Error(`--head ${want} is not a commit in ${worktree}`);
+  // At the head, the record must describe this exact tree. After a rebase (or a reused pane worktree) HEAD has moved on;
+  // the audited head's record is still checked, and rebase-verify.sh `CODE same` links it to the PR head.
+  if (named === current) {
+    if (git('status', '--porcelain', '--untracked-files=no')) throw new Error('worktree has tracked changes; the record covers a commit, not a dirty tree');
+    console.log(`case=at-head worktree HEAD is ${named}; clean-tree check applied`);
+  } else {
+    console.log(`case=head-moved worktree HEAD ${current} is not ${named}; record checked for ${named}, clean-tree check not applied (link the PR head with rebase-verify.sh CODE same)`);
+  }
+  const top = git('rev-parse', '--show-toplevel');
+  const file = path.join(top, '.build/rclick-verify', `${named}.json`);
+  let record;
+  try { record = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error(`no rclick-verify record for ${named} (expected .build/rclick-verify/${named}.json)`); }
+  if (record.head !== named) throw new Error(`record head ${record.head} differs from ${named}`);
+  if (!Number.isSafeInteger(record.issue) || record.issue < 1) throw new Error('record has no valid issue');
+  if (record.issue !== Number(issue)) throw new Error(`record is for issue #${record.issue}, not #${issue}`);
+  if (typeof record.commentUrl !== 'string' || !commentPattern(record.issue).test(record.commentUrl)) throw new Error(`record commentUrl is missing or not an evidence comment on ${COMMENT_REPO} issue #${record.issue}`);
+  const verdict = gateVerdict(record.gates);
+  if (!verdict.complete) throw new Error(`record gates incomplete: ${verdict.problems.join(', ')}`);
+  console.log(`OK head=${named} issue=${record.issue} comment=${record.commentUrl}`);
+  for (const gate of notVerifiedGates(record.gates)) console.log(`WARNING ${gate.name} NOT VERIFIED: ${gate.notVerified} (exit ${gate.exitCode}); the delegator's owner-gates run is the binding result`);
+}
+try {
+  if (mode === 'check') { check(process.argv.slice(3)); process.exit(0); }
+  if (!['render', 'post', 'record'].includes(mode) || !input) throw new Error('usage: evidence.mjs render|post|record input.json | check --head <sha> --issue <n> [--worktree <wt>]');
+  const d = JSON.parse(fs.readFileSync(input, 'utf8'));
+  if (!/^[0-9a-f]{40}$/.test(d.head) || !Number.isSafeInteger(d.issue) || d.issue < 1 || !Array.isArray(d.gates) || !Array.isArray(d.byType) || !Array.isArray(d.notVerified)) throw new Error('invalid evidence fields');
+  if (d.head !== head()) throw new Error('evidence head does not match current HEAD');
+  const body = render(d), hits = privacyHits(body);
+  if (hits.length) throw new Error(`privacy scan refused: ${hits.join(', ')}`);
+  if (mode === 'render') process.stdout.write(body);
+  if (mode === 'post') {
+    const temp = path.join(process.cwd(), '.build/rclick-verify', `${d.head}.md`);
+    fs.mkdirSync(path.dirname(temp), { recursive: true }); fs.writeFileSync(temp, body);
+    const r = spawnSync('gh', ['issue', 'comment', String(d.issue), '-R', COMMENT_REPO, '--body-file', temp], { encoding: 'utf8' });
+    if (r.status) throw new Error(r.stderr.trim() || 'gh comment failed');
+    process.stdout.write(r.stdout);
+  }
+  if (mode === 'record') {
+    if (!commentPattern(d.issue).test(d.commentUrl || '')) throw new Error(`record requires an evidence comment URL https://github.com/${COMMENT_REPO}/issues/${d.issue}#issuecomment-<id>`);
+    const verdict = gateVerdict(d.gates);
+    const target = path.join(process.cwd(), '.build/rclick-verify', `${d.head}.json`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, JSON.stringify({ head: d.head, gates: d.gates, complete: verdict.complete, problems: verdict.problems, commentUrl: d.commentUrl, issue: d.issue, recordedAt: new Date().toISOString() }, null, 2) + '\n');
+    console.log(target);
+  }
+} catch (error) { console.error(error.message); process.exitCode = 1; }

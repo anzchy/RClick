@@ -61,3 +61,7 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Agent roster: per-worktree Codex role overlay (see scripts/codex-rules/README.md)
+.codex/rules/rclick-role.rules
+__pycache__/
