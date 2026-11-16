@@ -85,8 +85,8 @@ function fixture(first = pythonStep, second = tap, sample = 'pass') {
 function summaryPath(result) { return result.stdout.match(/^Summary: (.+)$/m)?.[1]; }
 function runFixture(f, args = [], env = {}) { return run(['run', f.sha, '--repo', f.repo, ...args], { env: { ...f.env, ...env } }); }
 function runFixtureAsync(f, args = [], env = {}) { return runAsync(['run', f.sha, '--repo', f.repo, ...args], { env: { ...f.env, ...env } }); }
-function remoteAsync(f, head, args = []) {
-  return runAsync(['remote', f.repo, head, 'agent-tooling', workflowAt(f.repo, head).workflowSha256, '3', '5', ...args], { env: f.env });
+function remoteAsync(f, head, args = [], { stepTimeout = 3, deadline = 5 } = {}) {
+  return runAsync(['remote', f.repo, head, 'agent-tooling', workflowAt(f.repo, head).workflowSha256, String(stepTimeout), String(deadline), ...args], { env: f.env });
 }
 function leftoverRunDirs(f) { return readdirSync(join(f.hostHome, 'ci')).filter(name => name.startsWith('rclick-run.')); }
 
@@ -225,7 +225,8 @@ test('ordinary nonzero exits stay FAIL across missing, partial and inconsistent 
   ];
   for (const [code, second, failedName] of cases) {
     const f = fixture(undefined, second);
-    const result = await remoteAsync(f, f.sha);
+    // These cases classify exits, so leave headroom for a loaded host; deadlines are tested separately.
+    const result = await remoteAsync(f, f.sha, [], { stepTimeout: 30, deadline: 60 });
     assert.equal(result.status, 1, `${code}: ${result.stderr}${result.stdout}`);
     assert.match(result.stdout, /outcome=FAIL/);
     assert.match(result.stdout, new RegExp(`step:Node totals:exit=${code}\\n`));
@@ -293,6 +294,16 @@ test('step timeout is TIMEOUT; the checker refuses truncation, duplicate DONE, a
   [reordered[first], reordered[second]] = [reordered[second], reordered[first]];
   for (const invalid of [body.replace(/DONE\n$/, ''), `${body}DONE\n`, body.replace(`head=${f.sha}`, `head=${'a'.repeat(40)}`), body.replace(/^step:Python tests:tests=.*\n/m, ''), body.replace('steps_total=6\n', 'steps_total=6\nsteps_total=6\n'), reordered.join('\n')]) assert.throws(() => checkSummary(invalid, f.sha, workflow));
   assert.notEqual(run(['summary-check', path, '--expect-head', 'b'.repeat(40), '--repo', f.repo]).status, 0);
+});
+
+test('the whole-run deadline bounds a step even when its step timeout is longer', async () => {
+  const f = fixture('sleep 2');
+  const result = await remoteAsync(f, f.sha, [], { stepTimeout: 30, deadline: 1 });
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stdout, /outcome=TIMEOUT/);
+  assert.match(result.stdout, /step:Python tests:exit=124/);
+  assert.match(result.stdout, /step:Node totals=not-run/);
+  assert.match(checkSummary(result.stdout, f.sha, workflowAt(f.repo, f.sha)), /agent-tooling TIMEOUT Python tests/);
 });
 
 test('environment mismatch and an unsupported workflow fail closed', async () => {
