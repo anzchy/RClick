@@ -142,7 +142,7 @@ test('fake SSH runs the remote script, copies the bundle, records an isolated su
   exec(realGit, ['add', '.github/workflows/agent-tooling.yml'], { cwd: f.repo });
   exec(realGit, ['commit', '-qm', 'edit command'], { cwd: f.repo });
   const editedHead = exec(realGit, ['rev-parse', 'HEAD'], { cwd: f.repo }).stdout.trim();
-  const edited = await remoteAsync(f, editedHead);
+  const edited = await remoteAsync(f, editedHead, [], { stepTimeout: 30, deadline: 60 });
   assert.equal(edited.status, 1, edited.stderr + edited.stdout);
   assert.match(edited.stdout, /step:Node totals:exit=7/);
   assert.match(edited.stdout, /outcome=FAIL/);
