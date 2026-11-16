@@ -6,6 +6,9 @@ on:
       - main
       - dev
 
+permissions:
+  contents: read
+
 concurrency:
   group: pr-${{ github.ref }}
   cancel-in-progress: true
@@ -13,10 +16,13 @@ concurrency:
 jobs:
   build-and-test:
     name: Build & Test (macOS)
-    runs-on: macos-latest
+    # Pinned rather than macos-latest: the project needs Xcode 26+.
+    runs-on: macos-26
+    # A clean run takes about 2 minutes. Without a limit, a hung test runner holds a shared macOS slot for 6 hours.
+    timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Select Xcode
         run: |
@@ -38,7 +44,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            | tee build.log
+            2>&1 | tee build.log
 
       - name: Run Unit Tests
         run: |
@@ -49,9 +55,35 @@ jobs:
             -configuration Debug \
             -destination "platform=macOS" \
             -only-testing:RClickTests \
+            -resultBundlePath TestResults.xcresult \
             ARCHS=arm64 \
             MACOSX_DEPLOYMENT_TARGET=15.6 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             2>&1 | tee test-output.log
+
+      - name: Upload logs and test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-and-test-logs
+          path: |
+            build.log
+            test-output.log
+            TestResults.xcresult
+          if-no-files-found: ignore
+          retention-days: 14
+
+  localization:
+    name: Localization
+    # Pure Python over the two .xcstrings catalogs: no macOS slot needed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # The script checks only Spanish by default; name every supported language (same list as scripts/gates.sh).
+      - name: Check both catalogs
+        run: python3 scripts/check-localization.py --languages zh-Hans ja es fr

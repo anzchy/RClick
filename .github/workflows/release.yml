@@ -27,7 +27,7 @@ jobs:
     steps:
       # --- 0. 准备工作 ---
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Select Xcode
         run: |
@@ -406,7 +406,7 @@ jobs:
 
       # --- 9. 创建 GitHub Release ---
       - name: Create Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             ${{ env.ZIP_NAME }}
