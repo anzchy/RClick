@@ -208,6 +208,7 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily. 
 - Engineering skills (Matt Pocock set): `/ask-matt` routes between them; `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` or `/tdd`, then `/code-review` and `/pr`.
 - `rclick-delegator`: runs the herdr roster (`gpt-imple`, `opus-auditor`, `gpt-auditor`, one item in flight) from ticket to merged PR. Roster state lives in `~/.rclick-roster/`.
 - `rclick-verify`: what an implementer runs before handoff (`scripts/gates.sh`, test-integrity review, RClick-specific checks).
+- `ci-linux-preflight`: runs the `Agent tooling` CI job's steps on the shared Linux host (`mado-ci-linux`, override `RCLICK_LINUX_HOST`) before pushing agent-tooling changes; prints a supplementary `Linux-Preflight` PR line. GitHub checks stay binding; an unreachable host is NOT VERIFIED and never blocks.
 - `macos-device-test`: real-desktop checks of the Finder menu, under the GUI lock shared with other projects on this Mac.
 - Audit dimensions for both auditors: `docs/agents/audit-dimensions.md`.
 

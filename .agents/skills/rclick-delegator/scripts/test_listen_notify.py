@@ -1449,6 +1449,9 @@ class ListenerTests(unittest.TestCase):
         ])
         config = listen_notify._config_from_args(args)
         self.handoff.write_text("Report-Task: issue90-report-test\nCompleted\n")
+        # Linux stamps mtime from a coarse kernel clock that lags time.time() by a few ms, so a report written
+        # right after created_at would read as stale; date it explicitly after the event, as a real report is.
+        os.utime(self.handoff, (config["created_at"] + 1, config["created_at"] + 1))
         (self.event_dir / "config.json").write_text(json.dumps(config))
         environment = dict(os.environ, CAPTURED_MESSAGE=str(captured))
         environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
