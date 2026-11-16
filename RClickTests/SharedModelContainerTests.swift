@@ -33,4 +33,12 @@ struct SharedModelContainerTests {
         #expect(configuration.url == group.appendingPathComponent("RClickDatabase.sqlite"))
     }
 
+    @Test func normalLaunchRejectsAnUnavailableAppGroup() throws {
+        do {
+            _ = try SharedDataManager.makeSharedModelContainer(isTestHost: false) { nil }
+            Issue.record("Expected appGroupUnavailable when the group URL is missing")
+        } catch SharedStoreError.appGroupUnavailable(let identifier) {
+            #expect(identifier == SharedDataManager.appGroupIdentifier)
+        }
+    }
 }
