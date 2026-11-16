@@ -1,6 +1,8 @@
 #!/bin/bash
 set -u
 if [[ -d /opt/node/bin ]]; then export PATH=/opt/node/bin:$PATH; fi
+# User-local Python (no sudo on the host); the system python3 stays as it is for other projects' preflights.
+if [[ -d $HOME/.local/opt/python3.14/bin ]]; then export PATH=$HOME/.local/opt/python3.14/bin:$PATH; fi
 
 failed=0
 for tool in node git python3 zsh ps; do
@@ -14,7 +16,7 @@ for tool in node git python3 zsh ps; do
   case "$tool" in
     node) [[ "$version" == v22.* ]] || ok=0 ;;
     # Same minor as setup-python in .github/workflows/agent-tooling.yml (a test keeps the two in step).
-    python3) [[ "$version" == 'Python 3.10.'* ]] || ok=0 ;;
+    python3) [[ "$version" == 'Python 3.14.'* ]] || ok=0 ;;
     git)
       number=${version##* }
       IFS=. read -r major minor _ <<< "$number"

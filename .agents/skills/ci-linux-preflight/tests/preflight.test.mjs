@@ -63,7 +63,7 @@ function fixture(first = pythonStep, second = tap, sample = 'pass') {
   for (const [name, body] of Object.entries({
     node: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v22.23.5; else exec "$REAL_NODE" "$@"; fi\n`,
     git: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "git version \${FAKE_GIT_VERSION:-2.56.1}"; exit; fi\nif [ "$FAKE_REMOTE_WRONG_HEAD" = 1 ]; then case "$*" in *'rev-parse HEAD'*) printf '%040d\\n' 0; exit;; esac; fi\nexec "$REAL_GIT" "$@"\n`,
-    python3: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Python \${FAKE_PYTHON_VERSION:-3.10.12}"; else exec "$REAL_PYTHON" "$@"; fi\n`,
+    python3: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Python \${FAKE_PYTHON_VERSION:-3.14.10}"; else exec "$REAL_PYTHON" "$@"; fi\n`,
     zsh: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 'zsh 5.8'; else exec /bin/zsh "$@"; fi\n`,
     ps: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 'ps from procps-ng 3.3.17'; else exec /bin/ps "$@"; fi\n`,
     sudo: `#!/bin/sh\nexit 1\n`,
@@ -105,7 +105,7 @@ test('real Agent tooling workflow maps cleanly and rejects unsupported YAML', ()
     assert.throws(() => parseWorkflow(source), /unsupported|folded|duplicate/i, fragment);
   }
   assert.throws(() => parseWorkflow(`jobs:\n  agent-tooling:\n    steps:\n      - name: Test\n        working-directory: pr-head\n        run: echo \${{ secrets.X }}\n`), /expression/);
-  const wrongPython = readFileSync(join(root, '.github/workflows/agent-tooling.yml'), 'utf8').replace("python-version: '3.10'", "python-version: '3.12'");
+  const wrongPython = readFileSync(join(root, '.github/workflows/agent-tooling.yml'), 'utf8').replace("python-version: '3.14'", "python-version: '3.12'");
   assert.throws(() => parseWorkflow(wrongPython), /setup-python mapping/);
 });
 
@@ -121,7 +121,7 @@ test('fake SSH runs the remote script, copies the bundle, records an isolated su
   assert.match(body, /step:Node totals:tests=1/);
   assert.match(body, /step:Python tests:python_tests=1\nstep:Python tests:python_skip=0\nstep:Python tests:python_result=OK/);
   assert.match(body, /step:Python tests:tap_footer=absent/);
-  assert.match(body, /python3=Python 3\.10\.12/);
+  assert.match(body, /python3=Python 3\.14\.10/);
   assert.match(result.stdout, /Linux-Preflight \(supplementary; GitHub required checks remain binding\): \w{7} agent-tooling PASS 2\/2 \(0 skip\)/);
   const summary = summaryPath(result);
   assert.ok(summary.startsWith(join(f.base, '.rclick-roster/ci-linux', f.sha)));

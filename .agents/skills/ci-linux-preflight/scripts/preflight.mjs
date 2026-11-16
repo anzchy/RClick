@@ -9,7 +9,9 @@ import { blankSummary, serializeSummary, checkSummary, accountingIssue } from '.
 
 const root = resolve(import.meta.dirname, '../../../..');
 const sshOptions = ['-a', '-x', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4'];
-const stepPath = '/opt/node/bin:/usr/local/bin:/usr/bin:/bin';
+// The host's Python 3.14 is user-local (no sudo), so it is put first when present; the step HOME is a temp dir.
+const pythonBin = join(homedir(), '.local/opt/python3.14/bin');
+const stepPath = `${existsSync(pythonBin) ? `${pythonBin}:` : ''}/opt/node/bin:/usr/local/bin:/usr/bin:/bin`;
 const runScript = join(import.meta.dirname, 'remote-run.sh');
 
 function exec(cmd, args, options = {}) {
