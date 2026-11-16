@@ -44,7 +44,7 @@ enum SingleInstanceGuard {
     static func enforceTermination() -> Bool {
         // 单元测试的宿主进程用的是同一个 bundle id，但它不是用户打开的副本：
         // 让它把自己退掉会让测试跑不起来。
-        guard !isRunningTests, let bundleID = Bundle.main.bundleIdentifier else { return true }
+        guard !TestHost.isActive, let bundleID = Bundle.main.bundleIdentifier else { return true }
 
         let current = currentInstanceInfo()
         if let winner = peers(bundleID: bundleID, excluding: current.pid)
@@ -96,10 +96,6 @@ enum SingleInstanceGuard {
                     pid: application.processIdentifier
                 )
             }
-    }
-
-    private static var isRunningTests: Bool {
-        ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("XCTest") }
     }
 
     private static func version(of bundleURL: URL) -> String {

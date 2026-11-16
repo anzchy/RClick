@@ -86,19 +86,27 @@ class SharedDataManager {
     }
 
     /// 定位容器目录并打开 ModelContainer。不做任何 trap，失败一律抛给调用方。
-    static func makeSharedModelContainer() throws -> ModelContainer {
-        // 获取 App Group 共享目录
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            throw SharedStoreError.appGroupUnavailable(identifier: appGroupIdentifier)
+    static func makeSharedModelContainer(
+        isTestHost: Bool = TestHost.isActive,
+        appGroupURL: () -> URL? = {
+            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)
         }
-        let storeURL = containerURL.appendingPathComponent("RClickDatabase.sqlite")
-
-        // 创建 ModelConfiguration 使用共享路径
-        let configuration = ModelConfiguration(
-            url: storeURL,
-            allowsSave: true,
-            cloudKitDatabase: .none
-        )
+    ) throws -> ModelContainer {
+        let configuration: ModelConfiguration
+        if isTestHost {
+            // Test hosts must never resolve or open the user's shared store.
+            configuration = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        } else {
+            guard let containerURL = appGroupURL() else {
+                throw SharedStoreError.appGroupUnavailable(identifier: appGroupIdentifier)
+            }
+            let storeURL = containerURL.appendingPathComponent("RClickDatabase.sqlite")
+            configuration = ModelConfiguration(
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+        }
 
         // 创建 ModelContainer，注册所有模型
         do {
@@ -113,7 +121,7 @@ class SharedDataManager {
             )
         } catch {
             logger.error("打开共享 ModelContainer 失败: \(error)")
-            throw SharedStoreError.storeUnreadable(url: storeURL, underlying: error)
+            throw SharedStoreError.storeUnreadable(url: configuration.url, underlying: error)
         }
     }
 
