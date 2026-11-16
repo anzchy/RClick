@@ -20,4 +20,17 @@ struct SharedModelContainerTests {
         let hostConfiguration = try #require(SharedDataManager.sharedModelContainer.configurations.first)
         #expect(hostConfiguration.isStoredInMemoryOnly)
     }
+
+    @Test func normalLaunchUsesTheInjectedGroupStore() throws {
+        let group = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rclick-group-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: group) }
+
+        let container = try SharedDataManager.makeSharedModelContainer(isTestHost: false) { group }
+        let configuration = try #require(container.configurations.first)
+        #expect(!configuration.isStoredInMemoryOnly)
+        #expect(configuration.url == group.appendingPathComponent("RClickDatabase.sqlite"))
+    }
+
 }
