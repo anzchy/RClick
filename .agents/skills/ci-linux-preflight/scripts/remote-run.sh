@@ -37,6 +37,7 @@ if [[ "$actual" != "$head_sha" ]]; then
 fi
 
 export PATH=/opt/node/bin:/usr/local/bin:/usr/bin:/bin
+if [[ -d $HOME/.local/opt/python3.14/bin ]]; then export PATH=$HOME/.local/opt/python3.14/bin:$PATH; fi
 set +e
 run_bounded /bin/bash "$run_dir/pr-head/.agents/skills/ci-linux-preflight/scripts/env-check.sh" >&2
 check_status=$?

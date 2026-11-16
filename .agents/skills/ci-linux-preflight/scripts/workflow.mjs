@@ -7,7 +7,7 @@ export const WORKFLOW_PATH = '.github/workflows/agent-tooling.yml';
 export const DEFAULT_JOB = 'agent-tooling';
 export const CHECKOUT_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
 export const NODE_VERSION = '22';
-export const PYTHON_VERSION = "'3.10'";
+export const PYTHON_VERSION = "'3.14'";
 export const PROVISION_STEP = 'Install test tools';
 export const PROVISION_COMMANDS = ['sudo apt-get update', 'sudo apt-get install --no-install-recommends -y zsh'];
 

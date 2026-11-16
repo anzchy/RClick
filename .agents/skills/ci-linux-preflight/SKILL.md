@@ -29,7 +29,7 @@ rebase that touches those paths. Its result is supplementary PR evidence. GitHub
    - The script bundles the commit through a temporary ref, sends it with `rsync`, checks it out detached on the host
      and verifies `HEAD`.
    - `env-check.sh` stands in for checkout, setup-node, setup-python and `Install test tools`. It requires node 22,
-     Python 3.10 (the workflow's version), git ≥ 2.36, zsh, procps and no passwordless sudo. The `sudo apt-get`
+     Python 3.14 (the workflow's version; user-local at `~/.local/opt/python3.14` on the host, put first on `PATH`), git ≥ 2.36, zsh, procps and no passwordless sudo. The `sudo apt-get`
      command never runs.
    - Only `working-directory: pr-head` steps run, in workflow order, under `bash -e` with `env -i`, an empty temp
      `HOME`, and `PATH=/opt/node/bin:/usr/local/bin:/usr/bin:/bin`.
