@@ -7,7 +7,11 @@ emulate -R zsh
 # Don't grep an agent's screen for words like "permission": that produced a false "question" once.
 a=$1; f=$2; max=${3:-120}; marker=${4:-}
 pane=${5:?agent_pane required}; terminal=${6:?agent_terminal required}
-rclick_python=${RCLICK_PYTHON:-/opt/homebrew/bin/python3}
+rclick_python=${RCLICK_PYTHON:-}
+if [[ -z $rclick_python ]]; then
+  # Homebrew python3 on the Mac (/usr/bin/python3 is 3.9, too old); plain python3 elsewhere (Linux CI, preflight host).
+  if [[ -x /opt/homebrew/bin/python3 ]]; then rclick_python=/opt/homebrew/bin/python3; else rclick_python=python3; fi
+fi
 script_dir=${0:A:h}
 get_failure_limit=$("$rclick_python" "$script_dir/poll-report.py" --get-failure-limit) || exit 1
 failures=0

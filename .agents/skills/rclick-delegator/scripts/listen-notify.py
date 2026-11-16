@@ -408,7 +408,9 @@ def _poll_supervisor(status, argv):
     # alive through TERM until its owner finishes the group with KILL.
     signal.signal(signal.SIGTERM, lambda _signum, _frame: None)
     try:
-        child = subprocess.Popen(argv, stdin=subprocess.DEVNULL)
+        # A .py poller runs under this interpreter, not its Homebrew shebang, so it also starts on Linux.
+        command = [sys.executable, *argv] if argv and argv[0].endswith(".py") else argv
+        child = subprocess.Popen(command, stdin=subprocess.DEVNULL)
     except OSError as error:
         # #27: e.g. a poll script without its executable bit. Report it as the
         # poll's own failure (126, as a shell does) so it becomes poll-error now.

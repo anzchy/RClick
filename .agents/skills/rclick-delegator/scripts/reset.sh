@@ -1,8 +1,12 @@
 #!/bin/zsh -f
 # -f: skip ~/.zshenv and other startup files (#27); emulate: default zsh options, whatever the caller set.
 emulate -R zsh
-# Python runtime: Homebrew python3 unless RCLICK_PYTHON overrides it.
-rclick_python=${RCLICK_PYTHON:-/opt/homebrew/bin/python3}
+# Python runtime: RCLICK_PYTHON, else Homebrew python3, else python3 on PATH.
+rclick_python=${RCLICK_PYTHON:-}
+if [[ -z $rclick_python ]]; then
+  # Homebrew python3 on the Mac (/usr/bin/python3 is 3.9, too old); plain python3 elsewhere (Linux CI, preflight host).
+  if [[ -x /opt/homebrew/bin/python3 ]]; then rclick_python=/opt/homebrew/bin/python3; else rclick_python=python3; fi
+fi
 # Reset a herdr Codex pane to a fresh conversation (RClick fresh-context rule).
 # usage: reset.sh <agent-name> <pane-id>   (the pane is the identity; the name labels messages)
 # Verified 2026-10-22 on Codex 0.163.0: `/new` opens a "Where should the new conversation run?"
