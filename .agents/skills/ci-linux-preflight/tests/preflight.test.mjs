@@ -298,7 +298,16 @@ test('step timeout is TIMEOUT; the checker refuses truncation, duplicate DONE, a
 
 test('the whole-run deadline bounds a step even when its step timeout is longer', async () => {
   const f = fixture('sleep 2');
+  // Keep setup scheduling from exhausting the budget before the step; the child timer stays real.
+  const clock = join(f.base, 'clock.cjs');
+  writeFileSync(clock, 'Date.now = () => 0;\n');
+  f.env.NODE_OPTIONS = `--require ${JSON.stringify(clock)}`;
+  const timeout = join(f.bin, 'timeout');
+  const timeoutSeconds = join(f.base, 'timeout-seconds');
+  writeFileSync(timeout, readFileSync(timeout, 'utf8').replace('const r=spawnSync',
+    `require('node:fs').writeFileSync(${JSON.stringify(timeoutSeconds)}, String(seconds));const r=spawnSync`));
   const result = await remoteAsync(f, f.sha, [], { stepTimeout: 30, deadline: 1 });
+  assert.equal(readFileSync(timeoutSeconds, 'utf8'), '1', 'the step must run with the whole-run budget, not its 30s timeout');
   assert.equal(result.status, 1, result.stderr + result.stdout);
   assert.match(result.stdout, /outcome=TIMEOUT/);
   assert.match(result.stdout, /step:Python tests:exit=124/);
