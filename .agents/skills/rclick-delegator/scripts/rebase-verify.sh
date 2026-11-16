@@ -1,8 +1,12 @@
 #!/bin/zsh -f
 # -f: skip ~/.zshenv and other startup files (#27); emulate: default zsh options, whatever the caller set.
 emulate -R zsh
-# Python runtime: Homebrew python3 unless RCLICK_PYTHON overrides it.
-rclick_python=${RCLICK_PYTHON:-/opt/homebrew/bin/python3}
+# Python runtime: RCLICK_PYTHON, else Homebrew python3, else python3 on PATH.
+rclick_python=${RCLICK_PYTHON:-}
+if [[ -z $rclick_python ]]; then
+  # Homebrew python3 on the Mac (/usr/bin/python3 is 3.9, too old); plain python3 elsewhere (Linux CI, preflight host).
+  if [[ -x /opt/homebrew/bin/python3 ]]; then rclick_python=/opt/homebrew/bin/python3; else rclick_python=python3; fi
+fi
 # rebase-verify.sh <old-base> <old-head> <new-base> <new-head> — run after rebasing an audited branch.
 # Compares commit messages and the full patch except the regenerated ledger md/html of
 # old-base..old-head with new-base..new-head. An audit or device-smoke verdict covers a patch, so it only carries
