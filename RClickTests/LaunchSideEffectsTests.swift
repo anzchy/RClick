@@ -2,6 +2,7 @@ import Testing
 
 @testable import RClick
 
+@MainActor
 struct LaunchSideEffectsTests {
     @Test func testHostIsInertAndNormalLaunchRemainsEnabled() {
         // The same policy gates Settings, login-item migration, handler registration,
