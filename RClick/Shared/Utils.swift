@@ -2,9 +2,13 @@ import Foundation
 
 public class Utils {
     public static func isProtectedFolder(_ path: String) -> Bool {
+        isProtectedFolder(path, homeDirectory: getRealHomeDir())
+    }
+
+    static func isProtectedFolder(_ path: String, homeDirectory: String) -> Bool {
         print("isProtectedFolder: \(path)")
         
-        return Constants.protectedDirs.contains { protectedPath in
+        return Constants.protectedDirs(homeDirectory: homeDirectory).contains { protectedPath in
             print("Comparing with protected path: \(protectedPath)")
             return path == protectedPath
         }
