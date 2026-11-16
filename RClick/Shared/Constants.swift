@@ -9,13 +9,13 @@ import Foundation
 
 
 public enum Constants {
-    static let HomedirPath = Utils.getRealHomeDir()
     /// The identifier for the settings window.
     static let settingsWindowID = "rclick-settings"
-    static let protectedDirs = [
-        HomedirPath + "/Desktop/",
-        HomedirPath + "/Desktop/danger/",
-        HomedirPath + "/Applications/",
+    static func protectedDirs(homeDirectory: String) -> [String] {
+        [
+        homeDirectory + "/Desktop/",
+        homeDirectory + "/Desktop/danger/",
+        homeDirectory + "/Applications/",
         "/Applications/",
         "/System/",
         "/Library/",
@@ -25,6 +25,7 @@ public enum Constants {
         "/sbin/",
         "/var/"
     ]
+    }
     static let suitName = SharedAppGroup.identifier
 
 }
