@@ -55,19 +55,23 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     func moveItem(at source: URL, to destination: URL) throws {
+        try throwIfNameExists(at: destination)
         try base.moveItem(at: source, to: destination)
     }
 
     func copyItem(at source: URL, to destination: URL) throws {
+        try throwIfNameExists(at: destination)
+        try failHalfwayIfAsked(from: source, to: destination)
         try base.copyItem(at: source, to: destination)
     }
 
     func volumeIdentity(of url: URL) throws -> VolumeIdentity {
-        try base.volumeIdentity(of: url)
+        try adjustedVolume(try base.volumeIdentity(of: url), for: url)
     }
 
     func fileIdentity(of url: URL) throws -> FileIdentity {
-        try base.fileIdentity(of: url)
+        let identity = try base.fileIdentity(of: url)
+        return FileIdentity(volume: adjustedVolume(identity.volume, for: url), fileNumber: identity.fileNumber)
     }
 
     func isWritable(_ url: URL) -> Bool {
@@ -75,7 +79,27 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     func coordinatedTransfer(_ kind: FileTransferKind, from source: URL, to destination: URL) throws {
+        try throwIfNameExists(at: destination)
+        if kind == .copy { try failHalfwayIfAsked(from: source, to: destination) }
         try base.coordinatedTransfer(kind, from: source, to: destination)
+    }
+
+    private func throwIfNameExists(at destination: URL) throws {
+        guard faults.withLock({ $0.nameExistsAt.contains(destination.path) }) else { return }
+        throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: destination.path])
+    }
+
+    /// 只写源文件的前一半字节到目标，然后抛错，模拟复制到一半中断。
+    private func failHalfwayIfAsked(from source: URL, to destination: URL) throws {
+        guard faults.withLock({ $0.copyFailsHalfwayTo.contains(destination.path) }) else { return }
+        let data = try Data(contentsOf: source)
+        try data.prefix(data.count / 2).write(to: destination)
+        throw InjectedFault(operation: "copy", path: destination.path)
+    }
+
+    private func adjustedVolume(_ volume: VolumeIdentity, for url: URL) -> VolumeIdentity {
+        let elsewhere = faults.withLock { $0.otherVolumePrefixes.contains { url.path.hasPrefix($0) } }
+        return elsewhere ? VolumeIdentity(rawValue: ~volume.rawValue) : volume
     }
 
     func removeItem(at url: URL) throws {
