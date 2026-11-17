@@ -40,7 +40,6 @@ const OUTPUT_REL = "docs/feature-metrics.md";
 
 const PROCESSES = new Set(["app", "extension", "shared", "ipc"]);
 const CODE_EXTENSIONS = new Set([".swift", ".m", ".h", ".mjs", ".js", ".ts", ".py", ".sh"]);
-const HASH_COMMENT = new Set([".py", ".sh"]);
 
 const WINDOW_DAYS = 90;
 const USAGE = "usage: node scripts/feature-ledger/gen-feature-ledger.mjs [--root=<repo>] [--out=<file>] [--spine=<file>] [--window-days=<n>]";
@@ -75,29 +74,93 @@ function expand(files, rel) {
   return files.filter((f) => f === clean || f.startsWith(clean + "/"));
 }
 
-/** Lines that are neither blank nor only a comment. */
-function codeLines(text, ext) {
-  let n = 0;
-  let inBlock = false;
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (inBlock) {
-      if (line.includes("*/")) inBlock = false;
+// THE LEXICAL SCANNER. Comments and string contents are found by one left-to-right pass per file, not
+// by line prefixes: a comment can open after code, code can follow a closing `*/`, Swift block comments
+// nest, and a `//` or `func test…` inside a string is neither a comment nor a declaration. The scan
+// returns a mask of the text with the same length and line breaks: comment characters become spaces
+// and the visible characters of a string's contents become `_`. Lines and declarations are read from
+// the mask, so a commented-out test is not a test and a string spanning lines is still code.
+// Limits (stated, not hidden): string interpolation is read as string contents, a single-line string
+// ends at its line, and JavaScript regular-expression literals are read as code.
+const LEXERS = {
+  swift: { line: "//", block: true, nest: true, swift: true },
+  c: { line: "//", block: true, quotes: ['"', "'"] },
+  js: { line: "//", block: true, quotes: ['"', "'"], multiline: ["`"] },
+  python: { hash: "anywhere", triple: ['"""', "'''"], quotes: ['"', "'"] },
+  shell: { hash: "word", quotes: ['"', "'"], raw: ["'"] },
+};
+const LEXER_OF = { ".swift": "swift", ".m": "c", ".h": "c", ".js": "js", ".mjs": "js", ".ts": "js", ".py": "python", ".sh": "shell" };
+const lexerOf = (ext) => LEXERS[LEXER_OF[ext] ?? "c"];
+
+/** The string literal that opens at `i`, or null: its opener length, closer, and whether it may span lines or has escapes. */
+function stringOpener(text, i, lx) {
+  if (lx.swift) {
+    let h = 0;
+    while (text[i + h] === "#") h++;
+    const hashes = "#".repeat(h);
+    if (text.startsWith('"""', i + h)) return { len: h + 3, close: '"""' + hashes, multiline: true, raw: h > 0 };
+    if (text[i + h] === '"') return { len: h + 1, close: '"' + hashes, multiline: false, raw: h > 0 };
+    return null;
+  }
+  for (const q of lx.triple ?? []) if (text.startsWith(q, i)) return { len: 3, close: q, multiline: true, raw: false };
+  for (const q of lx.multiline ?? []) if (text[i] === q) return { len: 1, close: q, multiline: true, raw: false };
+  for (const q of lx.quotes ?? []) if (text[i] === q) return { len: 1, close: q, multiline: false, raw: (lx.raw ?? []).includes(q) };
+  return null;
+}
+
+/** The text with comments blanked to spaces and string contents filled with `_`; same length, same line breaks. */
+function mask(text, ext) {
+  const lx = lexerOf(ext);
+  const out = text.split("");
+  const n = text.length;
+  const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== "\n") out[k] = " "; };
+  const fill = (a, b) => { for (let k = a; k < b; k++) if (!/\s/.test(out[k])) out[k] = "_"; };
+  let i = 0;
+  while (i < n) {
+    const lineComment = lx.hash
+      ? text[i] === "#" && (lx.hash === "anywhere" || i === 0 || /[\s;]/.test(text[i - 1]))
+      : text.startsWith(lx.line, i);
+    if (lineComment) {
+      const nl = text.indexOf("\n", i);
+      const end = nl === -1 ? n : nl;
+      blank(i, end);
+      i = end;
       continue;
     }
-    if (line === "") continue;
-    if (HASH_COMMENT.has(ext)) {
-      if (line.startsWith("#")) continue;
-    } else {
-      if (line.startsWith("//")) continue;
-      if (line.startsWith("/*")) {
-        if (!line.includes("*/")) inBlock = true;
-        continue;
+    if (lx.block && text.startsWith("/*", i)) {
+      let depth = 0;
+      let k = i;
+      while (k < n) {
+        if (text.startsWith("/*", k) && (depth === 0 || lx.nest)) { depth++; k += 2; }
+        else if (text.startsWith("*/", k)) { depth--; k += 2; if (depth === 0) break; }
+        else k++;
       }
+      blank(i, Math.min(k, n));
+      i = k;
+      continue;
     }
-    n++;
+    const open = stringOpener(text, i, lx);
+    if (open) {
+      let k = i + open.len;
+      while (k < n && !(text[k] === "\n" && !open.multiline) && !text.startsWith(open.close, k)) {
+        k += !open.raw && text[k] === "\\" ? 2 : 1;
+      }
+      const end = Math.min(k, n);
+      fill(i + open.len, end);
+      i = end < n && text.startsWith(open.close, end) ? end + open.close.length : end;
+      continue;
+    }
+    i++;
   }
-  return n;
+  return out.join("");
+}
+
+/** Per line: does it hold code (anything that is neither blank nor comment)? */
+const codeFlags = (text, ext) => mask(text, ext).split("\n").map((l) => l.trim() !== "");
+
+/** Lines that are neither blank nor only a comment. */
+function codeLines(text, ext) {
+  return codeFlags(text, ext).filter(Boolean).length;
 }
 
 const stripStrings = (line) => line.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');

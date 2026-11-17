@@ -289,3 +289,30 @@ test("a test filter that matches no case is a stale spine entry", (t) => {
   assert.equal(r.status, 65);
   assert.match(r.stderr, /copy.*CopierTests\.swift::pastes/);
 });
+
+test("code lines: a comment and code on one line count as code, strings are not comments, Swift block comments nest", (t) => {
+  const files = {
+    // let x = 1 opens a block comment after code; the import follows a closed one.
+    "App/Mixed.swift": ["/* comment */ import Foundation", "let x = 1 /* a", "continued comment", "*/", ""].join("\n"),
+    // Code after a closing */, and an opener after a closer on one line.
+    "App/After.swift": ["/* start", "end */ let y = 2", "/* a */ let z = 3 /* b", "still b */", ""].join("\n"),
+    // Swift block comments nest: the first */ does not end the comment.
+    "App/Nested.swift": ["/* outer /* inner */ still outer", "*/", "let w = 5", ""].join("\n"),
+    // Comment markers inside strings, and a multi-line string, are code.
+    "App/Strings.swift": ['let s = "// not a comment"', 'let u = "/* not a block"', "let v = 4",
+      'let m = """', "    // inside a string", '    """', ""].join("\n"),
+    "tools/check.py": ["# a comment", "x = 1  # trailing", 's = "# not a comment"', "'''", "# inside a string", "'''", ""].join("\n"),
+  };
+  const feature = (id, p) => ({ id, name: id, area: "Menu", process: ["app"], paths: [p] });
+  const root = fixture(t, files, [
+    feature("mixed", "App/Mixed.swift"), feature("after", "App/After.swift"), feature("nested", "App/Nested.swift"),
+    feature("strings", "App/Strings.swift"), feature("python", "tools/check.py"),
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "mixed")["Code lines"], "2"); // the import, let x
+  assert.equal(row(r.text, "after")["Code lines"], "2"); // let y, let z
+  assert.equal(row(r.text, "nested")["Code lines"], "1"); // let w
+  assert.equal(row(r.text, "strings")["Code lines"], "6"); // every line: no comment here
+  assert.equal(row(r.text, "python")["Code lines"], "5"); // all but the first line
+});
