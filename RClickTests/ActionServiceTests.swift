@@ -207,6 +207,24 @@ final class ActionServiceTests {
         #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("dummy.txt").path))
     }
 
+    @Test(arguments: ["Space 中文", "Literal%41", "Literal%2544"])
+    func commonDirectoryPersistencePreservesRawTargets(name: String) async throws {
+        let (root, _) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fresh = CommonDir(id: "round-trip", name: name, url: directory, icon: "folder")
+        let persisted = CommonDirEntity(from: fresh)
+        #expect(persisted.path.path == directory.path)
+        let reloaded = CommonDir(id: persisted.id, name: persisted.name, url: persisted.path, icon: persisted.icon)
+        let permission = MockPermission()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation())
+        // Match MenuService's raw URL.path payload; deny access to avoid opening Finder.
+        await service.openCommonDirs(target: [fresh.url.path])
+        await service.openCommonDirs(target: [reloaded.url.path])
+        #expect(permission.promptCalls.map(\.path) == [directory.path, directory.path])
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
