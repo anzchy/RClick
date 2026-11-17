@@ -46,7 +46,7 @@ menus are native AppKit; @2x is not a criterion for RClick unless a brief says s
 - **One extension registration.** If another `RClick.app` (an installed copy, an Xcode DerivedData build) has its
   `FinderSyncExt` registered, pluginkit may load that one instead. Doctor's `extension-registered` line fails and
   names the other identity and path, including dormant upstream registrations. Doctor inventories all FinderSync
-  registrations via `pluginkit -m -v -p com.apple.FinderSync`, filters bundle IDs containing `RClick`
+  registrations via `pluginkit -m -A -v -p com.apple.FinderSync` (including unelected registrations), filters bundle IDs containing `RClick`
   (case-insensitive), and treats any non-fork identity or path outside this run as foreign. Fork and upstream
   extensions can both register and produce separate menu sections despite isolated IPC. Ask the user how to resolve it (remove the other copy, or approve a `pluginkit` change);
   don't decide it.
