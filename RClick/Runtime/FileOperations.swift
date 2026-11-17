@@ -41,11 +41,11 @@ nonisolated struct FileIdentity: Hashable, Sendable {
 /// 生产实现：委托 `FileManager.default` 与 `NSFileCoordinator`。
 nonisolated struct SystemFileOperations: FileOperations {
     func moveItem(at source: URL, to destination: URL) throws {
-        throw CocoaError(.featureUnsupported)
+        try FileManager.default.moveItem(at: source, to: destination)
     }
 
     func copyItem(at source: URL, to destination: URL) throws {
-        throw CocoaError(.featureUnsupported)
+        try FileManager.default.copyItem(at: source, to: destination)
     }
 
     func removeItem(at url: URL) throws {
@@ -53,19 +53,63 @@ nonisolated struct SystemFileOperations: FileOperations {
     }
 
     func volumeIdentity(of url: URL) throws -> VolumeIdentity {
-        throw CocoaError(.featureUnsupported)
+        try fileIdentity(of: url).volume
     }
 
     func fileIdentity(of url: URL) throws -> FileIdentity {
-        throw CocoaError(.featureUnsupported)
+        // attributesOfItem 走 lstat：符号链接报告链接自身，而不是它指向的文件。
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber
+        else {
+            throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        return FileIdentity(
+            volume: VolumeIdentity(rawValue: device.uint64Value),
+            fileNumber: inode.uint64Value
+        )
     }
 
     func isWritable(_ url: URL) -> Bool {
-        false
+        FileManager.default.isWritableFile(atPath: url.path)
     }
 
     func coordinatedTransfer(_ kind: FileTransferKind, from source: URL, to destination: URL) throws {
-        throw CocoaError(.featureUnsupported)
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+        var operationError: (any Error)?
+
+        switch kind {
+        case .move:
+            coordinator.coordinate(
+                writingItemAt: source, options: .forMoving,
+                writingItemAt: destination, options: .forReplacing,
+                error: &coordinationError
+            ) { from, to in
+                do {
+                    coordinator.item(at: from, willMoveTo: to)
+                    try FileManager.default.moveItem(at: from, to: to)
+                    coordinator.item(at: from, didMoveTo: to)
+                } catch {
+                    operationError = error
+                }
+            }
+        case .copy:
+            coordinator.coordinate(
+                readingItemAt: source, options: [],
+                writingItemAt: destination, options: .forReplacing,
+                error: &coordinationError
+            ) { from, to in
+                do {
+                    try FileManager.default.copyItem(at: from, to: to)
+                } catch {
+                    operationError = error
+                }
+            }
+        }
+
+        if let coordinationError { throw coordinationError }
+        if let operationError { throw operationError }
     }
 }
 
