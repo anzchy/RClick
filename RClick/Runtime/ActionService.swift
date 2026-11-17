@@ -22,6 +22,8 @@ final class ActionService {
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
     private let pasteboard: NSPasteboard
+    /// 当前时间；只用于自动重命名等待 Finder 的截止时间。
+    private let now: @Sendable () -> Date
     /// 长时间文件操作的串行后台执行器；弹窗与授权面板不进这里。
     private let executor = ActionExecutor()
 
@@ -30,13 +32,15 @@ final class ActionService {
         permission: PermissionProviding,
         confirmation: DeleteConfirmationProviding,
         fileOperations: any FileOperations = SystemFileOperations(),
-        pasteboard: NSPasteboard = .general
+        pasteboard: NSPasteboard = .general,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.state = state
         self.permission = permission
         self.confirmation = confirmation
         self.fileOperations = fileOperations
         self.pasteboard = pasteboard
+        self.now = now
     }
 
     // MARK: - SystemActions
@@ -589,9 +593,10 @@ final class ActionService {
     /// 表现为“有时进入重命名、有时没有”。这里改成轮询前台应用，最多等 2 秒。
     private func waitForFinderThenRename(
         _ fileURL: URL,
-        deadline: Date = .now.addingTimeInterval(2),
+        deadline: Date? = nil,
         activate: Bool = true
     ) {
+        let deadline = deadline ?? now().addingTimeInterval(2)
         if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder" {
             // 激活和选中不是同一时刻完成，留一点稳定时间再触发重命名。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
@@ -600,7 +605,7 @@ final class ActionService {
             return
         }
 
-        guard Date() < deadline else {
+        guard now() < deadline else {
             logger.warning("Finder did not become active; auto-rename skipped for \(fileURL.path)")
             return
         }
