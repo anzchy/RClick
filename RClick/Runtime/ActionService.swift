@@ -416,8 +416,13 @@ final class ActionService {
         }
 
         // 真正的删除放到串行后台执行器：确认框与授权面板已经在主线程上问完了。
+        // 执行期间主线程空闲，设置页可能撤销授权；租约另开一份访问，批次结束后才归还。
         let fileOperations = self.fileOperations
         let paths = authorized
+        let lease = accessLeaser.beginAccess(
+            covering: paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+        )
+        defer { lease.end() }
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
             for decodedPath in paths {
