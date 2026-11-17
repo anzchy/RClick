@@ -194,6 +194,19 @@ final class ActionServiceTests {
         #expect(revealed == [created])
     }
 
+    @Test func deleteAcceptsSpacesAndCJK() async throws {
+        let (dir, _) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selected = dir.appendingPathComponent("Space 中文.txt")
+        try Data("delete me".utf8).write(to: selected)
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation())
+        await service.deleteFoldorFile([selected.path], "ctx-items")
+        #expect(!FileManager.default.fileExists(atPath: selected.path))
+        #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("dummy.txt").path))
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
