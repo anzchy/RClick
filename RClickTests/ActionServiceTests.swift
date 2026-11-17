@@ -6,6 +6,7 @@
 //  DeleteConfirmationProviding 验证授权取消、确认取消与授权→确认顺序。
 //
 
+import AppKit
 import Foundation
 import SwiftData
 import Testing
@@ -290,6 +291,24 @@ final class ActionServiceTests {
         #expect(result.completed == [fileB.path])
         #expect(FileManager.default.fileExists(atPath: fileA.path))
         #expect(!FileManager.default.fileExists(atPath: fileB.path))
+    }
+
+    // MARK: - Injected pasteboard (#13)
+
+    @Test func copyPathAndFileNameWriteToTheInjectedPasteboard() {
+        let pasteboard = NSPasteboard(name: .init("RClickTests-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let service = ActionService(
+            state: MockState(), permission: MockPermission(), confirmation: MockConfirmation(),
+            pasteboard: pasteboard
+        )
+
+        service.copyPath(["/tmp/a.txt", "/tmp/b.txt"])
+        #expect(pasteboard.string(forType: .string) == "/tmp/a.txt\n/tmp/b.txt")
+        #expect(pasteboard.pasteboardItems?.first?.string(forType: .fileURL) == "file:///tmp/a.txt")
+
+        service.copyFileName(["/tmp/a.txt", "/tmp/folder/b.md"])
+        #expect(pasteboard.string(forType: .string) == "a.txt\nb.md")
     }
 
 }

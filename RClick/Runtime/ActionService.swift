@@ -21,6 +21,7 @@ final class ActionService {
     private let permission: PermissionProviding
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
+    private let pasteboard: NSPasteboard
     /// 长时间文件操作的串行后台执行器；弹窗与授权面板不进这里。
     private let executor = ActionExecutor()
 
@@ -28,12 +29,14 @@ final class ActionService {
         state: ActionStateProviding,
         permission: PermissionProviding,
         confirmation: DeleteConfirmationProviding,
-        fileOperations: any FileOperations = SystemFileOperations()
+        fileOperations: any FileOperations = SystemFileOperations(),
+        pasteboard: NSPasteboard = .general
     ) {
         self.state = state
         self.permission = permission
         self.confirmation = confirmation
         self.fileOperations = fileOperations
+        self.pasteboard = pasteboard
     }
 
     // MARK: - SystemActions
