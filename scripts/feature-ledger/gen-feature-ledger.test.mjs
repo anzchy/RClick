@@ -388,3 +388,44 @@ test("in a shallow clone the history cells print --, not the grafted boundary", 
   assert.equal(cells["Code lines"], "4", "the working tree is still measured");
   assert.match(r.text, /shallow clone/i, "the legend says why history is --");
 });
+
+test("the provenance line names the measured commit, and a dirty tree is refused unless --allow-dirty", (t) => {
+  const root = fixture(t,
+    { "App/Copier.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }],
+  );
+  // The output itself may be tracked: regenerating it does not make the next run dirty.
+  const clean = generate(root);
+  assert.equal(clean.status, 0, clean.stderr);
+  git(root, ["add", "out/feature-metrics.md"]);
+  git(root, ["commit", "-q", "-m", "metrics"], T0 + DAY);
+  const head = git(root, ["rev-parse", "HEAD"]);
+  put(root, "out/feature-metrics.md", "stale\n");
+  const again = generate(root);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.text, new RegExp(`^Generated from commit \`${head}\` by`, "m"));
+  assert.doesNotMatch(again.text, /dirty/);
+
+  put(root, "App/Copier.swift", SWIFT_SOURCE + "let added = 1\n");
+  const dirty = generate(root);
+  assert.equal(dirty.status, 65, "a tree that is not the named commit must not be stamped with it");
+  assert.match(dirty.stderr, /uncommitted/);
+  assert.match(dirty.stderr, /App\/Copier\.swift/);
+  assert.equal(readFileSync(dirty.out, "utf8"), again.text, "a refused run leaves the old output");
+
+  const allowed = generate(root, ["--allow-dirty"]);
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.match(allowed.text, new RegExp(`^Generated from commit \`${head}\` plus uncommitted changes \\(dirty\\) by`, "m"));
+  assert.equal(row(allowed.text, "copy")["Code lines"], "5");
+});
+
+test("an untracked spine is refused: the provenance commit would not contain it", (t) => {
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }]);
+  put(root, "docs/other-spine.json", JSON.stringify({ features: [
+    { id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }] }));
+  const r = generate(root, ["--spine=docs/other-spine.json"]);
+  assert.equal(r.status, 65);
+  assert.match(r.stderr, /docs\/other-spine\.json/);
+  assert.equal(r.text, null);
+});
