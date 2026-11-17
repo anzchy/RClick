@@ -30,6 +30,23 @@ def good_data():
 
 
 class Pluginkit(unittest.TestCase):
+    def test_registration_inventory_accepts_trailing_summary_and_blank_line(self):
+        registration = ('+    cn.anzchy.RClick.FinderSyncExt(2.3.4)\t<uuid>\t<date>'
+                        '\t/tmp/example/RClick.app/Contents/PlugIns/FinderSyncExt.appex\n')
+        for count, noun in ((1, 'plug-in'), (2, 'plug-ins')):
+            with self.subTest(count=count):
+                output = registration * count + f' ({count} {noun})\n\n'
+                entries = device.parse_pluginkit(output)
+                self.assertEqual(entries, [dict(flags='+', id=device.EXT_ID, version='2.3.4',
+                                               path='/tmp/example/RClick.app/Contents/PlugIns/FinderSyncExt.appex')] * count)
+                with patch.object(device, 'command', return_value=completed(0, output)):
+                    self.assertEqual(device.extension_entries(), entries)
+
+    def test_summary_like_unknown_lines_still_fail_closed(self):
+        for line in ('(two plug-ins)', '(2 plug-ins) extra', '(2 plugins)', 'unknown format'):
+            with self.subTest(line=line), self.assertRaisesRegex(RuntimeError, 'unrecognised pluginkit line'):
+                device.parse_pluginkit(OURS + line + '\n')
+
     def test_inventory_reports_dormant_legacy_and_other_rclick_registrations(self):
         other = FOREIGN.replace('cn.anzchy.RClick.FinderSyncExt', 'org.example.RClick.FinderSyncExt')
         def inventory(argv):
