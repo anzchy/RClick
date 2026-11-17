@@ -240,3 +240,28 @@ test("a bad --window-days is a usage error", () => {
   assert.equal(r.text, null);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("the output is reproducible: same commit, same bytes, and only the commit identifies the run", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE, "App/Hider.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
+    [
+      { id: "hide", name: "Hide", area: "Menu", process: ["app"], paths: ["App/Hider.swift"] },
+      { id: "copy", name: "Copy", area: "Menu", process: ["extension", "shared"], paths: ["App"],
+        tests: ["AppTests/CopierTests.swift"] },
+    ],
+  );
+  const sha = git(root, ["rev-parse", "HEAD"]);
+  const first = generate(root);
+  assert.equal(first.status, 0, first.stderr);
+  renameSync(first.out, first.out + ".first");
+  const second = generate(root);
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(second.text, readFileSync(first.out + ".first", "utf8"), "two runs differ");
+  assert.match(second.text, new RegExp(`generated from commit \`${sha}\``, "i"));
+  assert.doesNotMatch(second.text, /\d{2}:\d{2}:\d{2}/, "no wall-clock time in the body");
+  assert.doesNotMatch(second.text, new RegExp(new Date().toISOString().slice(0, 10)), "no run date in the body");
+  // Rows keep the spine's order, and carry the spine's process.
+  assert.ok(second.text.indexOf("`hide`") < second.text.indexOf("`copy`"), "rows follow the spine order");
+  assert.equal(row(second.text, "copy")["Process"], "extension, shared");
+  rmSync(root, { recursive: true, force: true });
+});

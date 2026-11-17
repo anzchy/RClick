@@ -10,6 +10,7 @@ const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const SPINE_REL = "docs/feature-ledger/feature-map.json";
 const OUTPUT_REL = "docs/feature-metrics.md";
 
+const PROCESSES = new Set(["app", "extension", "shared", "ipc"]);
 const CODE_EXTENSIONS = new Set([".swift", ".m", ".h", ".mjs", ".js", ".ts", ".py", ".sh"]);
 const HASH_COMMENT = new Set([".py", ".sh"]);
 
@@ -158,19 +159,53 @@ function measure(root, files, feature, changelog, ctx) {
 /** A measured number, or `--` for a signal nobody measured. Never turns `--` into 0. */
 const cell = (v) => (v === UNMEASURED || v === undefined ? "--" : String(v));
 
+const escapeCell = (text) => String(text).replace(/\|/g, "\\|").replace(/\n/g, " ");
+
 function render(spine, rows, opts) {
-  const out = ["# Feature metrics", "",
-    `| Feature | Code files | Code lines | Test files | Test cases | Last touch | Commits (${opts.windowDays} d) | Specs | CHANGELOG |`,
-    "|---|---:|---:|---:|---:|---|---:|---:|---:|"];
+  const w = opts.windowDays;
+  const out = [
+    "<!-- GENERATED FILE. Do not edit by hand: run `node scripts/feature-ledger/gen-feature-ledger.mjs`. -->",
+    "# RClick feature metrics",
+    "",
+    `Generated from commit \`${opts.headSha ?? "--"}\` by \`scripts/feature-ledger/gen-feature-ledger.mjs\` from the spine \`${opts.spine}\`.`,
+    "This is the quantitative half of the feature ledger. Every cell below is measured from the repository; nothing is typed by hand or estimated.",
+    "The qualitative half, `docs/feature-ledger.md`, cites these cells and never restates them. Maintenance: `docs/agents/feature-ledger.md`.",
+    "",
+    "**`--` means not measured; `0` means measured and none.** A spine entry with no `tests`, `specs` or `changelog` list was never linked by anyone, so those cells print `--`. An empty list is a deliberate \"looked, found none\" and prints `0`. Without a `CHANGELOG.md` every CHANGELOG cell is `--`.",
+    "",
+    "## Columns",
+    "",
+    "| Column | Measured from |",
+    "|---|---|",
+    "| Process | the spine's `process` list (where the feature runs: `app`, `extension`, `shared`, `ipc`) |",
+    "| Code files | tracked files under the feature's `paths` with a code extension (" + [...CODE_EXTENSIONS].join(" ") + ") |",
+    "| Code lines | non-blank lines of those files that are not only a comment. A file listed by several features counts in each: the column is how much code a reader opens, not an ownership share |",
+    "| Test files | tracked files under the feature's `tests` entries |",
+    "| Test cases | Swift Testing `@Test` and XCTest `func test…` declarations, Python `def test_…`, node:test `test(…)` in those files; an entry `file::name` counts only the cases whose name contains `name` |",
+    "| Last touch | the newest commit that changed one of the feature's files, through renames (`git log -M --name-status`), with its commit date |",
+    `| Commits (${w} d) | commits that changed the feature's files in the ${w} days before the generating commit's date (\`--window-days\`), through renames |`,
+    "| Specs | linked spec files (every one must exist, or the generator refuses) |",
+    "| CHANGELOG | lines of `CHANGELOG.md` naming one of the feature's `changelog` terms, case-insensitive |",
+    "",
+    "There is no issue-count column: a feature that is off by default (Hide, Unhide, AirDrop, Common Dirs) draws no issues because nobody reaches it, so a low count would restate the default and read as evidence. Issues are linked in the spine and discussed in the ledger.",
+    "",
+    "## Features per process",
+    "",
+    "| Process | Features |",
+    "|---|---:|",
+  ];
+  for (const p of PROCESSES) out.push(`| ${p} | ${spine.features.filter((f) => f.process.includes(p)).length} |`);
+  out.push("", "## Metrics", "",
+    `| Feature | Name | Area | Process | Code files | Code lines | Test files | Test cases | Last touch | Commits (${w} d) | Specs | CHANGELOG |`,
+    "|---|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|");
   spine.features.forEach((f, i) => {
     const r = rows[i];
     const cells = [r.codeFiles, r.codeLines, r.testFiles, r.testCases, r.lastTouch, r.commits, r.specs, r.changelog].map(cell);
-    out.push(`| \`${f.id}\` | ${cells.join(" | ")} |`);
+    out.push(`| \`${f.id}\` | ${escapeCell(f.name)} | ${escapeCell(f.area)} | ${f.process.join(", ")} | ${cells.join(" | ")} |`);
   });
   return out.join("\n") + "\n";
 }
 
-const PROCESSES = new Set(["app", "extension", "shared", "ipc"]);
 const LIST_FIELDS = ["tests", "specs", "changelog"];
 
 /** Shape errors: what the generator cannot measure at all. */
@@ -238,7 +273,9 @@ function main() {
   const changelogPath = path.join(opts.root, "CHANGELOG.md");
   const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : null;
   const history = attempt(66, "git cannot read the history:", () => readHistory(opts.root));
-  const ctx = { history, headTime: history.length ? history[0].time : null, windowDays: opts.windowDays };
+  const head = history.length ? attempt(66, "git cannot resolve HEAD:", () => git(opts.root, ["log", "-1", "--format=%H %ct", "HEAD"]).trim().split(" ")) : null;
+  opts.headSha = head ? head[0] : null;
+  const ctx = { history, headTime: head ? Number(head[1]) : null, windowDays: opts.windowDays };
   const rows = spine.features.map((f) => measure(opts.root, files, f, changelog, ctx));
   mkdirSync(path.dirname(opts.out), { recursive: true });
   const tmp = `${opts.out}.tmp-${process.pid}`;
