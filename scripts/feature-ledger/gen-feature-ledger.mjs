@@ -421,15 +421,18 @@ const LIST_FIELDS = ["tests", "specs", "changelog"];
 
 /** Shape errors: what the generator cannot measure at all. */
 function shapeErrors(spine) {
-  if (!spine || !Array.isArray(spine.features)) return ["the spine has no \"features\" array"];
+  if (!spine || typeof spine !== "object" || !Array.isArray(spine.features)) return ["the spine has no \"features\" array"];
   const errors = [];
   const seen = new Set();
   spine.features.forEach((f, i) => {
-    const id = f && typeof f.id === "string" ? f.id : `#${i}`;
-    if (!f || typeof f.id !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(f.id)) errors.push(`${id}: id must be kebab-case`);
+    if (f === null || typeof f !== "object" || Array.isArray(f)) {
+      errors.push(`#${i}: a feature must be an object, got ${f === null ? "null" : Array.isArray(f) ? "a list" : typeof f}`);
+      return;
+    }
+    const id = typeof f.id === "string" && f.id !== "" ? f.id : `#${i}`;
+    if (typeof f.id !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(f.id)) errors.push(`${id}: id must be kebab-case`);
     else if (seen.has(f.id)) errors.push(`${id}: duplicate id "${f.id}"`);
     else seen.add(f.id);
-    if (!f) return;
     for (const k of ["name", "area"]) if (typeof f[k] !== "string" || f[k] === "") errors.push(`${id}: ${k} must be a non-empty string`);
     if (!Array.isArray(f.process) || f.process.length === 0) errors.push(`${id}: process must be a non-empty list`);
     else for (const p of f.process) if (!PROCESSES.has(p)) errors.push(`${id}: process "${p}" is not one of ${[...PROCESSES].join(", ")}`);
@@ -438,6 +441,16 @@ function shapeErrors(spine) {
     }
     for (const k of LIST_FIELDS) {
       if (k in f && (!Array.isArray(f[k]) || f[k].some((p) => typeof p !== "string"))) errors.push(`${id}: ${k} must be a list of strings when present`);
+    }
+    // An empty string would match every file, every test case or every CHANGELOG line.
+    for (const k of ["paths", ...LIST_FIELDS]) {
+      if (!Array.isArray(f[k])) continue;
+      for (const entry of f[k]) {
+        if (typeof entry !== "string") continue;
+        const parts = k === "tests" ? splitTestEntry(entry) : { path: entry, filter: null };
+        if (parts.path.trim() === "") errors.push(`${id}: ${k} entry ${JSON.stringify(entry)} has an empty ${k === "changelog" ? "term" : "path"}`);
+        else if (parts.filter !== null && parts.filter.trim() === "") errors.push(`${id}: ${k} entry ${JSON.stringify(entry)} has an empty test filter after ::`);
+      }
     }
   });
   return errors;

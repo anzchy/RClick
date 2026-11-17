@@ -429,3 +429,25 @@ test("an untracked spine is refused: the provenance commit would not contain it"
   assert.match(r.stderr, /docs\/other-spine\.json/);
   assert.equal(r.text, null);
 });
+
+test("a feature record that is not an object, an empty term and an empty filter are malformed", (t) => {
+  const ok = { id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] };
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS }, [
+    7, null, ["copy"], "copy",
+    { ...ok, id: "empty-term", changelog: [""] },
+    { ...ok, id: "empty-filter", tests: ["AppTests/CopierTests.swift::"] },
+    { ...ok, id: "empty-test-path", tests: ["::copiesOne"] },
+    { ...ok, id: "empty-path", paths: [""] },
+    { ...ok, id: "empty-spec", specs: [""] },
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 65, r.stderr);
+  for (const i of [0, 1, 2, 3]) assert.match(r.stderr, new RegExp(`#${i}: a feature must be an object`));
+  assert.match(r.stderr, /empty-term: changelog .*empty/);
+  assert.match(r.stderr, /empty-filter: tests .*empty/);
+  assert.match(r.stderr, /empty-test-path: tests .*empty/);
+  assert.match(r.stderr, /empty-path: paths .*empty/);
+  assert.match(r.stderr, /empty-spec: specs .*empty/);
+  assert.doesNotMatch(r.stderr, /TypeError|\n\s+at /, "no stack trace");
+  assert.equal(r.text, null);
+});
