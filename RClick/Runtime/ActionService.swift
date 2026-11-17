@@ -187,38 +187,38 @@ final class ActionService {
         }
 
         for item in target {
-            let decodedPath = item.removingPercentEncoding ?? item
-            logger.info("airdrop path \(decodedPath)")
+            let path = item
+            logger.info("airdrop path \(path)")
 
-            if Utils.isProtectedFolder(decodedPath) {
+            if Utils.isProtectedFolder(path) {
                 let alert = NSAlert()
                 alert.messageText = AppLocalization.localized("Warning")
-                alert.informativeText = String(format: AppLocalization.localized("Protected system folders cannot be shared: %@"), decodedPath)
+                alert.informativeText = String(format: AppLocalization.localized("Protected system folders cannot be shared: %@"), path)
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: AppLocalization.localized("OK"))
                 alert.runModal()
-                logger.warning("试图分享受保护的系统文件夹，操作已被阻止：\(decodedPath)")
+                logger.warning("试图分享受保护的系统文件夹，操作已被阻止：\(path)")
                 continue
             }
 
             var isDir: ObjCBool = false
-            if fm.fileExists(atPath: decodedPath, isDirectory: &isDir) {
+            if fm.fileExists(atPath: path, isDirectory: &isDir) {
                 if isDir.boolValue {
-                    logger.warning("不能通过 AirDrop 分享文件夹：\(decodedPath)")
+                    logger.warning("不能通过 AirDrop 分享文件夹：\(path)")
                     let alert = NSAlert()
                     alert.messageText = AppLocalization.localized("Notice")
-                    alert.informativeText = String(format: AppLocalization.localized("Folders cannot be shared via AirDrop: %@"), decodedPath)
+                    alert.informativeText = String(format: AppLocalization.localized("Folders cannot be shared via AirDrop: %@"), path)
                     alert.alertStyle = .informational
                     alert.addButton(withTitle: AppLocalization.localized("OK"))
                     alert.runModal()
                     continue
                 } else {
                     // 确保有文件所在目录的访问权限
-                    let fileURL = URL(fileURLWithPath: decodedPath)
+                    let fileURL = URL(fileURLWithPath: path)
                     let dirURL = fileURL.deletingLastPathComponent()
                     if !permission.hasAccess(to: dirURL) {
                         guard await permission.promptForPermission(for: dirURL) != nil else {
-                            logger.warning("用户取消授权，跳过 AirDrop：\(decodedPath)")
+                            logger.warning("用户取消授权，跳过 AirDrop：\(path)")
                             continue
                         }
                     }
