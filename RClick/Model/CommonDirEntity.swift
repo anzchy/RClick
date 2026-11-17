@@ -38,7 +38,7 @@ final class CommonDirEntity {
 
     var path: URL {
         get {
-            URL(fileURLWithPath: pathString)
+            URL(fileURLWithPath: pathString.removingPercentEncoding ?? pathString)
         }
         set {
             pathString = newValue.path()
