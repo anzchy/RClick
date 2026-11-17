@@ -36,6 +36,30 @@ final class FaultInjectingFileOperations: FileOperations {
 
     var removeCalls: [String] { faults.withLock { $0.removeCalls } }
 
+    func moveItem(at source: URL, to destination: URL) throws {
+        try base.moveItem(at: source, to: destination)
+    }
+
+    func copyItem(at source: URL, to destination: URL) throws {
+        try base.copyItem(at: source, to: destination)
+    }
+
+    func volumeIdentity(of url: URL) throws -> VolumeIdentity {
+        try base.volumeIdentity(of: url)
+    }
+
+    func fileIdentity(of url: URL) throws -> FileIdentity {
+        try base.fileIdentity(of: url)
+    }
+
+    func isWritable(_ url: URL) -> Bool {
+        base.isWritable(url)
+    }
+
+    func coordinatedTransfer(_ kind: FileTransferKind, from source: URL, to destination: URL) throws {
+        try base.coordinatedTransfer(kind, from: source, to: destination)
+    }
+
     func removeItem(at url: URL) throws {
         let shouldFail = faults.withLock {
             $0.removeCalls.append(url.path)
