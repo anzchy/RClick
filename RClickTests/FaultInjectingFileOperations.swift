@@ -20,6 +20,9 @@ final class FaultInjectingFileOperations: FileOperations {
     private struct Faults {
         var failRemoving: Set<String> = []
         var removeCalls: [String] = []
+        var copyFailsHalfwayTo: Set<String> = []
+        var nameExistsAt: Set<String> = []
+        var otherVolumePrefixes: [String] = []
     }
 
     private let base: any FileOperations
@@ -35,6 +38,21 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     var removeCalls: [String] { faults.withLock { $0.removeCalls } }
+
+    /// 复制到该目标时只写一半就失败：目标处留下残缺副本，原件不动。
+    func failCopyHalfway(to destination: String) {
+        faults.withLock { _ = $0.copyFailsHalfwayTo.insert(destination) }
+    }
+
+    /// 移动或复制到该目标时报「名字已存在」，即使磁盘上并没有这个文件。
+    func reportNameExists(at destination: String) {
+        faults.withLock { _ = $0.nameExistsAt.insert(destination) }
+    }
+
+    /// 该前缀下的条目报告一个与真实卷不同的卷身份。
+    func placeOnOtherVolume(_ pathPrefix: String) {
+        faults.withLock { $0.otherVolumePrefixes.append(pathPrefix) }
+    }
 
     func moveItem(at source: URL, to destination: URL) throws {
         try base.moveItem(at: source, to: destination)
