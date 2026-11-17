@@ -22,6 +22,8 @@ final class ActionService {
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
     private let pasteboard: NSPasteboard
+    /// System boundary: tests can observe reveal without opening Finder or posting keys.
+    private let revealNewFile: ((URL) -> Void)?
     /// 当前时间；只用于自动重命名等待 Finder 的截止时间。
     private let now: @Sendable () -> Date
     /// 删除批次在后台执行期间持有的目录访问。
@@ -36,7 +38,8 @@ final class ActionService {
         fileOperations: any FileOperations = SystemFileOperations(),
         pasteboard: NSPasteboard = .general,
         now: @escaping @Sendable () -> Date = { Date() },
-        accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser()
+        accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
+        revealNewFile: ((URL) -> Void)? = nil
     ) {
         self.state = state
         self.permission = permission
@@ -45,6 +48,7 @@ final class ActionService {
         self.pasteboard = pasteboard
         self.now = now
         self.accessLeaser = accessLeaser
+        self.revealNewFile = revealNewFile
     }
 
     // MARK: - SystemActions
@@ -540,7 +544,7 @@ final class ActionService {
     /// 解析新建文件的目标目录（目录直接用；文件取父目录）
     private func targetDirectoryForNewFile(_ target: [String]) -> String? {
         guard let rawPath = target.first else { return nil }
-        let path = rawPath.removingPercentEncoding ?? rawPath
+        let path = rawPath
         var isDirectory: ObjCBool = false
 
         if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
@@ -555,6 +559,10 @@ final class ActionService {
 
     /// 在 Finder 中选中新文件并触发重命名（需要辅助功能权限）
     private func revealInFinderAndRename(_ fileURL: URL) {
+        if let revealNewFile {
+            revealNewFile(fileURL)
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([fileURL])
 
         guard AXIsProcessTrusted() else {
