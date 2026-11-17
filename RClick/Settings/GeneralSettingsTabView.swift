@@ -363,7 +363,7 @@ struct GeneralSettingsTabView: View {
 
     /// 只导主程序当前进程的日志。Finder 扩展是独立进程，需要系统日志权限，这里不碰。
     private static func collectLogs() throws -> String {
-        let subsystem = Bundle.main.bundleIdentifier ?? "cn.wflixu.RClick"
+        let subsystem = Bundle.main.bundleIdentifier ?? "cn.anzchy.RClick"
         let store = try OSLogStore(scope: .currentProcessIdentifier)
         let formatter = ISO8601DateFormatter()
         var lines: [String] = []

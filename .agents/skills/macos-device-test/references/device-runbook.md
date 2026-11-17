@@ -60,9 +60,9 @@ RCLICK_DEVICE_SIGNING=team:<TEAMID> $DT/build.sh "$RUN_DIR"     # or RCLICK_DEVI
   `xcuserdata` and `.DS_Store`) before and after the build; commit first.
 - Writes `build.json`: short/full SHA, Xcode version, signing choice, machine facts, input hashes, and the SHA-256 of
   the app and extension executables (doctor's `bundle-hash`).
-- **Signing must be chosen explicitly.** The project's `DEVELOPMENT_TEAM` (`4L3563XCBN`) is the upstream author's.
+- **Signing must be chosen explicitly.** The project's `DEVELOPMENT_TEAM` (`GRT84NAK4T`) is the fork owner's.
   `team:<TEAMID>` builds with automatic signing for your team (`-allowProvisioningUpdates`; the App Group
-  `group.cn.wflixu.RClick` must be provisionable for that team). `adhoc` signs to run locally. Which of these
+  `group.cn.anzchy.RClick` must be provisionable for that team). `adhoc` signs to run locally. Which of these
   pluginkit and Finder accept for the extension on this Mac is **not yet proven**: the first run records it (§14).
 - The App Sandbox stays on for both targets (doctor's `sandbox` line). Never build with it off.
 
@@ -75,7 +75,7 @@ $DT/launch.sh "$RUN_DIR"
 
 `launch.sh` runs `open -n -W <bundle>`, finds exactly one new `RClick` process by exact executable path and birth
 after launch, records `rclick.pid` and `process.json` (PID, executable, `ps lstart` birth), and waits up to 30 s for the
-public `launch decision:` log line from that PID (subsystem `cn.wflixu.RClick`). A manual launch opens the Settings
+public `launch decision:` log line from that PID (subsystem `cn.anzchy.RClick`). A manual launch opens the Settings
 window; that is expected.
 
 **Settings language.** Write a tag (e.g. `zh-Hans`, `ja`) to `$RUN_DIR/app-lang.txt` before launching to run the app
@@ -83,8 +83,10 @@ with `-AppleLanguages`. This reaches the app only. The Finder menu and the exten
 Finder and follow the **system** language; never change it. Rows that need another menu language are NOT VERIFIED
 unless the owner's system already uses it.
 
-**App Group state.** `~/Library/Group Containers/group.cn.wflixu.RClick/` holds the SwiftData config and folder
-bookmarks for every RClick on this Mac. Before a recipe changes settings or grants a folder:
+**App Group state.** `~/Library/Group Containers/group.cn.anzchy.RClick/` holds the SwiftData config and folder
+bookmarks for builds using this fork identity. The container starts empty; upstream settings and bookmarks are
+not migrated. Old and new RClick can both register a Finder extension on this Mac. Before a recipe changes
+settings or grants a folder:
 
 - absent → the run creates it; say so in the record.
 - present → Settings → General → export a backup into `$RUN_DIR/settings-before.json` (the real user path), and at
@@ -103,7 +105,7 @@ exits non-zero on any FAIL. Collection errors become FAIL on the affected lines.
 | Check | Pass when |
 |---|---|
 | `bundle-hash` | app and extension executables match `build.json`, and its SHA is the expected SHA |
-| `bundle-id` | `cn.wflixu.RClick` and `cn.wflixu.RClick.FinderSyncExt` |
+| `bundle-id` | `cn.anzchy.RClick` and `cn.anzchy.RClick.FinderSyncExt` |
 | `signature-valid` | `codesign --verify --deep --strict` on the app |
 | `sandbox` | `com.apple.security.app-sandbox` is true on the app and the extension |
 | `process-bundle` | the recorded PID, executable and birth match the live process |
@@ -170,10 +172,10 @@ Names with spaces and non-ASCII catch quoting and path-encoding defects in Copy 
 
 ```bash
 log show --start "$(cat "$RUN_DIR/start.txt")" --style compact --info \
-  --predicate 'subsystem BEGINSWITH "cn.wflixu.RClick"' > "$RUN_DIR/rclick.log"
+  --predicate 'subsystem BEGINSWITH "cn.anzchy.RClick"' > "$RUN_DIR/rclick.log"
 ```
 
-`cn.wflixu.RClick.FinderSyncExt` lines carry the menu kind and the Option state at build time
+`cn.anzchy.RClick.FinderSyncExt` lines carry the menu kind and the Option state at build time
 (`菜单打开时 Option 状态`), and `菜单构建耗时` (menu build time). Values not marked public show as `<private>`; report
 that as a logging gap instead of guessing.
 

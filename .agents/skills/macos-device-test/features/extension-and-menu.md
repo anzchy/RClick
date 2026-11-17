@@ -6,7 +6,7 @@ Settings.
 
 ## Sub-features
 
-- `EXT-01`: exactly one `cn.wflixu.RClick.FinderSyncExt` registration, from this build, enabled; one extension process.
+- `EXT-01`: exactly one `cn.anzchy.RClick.FinderSyncExt` registration, from this build, enabled; one extension process.
 - `EXT-02`: right-click on a file shows the RClick items.
 - `EXT-03`: right-click on a folder and on a multi-selection (file + folder) shows the items.
 - `EXT-04`: right-click on the window background shows the items (New File, Common Dirs, apps for the folder).
@@ -23,7 +23,7 @@ empty area or a sidebar item. Customize the toolbar (View → Customize Toolbar�
 
 Preconditions: baseline; doctor PASS including `extension-registered`, `extension-enabled`, `extension-process`.
 
-1. `EXT-01`: save `pluginkit -m -v -i cn.wflixu.RClick.FinderSyncExt` and `doctor.txt`. Result: one `+` line whose path
+1. `EXT-01`: save `pluginkit -m -v -i cn.anzchy.RClick.FinderSyncExt` and `doctor.txt`. Result: one `+` line whose path
    is inside `$RUN_DIR`'s bundle.
 2. `EXT-02`: right-click `alpha.txt`; `finder-menu.sh` > `$RUN_DIR/menus/EXT-02-file.txt`; region screenshot
    `EXT-02-file-menu`. Result: the Actions items (Copy Path, Copy File Name, Delete Direct, AirDrop, Hide, Unhide — or

@@ -8,7 +8,7 @@
 - Tester: <role> (not the implementer of the change)
 - Machine: <model>, <chip>, <memory>, macOS <version>, <display> @<scale>x
 - Build: Debug, Xcode <version>, signing `<team:XXXXXXXXXX | adhoc>`, bundle `<path>`
-- Extension: `cn.wflixu.RClick.FinderSyncExt` <version>, enabled by the owner; doctor <13/13 PASS>
+- Extension: `cn.anzchy.RClick.FinderSyncExt` <version>, enabled by the owner; doctor <13/13 PASS>
 - System language: <tag>; app language override: <none | tag>
 - App Group state: <created by this run | existing, backed up to settings-before.json and restored>
 - GUI lock: acquired <time>, released <time>
