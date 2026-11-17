@@ -150,6 +150,20 @@ final class ActionServiceTests {
         #expect(try f.marker.resourceValues(forKeys: [.isHiddenKey]).isHidden == true)
     }
 
+    @Test func airDropRequestsAccessForRawPercentSelection() async throws {
+        let f = try percentSiblings()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let selectedFile = f.selected.appendingPathComponent("share.txt")
+        let siblingFile = f.sibling.appendingPathComponent("share.txt")
+        try Data().write(to: selectedFile)
+        try Data().write(to: siblingFile)
+        let permission = MockPermission()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation())
+        // Refuse permission so the test never starts a real AirDrop session.
+        await service.showAirDrop([selectedFile.path], "ctx-items")
+        #expect(permission.promptCalls.map(\.path) == [f.selected.path])
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
