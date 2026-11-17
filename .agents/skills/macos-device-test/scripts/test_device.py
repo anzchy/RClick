@@ -16,6 +16,9 @@ APP = '/tmp/rclick-device-test/RClick.app'
 OURS = f'+    cn.anzchy.RClick.FinderSyncExt(2.3.4)\tC450DFED-A86A-4A86-B94B-DF8130980AFE\t2026-11-10 05:21:11 +0000\t{APP}/Contents/PlugIns/FinderSyncExt.appex\n'
 FOREIGN = '     cn.anzchy.RClick.FinderSyncExt(2.3.1)\tD450DFED-A86A-4A86-B94B-DF8130980AFE\t2026-10-14 05:21:11 +0000\t/Applications/RClick.app/Contents/PlugIns/FinderSyncExt.appex\n'
 
+LEGACY = FOREIGN.replace("cn.anzchy.RClick.FinderSyncExt", "cn.wflixu.RClick.FinderSyncExt")
+UNRELATED = OURS.replace("cn.anzchy.RClick.FinderSyncExt", "com.example.OtherFinderExtension")
+
 
 def good_data():
     return dict(
@@ -27,6 +30,31 @@ def good_data():
 
 
 class Pluginkit(unittest.TestCase):
+    def test_inventory_reports_dormant_legacy_and_other_rclick_registrations(self):
+        other = FOREIGN.replace('cn.anzchy.RClick.FinderSyncExt', 'org.example.RClick.FinderSyncExt')
+        def inventory(argv):
+            # Model the real pluginkit filter: the narrow fork query hides dormant copies.
+            output = OURS if '-i' in argv else OURS + LEGACY + other + UNRELATED
+            return completed(0, output)
+        with patch.object(device, 'command', side_effect=inventory):
+            entries = device.extension_entries()
+        self.assertEqual([e['id'] for e in entries],
+                         [device.EXT_ID, 'cn.wflixu.RClick.FinderSyncExt', 'org.example.RClick.FinderSyncExt'])
+        data = good_data()
+        data['extensions'] = entries
+        lines, passed = device.verdicts(data)
+        self.assertFalse(passed)
+        registration = next(line for line in lines if 'extension-registered' in line)
+        self.assertTrue(registration.startswith('FAIL'))
+        self.assertIn('cn.wflixu.RClick.FinderSyncExt', registration)
+
+    def test_wrong_identity_inside_run_bundle_is_foreign(self):
+        data = good_data()
+        data['extensions'] = device.parse_pluginkit(OURS.replace(device.EXT_ID, 'cn.wflixu.RClick.FinderSyncExt'))
+        lines, passed = device.verdicts(data)
+        self.assertFalse(passed)
+        self.assertTrue(next(line for line in lines if 'extension-registered' in line).startswith('FAIL'))
+
     def test_parses_flags_version_and_path(self):
         [entry] = device.parse_pluginkit(OURS)
         self.assertEqual(entry, dict(flags='+', id=device.EXT_ID, version='2.3.4',
