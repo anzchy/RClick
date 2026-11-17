@@ -451,3 +451,35 @@ test("a feature record that is not an object, an empty term and an empty filter 
   assert.doesNotMatch(r.stderr, /TypeError|\n\s+at /, "no stack trace");
   assert.equal(r.text, null);
 });
+
+test("Specs counts the linked specs, and a CHANGELOG term matches at the start of a word", (t) => {
+  const changelog = [
+    "# Changelog",
+    "- Added Hide for files",
+    "- Added Unhide for files",
+    "- Fixed Hide and Unhide on folders",
+    "- Hides dotfiles faster",
+    "- Copy Path now decodes",
+    "- Chide is not a feature",
+    "",
+  ].join("\n");
+  const root = fixture(t,
+    { "App/Hider.swift": SWIFT_SOURCE, "CHANGELOG.md": changelog, "specs/hide.md": "# Hide\n", "specs/unhide.md": "# Unhide\n" },
+    [
+      { id: "hide", name: "Hide", area: "Menu", process: ["app"], paths: ["App/Hider.swift"],
+        specs: ["specs/hide.md", "specs/unhide.md"], changelog: ["Hide"] },
+      { id: "unhide", name: "Unhide", area: "Menu", process: ["app"], paths: ["App/Hider.swift"],
+        specs: ["specs/unhide.md"], changelog: ["unhide"] },
+      { id: "copy-path", name: "Copy Path", area: "Menu", process: ["app"], paths: ["App/Hider.swift"],
+        specs: [], changelog: ["Copy Path"] },
+    ],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "hide")["Specs"], "2");
+  assert.equal(row(r.text, "unhide")["Specs"], "1");
+  // Hide: "Added Hide", "Fixed Hide and Unhide", "Hides dotfiles"; not "Added Unhide", not "Chide".
+  assert.equal(row(r.text, "hide")["CHANGELOG"], "3");
+  assert.equal(row(r.text, "unhide")["CHANGELOG"], "2");
+  assert.equal(row(r.text, "copy-path")["CHANGELOG"], "1");
+});
