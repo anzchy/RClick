@@ -13,8 +13,8 @@ sys.path.insert(0, str(HERE))
 import device  # noqa: E402
 
 APP = '/tmp/rclick-device-test/RClick.app'
-OURS = f'+    cn.wflixu.RClick.FinderSyncExt(2.3.4)\tC450DFED-A86A-4A86-B94B-DF8130980AFE\t2026-11-10 05:21:11 +0000\t{APP}/Contents/PlugIns/FinderSyncExt.appex\n'
-FOREIGN = '     cn.wflixu.RClick.FinderSyncExt(2.3.1)\tD450DFED-A86A-4A86-B94B-DF8130980AFE\t2026-10-14 05:21:11 +0000\t/Applications/RClick.app/Contents/PlugIns/FinderSyncExt.appex\n'
+OURS = f'+    cn.anzchy.RClick.FinderSyncExt(2.3.4)\tC450DFED-A86A-4A86-B94B-DF8130980AFE\t2026-11-10 05:21:11 +0000\t{APP}/Contents/PlugIns/FinderSyncExt.appex\n'
+FOREIGN = '     cn.anzchy.RClick.FinderSyncExt(2.3.1)\tD450DFED-A86A-4A86-B94B-DF8130980AFE\t2026-10-14 05:21:11 +0000\t/Applications/RClick.app/Contents/PlugIns/FinderSyncExt.appex\n'
 
 
 def good_data():

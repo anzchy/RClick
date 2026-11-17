@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Use the fork app identity and a new, empty App Group container; existing settings and folder bookmarks are not migrated
 - Copy Path now copies every selected item, one path per line, and writes file URLs so Finder can paste the files themselves. Copy File Name copies every selected item's name the same way
 - Keep Finder workspace icon caches warm with background preloading and main-thread image resizing
 - Use lightweight heartbeat replies and reconnect from the last peer activity

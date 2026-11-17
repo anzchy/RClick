@@ -5,8 +5,8 @@ description: Verify RClick on a real macOS desktop — the menu bar app plus its
 
 # RClick macOS device test
 
-RClick is two processes: the menu bar app (`cn.wflixu.RClick`) does the work, and the FinderSync extension
-(`cn.wflixu.RClick.FinderSyncExt`) runs inside Finder and only draws the menu and forwards clicks. The unit tests
+RClick is two processes: the menu bar app (`cn.anzchy.RClick`) does the work, and the FinderSync extension
+(`cn.anzchy.RClick.FinderSyncExt`) runs inside Finder and only draws the menu and forwards clicks. The unit tests
 cannot see Finder, pluginkit, the pasteboard after a real click, an `NSAlert` raised in the extension, or the
 powerbox. This lane checks those. Read [features/README.md](features/README.md) and the recipe for the run, then
 [references/device-runbook.md](references/device-runbook.md) for the helper contracts and proof standards.
@@ -32,7 +32,7 @@ powerbox. This lane checks those. Read [features/README.md](features/README.md) 
 - **Disposable fixtures only.** All file actions (New File, Hide, Delete Direct, Open With) run on copies under
   `$RUN_DIR/fixtures/`, never on the user's files. Evidence (screenshots, logs, pasteboard readbacks) stays under
   `~/.rclick-roster/device/<run-id>/`, never in the repo.
-- **Shared app state.** The app and extension share the App Group `group.cn.wflixu.RClick` (SwiftData config and
+- **Shared app state.** The app and extension share the App Group `group.cn.anzchy.RClick` (SwiftData config and
   folder bookmarks). If it already exists, export a Settings backup into `$RUN_DIR` before changing any setting and
   import it back at the end (runbook §5).
 

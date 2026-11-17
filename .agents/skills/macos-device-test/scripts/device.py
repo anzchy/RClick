@@ -23,9 +23,9 @@ import time
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get('RCLICK_DEVICE_ROOT') or HERE.parents[3]).resolve()  # .agents/skills/<skill>/scripts
 APP_NAME = 'RClick'
-APP_ID = 'cn.wflixu.RClick'
+APP_ID = 'cn.anzchy.RClick'
 EXT_NAME = 'FinderSyncExt'
-EXT_ID = 'cn.wflixu.RClick.FinderSyncExt'
+EXT_ID = 'cn.anzchy.RClick.FinderSyncExt'
 LOG_SUBSYSTEM = APP_ID
 # The public log line applicationDidFinishLaunching writes (RClick/RClickApp.swift).
 LAUNCH_LOG = 'launch decision:'
@@ -199,7 +199,7 @@ def run_dir(value):
 def signing_settings(value):
     """RCLICK_DEVICE_SIGNING: `team:<TEAMID>` (Apple Development, automatic) or `adhoc` (Sign to Run Locally).
 
-    The project's DEVELOPMENT_TEAM (4L3563XCBN) belongs to the upstream author, so a device build must say
+    The project's DEVELOPMENT_TEAM (GRT84NAK4T) belongs to the fork owner. A device build must say
     which signing it uses; the choice is recorded in build.json and the validation record.
     """
     if not value:
@@ -271,7 +271,7 @@ PLUGINKIT_LINE = re.compile(r'^\s*([+\-!=?]*)\s*(\S+)\(([^)]*)\)\s*$')
 def parse_pluginkit(output):
     """Parse `pluginkit -m -v -i <id>` output into [{flags, id, version, path}].
 
-    Lines look like `+    cn.wflixu.RClick.FinderSyncExt(2.3.4)\t<uuid>\t<date>\t/path/FinderSyncExt.appex`.
+    Lines look like `+    cn.anzchy.RClick.FinderSyncExt(2.3.4)\t<uuid>\t<date>\t/path/FinderSyncExt.appex`.
     Flags: `+` enabled by the user, `-` disabled, `=` superseded, `!` debug, empty = undecided.
     """
     entries = []

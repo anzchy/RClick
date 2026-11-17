@@ -11,6 +11,9 @@
 		5C969FB92F8A494600D022F8 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 5C969FB22F8A494600D022F8 /* LICENSE */; };
 		5C969FBC2F8A494600D022F8 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 5C969FB22F8A494600D022F8 /* LICENSE */; };
 		5C969FBF2F8A494600D022F8 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 5C969FB22F8A494600D022F8 /* LICENSE */; };
+		A22000000000000000000010 /* RClick.entitlements in Resources */ = {isa = PBXBuildFile; fileRef = A22000000000000000000000 /* RClick.entitlements */; };
+		A22000000000000000000011 /* RClickDebug.entitlements in Resources */ = {isa = PBXBuildFile; fileRef = A22000000000000000000001 /* RClickDebug.entitlements */; };
+		A22000000000000000000012 /* FinderSyncExt.entitlements in Resources */ = {isa = PBXBuildFile; fileRef = A22000000000000000000002 /* FinderSyncExt.entitlements */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +55,9 @@
 		5C969FB22F8A494600D022F8 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		5C969FB32F8A494600D022F8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		5C969FC82F8A496000D022F8 /* git-branch-strategy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "git-branch-strategy.md"; sourceTree = "<group>"; };
+		A22000000000000000000000 /* RClick.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RClick/RClick.entitlements; sourceTree = SOURCE_ROOT; };
+		A22000000000000000000001 /* RClickDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RClick/RClickDebug.entitlements; sourceTree = SOURCE_ROOT; };
+		A22000000000000000000002 /* FinderSyncExt.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FinderSyncExt/FinderSyncExt.entitlements; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -311,6 +317,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				5C969FBC2F8A494600D022F8 /* LICENSE in Resources */,
+				A22000000000000000000012 /* FinderSyncExt.entitlements in Resources */,
+				A22000000000000000000011 /* RClickDebug.entitlements in Resources */,
+				A22000000000000000000010 /* RClick.entitlements in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -399,7 +408,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -466,7 +475,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -499,7 +508,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 20261114001;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -515,7 +524,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 2.3.4;
-				PRODUCT_BUNDLE_IDENTIFIER = cn.wflixu.RClick;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -538,7 +547,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 20261114001;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -554,7 +563,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 2.3.4;
-				PRODUCT_BUNDLE_IDENTIFIER = cn.wflixu.RClick;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -573,11 +582,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = cn.wflixu.RClickTests;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClickTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -595,11 +604,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = cn.wflixu.RClickTests;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClickTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -618,7 +627,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 20261114001;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -633,7 +642,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 2.3.4;
-				PRODUCT_BUNDLE_IDENTIFIER = cn.wflixu.RClick.FinderSyncExt;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick.FinderSyncExt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SKIP_INSTALL = YES;
@@ -653,7 +662,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 20261114001;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 4L3563XCBN;
+				DEVELOPMENT_TEAM = GRT84NAK4T;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -668,7 +677,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 2.3.4;
-				PRODUCT_BUNDLE_IDENTIFIER = cn.wflixu.RClick.FinderSyncExt;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick.FinderSyncExt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SKIP_INSTALL = YES;
