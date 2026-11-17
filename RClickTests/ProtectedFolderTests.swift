@@ -45,4 +45,15 @@ struct ProtectedFolderTests {
         #expect(Utils.isProtectedFolder("/var", homeDirectory: home.path))
     }
 
+
+    @Test func protectsCaseVariants() {
+        let home = "/nonexistent/Protected Home"
+        for path in ["/applications", "/SYSTEM/", "/uSr", "/PRIVATE/VAR",
+                     home.uppercased(), home.lowercased() + "/dOcUmEnTs"] {
+            #expect(Utils.isProtectedFolder(path, homeDirectory: home), "Must protect \(path)")
+        }
+        #expect(!Utils.isProtectedFolder("/APPLICATIONSX", homeDirectory: home))
+        #expect(!Utils.isProtectedFolder(home.uppercased() + "/DOCUMENTS/child", homeDirectory: home))
+    }
+
 }

@@ -10,10 +10,16 @@ public class Utils {
         // Resolve only the parent: acting on a leaf symlink must act on the link itself.
         let candidate = url.path == "/" ? "/" : url.deletingLastPathComponent()
             .resolvingSymlinksInPath().appendingPathComponent(url.lastPathComponent).path
+        // Darwin standardization also folds /private/var to /var; fold case first so
+        // that aliases with case variants receive the same lexical normalization.
+        func comparisonKey(_ value: String) -> String {
+            URL(fileURLWithPath: value.lowercased()).standardizedFileURL.path
+        }
         return Constants.protectedDirs(homeDirectory: homeDirectory).contains { protectedPath in
             let protectedURL = URL(fileURLWithPath: protectedPath).standardizedFileURL
             // Some protected entries (such as /var) are themselves system symlinks.
-            return candidate == protectedURL.path || candidate == protectedURL.resolvingSymlinksInPath().path
+            return comparisonKey(candidate) == comparisonKey(protectedURL.path)
+                || comparisonKey(candidate) == comparisonKey(protectedURL.resolvingSymlinksInPath().path)
         }
     }
     // MARK: 
