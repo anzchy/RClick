@@ -117,10 +117,71 @@ function render(spine, rows) {
   return out.join("\n") + "\n";
 }
 
+const PROCESSES = new Set(["app", "extension", "shared", "ipc"]);
+const LIST_FIELDS = ["tests", "specs", "changelog"];
+
+/** Shape errors: what the generator cannot measure at all. */
+function shapeErrors(spine) {
+  if (!spine || !Array.isArray(spine.features)) return ["the spine has no \"features\" array"];
+  const errors = [];
+  const seen = new Set();
+  spine.features.forEach((f, i) => {
+    const id = f && typeof f.id === "string" ? f.id : `#${i}`;
+    if (!f || typeof f.id !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(f.id)) errors.push(`${id}: id must be kebab-case`);
+    else if (seen.has(f.id)) errors.push(`${id}: duplicate id "${f.id}"`);
+    else seen.add(f.id);
+    if (!f) return;
+    for (const k of ["name", "area"]) if (typeof f[k] !== "string" || f[k] === "") errors.push(`${id}: ${k} must be a non-empty string`);
+    if (!Array.isArray(f.process) || f.process.length === 0) errors.push(`${id}: process must be a non-empty list`);
+    else for (const p of f.process) if (!PROCESSES.has(p)) errors.push(`${id}: process "${p}" is not one of ${[...PROCESSES].join(", ")}`);
+    if (!Array.isArray(f.paths) || f.paths.length === 0 || f.paths.some((p) => typeof p !== "string")) {
+      errors.push(`${id}: paths must be a non-empty list of repo paths`);
+    }
+    for (const k of LIST_FIELDS) {
+      if (k in f && (!Array.isArray(f[k]) || f[k].some((p) => typeof p !== "string"))) errors.push(`${id}: ${k} must be a list of strings when present`);
+    }
+  });
+  return errors;
+}
+
+/** Stale-spine errors: a path, test or spec entry that matches no tracked file. */
+function staleErrors(spine, files) {
+  const errors = [];
+  for (const f of spine.features) {
+    for (const k of ["paths", "tests", "specs"]) {
+      for (const p of f[k] ?? []) {
+        if (expand(files, p).length === 0) errors.push(`${f.id}: ${k} entry "${p}" matches no tracked file`);
+      }
+    }
+  }
+  return errors;
+}
+
+function refuse(code, headline, lines = []) {
+  console.error(headline);
+  for (const l of lines) console.error(`  ${l}`);
+  process.exit(code);
+}
+
+function attempt(code, headline, step) {
+  try {
+    return step();
+  } catch (err) {
+    refuse(code, headline, [String(err && err.stderr ? err.stderr : err && err.message ? err.message : err).trim()]);
+  }
+}
+
 function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  const spine = JSON.parse(readFileSync(path.join(opts.root, opts.spine), "utf8"));
-  const files = trackedFiles(opts.root);
+  const opts = attempt(64, "Bad invocation:", () => parseArgs(process.argv.slice(2)));
+  const spine = attempt(66, `The spine ${opts.spine} is not readable JSON:`,
+    () => JSON.parse(readFileSync(path.join(opts.root, opts.spine), "utf8")));
+  const shape = shapeErrors(spine);
+  if (shape.length) refuse(65, `${opts.spine} is malformed; nothing was written:`, shape);
+  const files = attempt(66, "git cannot list the tracked files:", () => trackedFiles(opts.root));
+  const stale = staleErrors(spine, files);
+  if (stale.length) {
+    refuse(65, `${opts.spine} is stale; nothing was written. Fix the entry, do not delete the feature:`, stale);
+  }
   const changelogPath = path.join(opts.root, "CHANGELOG.md");
   const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : null;
   const rows = spine.features.map((f) => measure(opts.root, files, f, changelog));

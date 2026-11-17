@@ -152,3 +152,54 @@ test("a missing CHANGELOG makes every CHANGELOG cell --, never 0", () => {
   assert.equal(row(r.text, "copy")["CHANGELOG"], "--");
   rmSync(root, { recursive: true, force: true });
 });
+
+test("a spine path that matches nothing fails closed and names the entry", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
+    [
+      { id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: ["AppTests/CopierTests.swift"], specs: [] },
+      { id: "moved", name: "Moved", area: "Menu", process: ["app"], paths: ["App/Gone.swift"],
+        tests: ["AppTests/GoneTests.swift"], specs: ["specs/gone.md"] },
+    ],
+  );
+  const r = generate(root);
+  assert.notEqual(r.status, 0, "a stale spine must not exit 0");
+  assert.equal(r.status, 65);
+  for (const stale of ["App/Gone.swift", "AppTests/GoneTests.swift", "specs/gone.md"]) {
+    assert.match(r.stderr, new RegExp(`moved.*${stale.replace(/\./g, "\\.")}`), `stderr names ${stale}`);
+  }
+  assert.doesNotMatch(r.stderr, /App\/Copier\.swift/, "a live path is not reported");
+  assert.equal(r.text, null, "nothing is written from a stale spine");
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a file renamed away from its spine path makes the spine stale", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }],
+  );
+  assert.equal(generate(root).status, 0);
+  git(root, ["mv", "App/Copier.swift", "App/PathCopier.swift"]);
+  git(root, ["commit", "-q", "-m", "rename"], T0 + DAY);
+  const r = generate(root);
+  assert.equal(r.status, 65);
+  assert.match(r.stderr, /copy.*App\/Copier\.swift/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a malformed spine entry is refused", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE },
+    [
+      { id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] },
+      { id: "copy", name: "Twin", area: "Menu", process: ["daemon"], paths: [] },
+    ],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 65);
+  assert.match(r.stderr, /duplicate id "copy"/);
+  assert.match(r.stderr, /process "daemon"/);
+  assert.match(r.stderr, /paths/);
+  rmSync(root, { recursive: true, force: true });
+});
