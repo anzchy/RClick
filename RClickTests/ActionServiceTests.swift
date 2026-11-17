@@ -119,6 +119,19 @@ final class ActionServiceTests {
         #expect(FileManager.default.fileExists(atPath: f.marker.path))
     }
 
+    @Test func hideContentsPreserveRawPercentContainer() async throws {
+        let f = try percentSiblings()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation())
+        let selectedChild = f.selected.appendingPathComponent("child.txt")
+        try Data().write(to: selectedChild)
+        await service.hideFilesAndDirs([f.selected.path], "ctx-container")
+        #expect(try selectedChild.resourceValues(forKeys: [.isHiddenKey]).isHidden == true)
+        #expect(try f.marker.resourceValues(forKeys: [.isHiddenKey]).isHidden == false)
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
