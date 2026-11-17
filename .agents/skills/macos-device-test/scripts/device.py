@@ -276,7 +276,7 @@ def parse_pluginkit(output):
     """
     entries = []
     for line in output.splitlines():
-        if not line.strip():
+        if not line.strip() or re.fullmatch(r'\(\d+ plug-ins?\)', line.strip()):
             continue
         fields = line.split('\t')
         head = PLUGINKIT_LINE.match(fields[0])
