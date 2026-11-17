@@ -320,7 +320,7 @@ final class ActionService {
             }
         } else if trigger == "ctx-items" {
             for dirPath in target {
-                let path = dirPath.removingPercentEncoding ?? dirPath
+                let path = dirPath
                 logger.info("处理路径：\(path)")
                 let url = URL(fileURLWithPath: path)
 

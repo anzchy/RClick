@@ -107,6 +107,18 @@ final class ActionServiceTests {
         #expect(confirmation.confirmCalls == [[f.selected.path]])
     }
 
+    @Test func hideItemsPreserveRawPercentSelection() async throws {
+        let f = try percentSiblings()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation())
+        await service.hideFilesAndDirs([f.selected.path], "ctx-items")
+        #expect(try f.selected.resourceValues(forKeys: [.isHiddenKey]).isHidden == true)
+        #expect(try f.sibling.resourceValues(forKeys: [.isHiddenKey]).isHidden == false)
+        #expect(FileManager.default.fileExists(atPath: f.marker.path))
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
