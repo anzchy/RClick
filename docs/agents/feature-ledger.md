@@ -15,13 +15,17 @@ RClick's feature ledger has three parts. Only one of them holds numbers, and nob
   stale after the next commit.
 - **`--` is not `0`.** In the spine, leave `tests`, `specs` or `changelog` out only when nobody has looked; write `[]`
   when you looked and found none. The table prints `--` for the first and `0` for the second.
-- **Every ledger claim names its source**: a file, an issue, a PR, a device run id, or the CHANGELOG section. What no
-  source settles is written **UNVERIFIED**, never guessed.
+- **Every ledger claim names its source**: a file, an issue, a PR, or the CHANGELOG section. What no source settles is
+  written **UNVERIFIED**, never guessed.
 - **No issue-count column**, in the table or in the ledger. Features that are off by default draw no issues, so a
   count reads as evidence when it only restates the default (see the generator's header).
 - **No history in blocks.** A ledger block says what is true now. History is in `git log`. When an open finding is
   fixed, delete its line in the fixing PR.
-- **Device records stay outside the repo.** Cite them by run id (`i22-device-20261116e`), never by a local path.
+- **Device claims cite public evidence.** A device result is cited from what `anzchy/RClick` shows: the **Device**
+  section of the PR that ran it (with its head sha) or the issue the run filed. The run id may follow in parentheses
+  as a pointer, "(run `i22-device-20261116e`, private record)", never a local path. A result that only a private
+  record states is written **UNVERIFIED by this ledger (private record)**. Never copy content from a private record
+  into the repo; post it publicly first (the PR's Device section) and cite that.
 
 ## Who updates what, and when
 
@@ -29,15 +33,18 @@ RClick's feature ledger has three parts. Only one of them holds numbers, and nob
 |---|---|---|
 | A ticket adds, changes or removes a menu item, a Settings capability or a default | the implementer, in the same PR | the spine entry (paths, tests, specs, issues, PRs, default), the ledger block and any finding it fixes or opens, then regenerate the metrics |
 | A ticket only moves or renames files | the implementer, in the same PR | the spine paths; the generator refuses to run until they match |
-| Before landing a PR | the delegator | run the generator on the rebased head: a non-zero exit is a blocker; commit the regenerated `docs/feature-metrics.md` if it changed |
-| A `macos-device-test` run ends | the delegator | the **Device** line of each block the run covered (PASS with the run id, or NOT VERIFIED with the reason), the "Device runs cited" table, and any finding the run found or closed |
+| Before landing a PR | the delegator | run the generator on the rebased head, clean tree: a non-zero exit is a blocker. If a measured cell changed, commit the regenerated `docs/feature-metrics.md` on its own (see Provenance) |
+| A `macos-device-test` run ends | the delegator | once the result is public (the PR's Device section): the **Device** line of each block the run covered (PASS or NOT VERIFIED with the reason, citing that public evidence, run id in parentheses), the "Device runs cited" table, and any finding the run found or closed |
 | A full re-read of the code | whoever does it | the "Verified against" commit at the top of `docs/feature-ledger.md` |
 
 ## Commands
 
 ```bash
-# Regenerate the metrics (run from the repo root, on a clean tree; commit the result)
+# Regenerate the metrics (repo root, clean tree; commit the result on its own, see Provenance)
 node scripts/feature-ledger/gen-feature-ledger.mjs
+
+# A local look at uncommitted work (the provenance line then says "dirty"; never commit that output)
+node scripts/feature-ledger/gen-feature-ledger.mjs --allow-dirty --out=/tmp/feature-metrics.md
 
 # A different commit window (default 90 days, counted back from HEAD's commit date)
 node scripts/feature-ledger/gen-feature-ledger.mjs --window-days=30
@@ -46,18 +53,39 @@ node scripts/feature-ledger/gen-feature-ledger.mjs --window-days=30
 node --test scripts/feature-ledger/*.test.mjs
 ```
 
-Exit codes: `0` written; `64` bad argument; `65` stale or malformed spine (each offending entry is printed; nothing is
-written); `66` the spine is not readable JSON or git failed. A `65` means fix the spine entry, not delete the feature.
+Exit codes: `0` written; `64` bad argument; `65` stale or malformed spine, or uncommitted changes to tracked inputs
+or an untracked spine (each offending entry or path is printed; nothing is written); `66` the spine is not readable
+JSON or git failed. A stale-spine `65` means fix the spine entry, not delete the feature.
+
+In a shallow clone (`git clone --depth …`, the CI checkout default) every Last touch and Commits cell prints `--` and
+the table says why: the grafted boundary commit shows every file as added. Regenerate the committed table from a full
+clone. CHANGELOG terms match case-insensitively where the term starts a word (`Hide` counts `Hides`, not `Unhide`),
+whatever the word means on that line, so the cell is an upper bound.
 
 A `tests` entry may name part of a shared test file: `RClickTests/ActionServiceTests.swift::delete` counts only the
 test cases whose name contains `delete` (case-insensitive), and their lines. A filter that matches no case is a stale
 entry.
 
+## Provenance and freshness
+
+`docs/feature-metrics.md` is committed (owner decision on #30). Its line "Generated from commit `<sha>`" is a claim
+that the table measures that commit, so:
+
+- **Freshness: the line must name an ancestor of HEAD whose tree contains all inputs** (the spine, every measured
+  path, `CHANGELOG.md`). Regenerating changes only this line unless measured paths changed.
+- **Generate from a clean commit of the inputs, and commit the output separately.** Commit the spine, code and
+  CHANGELOG changes first; run the generator on that clean tree (it refuses a dirty one and an untracked spine); commit
+  `docs/feature-metrics.md` alone in the next commit. The line then names the input commit, the output commit's
+  parent. The output file itself is exempt from the dirty check, so a second run before committing is allowed.
+- A freshness check (follow-up below) regenerates at the commit the line names, or at HEAD, and compares everything
+  but that line.
+
 ## Not wired yet (owner follow-ups)
 
 - The generator's tests do not run in CI (`.github/workflows/agent-tooling.yml`) or in `scripts/gates.sh`
   (`skill-tooling` lane). Both need the owner's ask.
-- No freshness check: nothing fails when `docs/feature-metrics.md` is older than the spine or the code.
+- No freshness check: nothing fails when `docs/feature-metrics.md` is older than the spine or the code. The check
+  would regenerate from a full clone and compare every line but the provenance line.
 - No ownership check: nothing fails when a new source file belongs to no spine entry (vmark's `lint:feature-map`
   and open-pstack's feature registry both do this).
 - Defaults in the spine are text; nothing compares them with `Shared/RCBase.swift` or `RClick/AppState.swift`.
@@ -91,12 +119,15 @@ ports the same 24 `principle-*` skills to Claude Code and adds formal-verificati
 adds a machine-readable feature registry whose unknown paths fail closed
 (`.claude/skills/verify-open-pstack/features/README.md`).
 
+All 24 principles are accounted for below: 14 adopted (Foundational Thinking and Model the Domain share a row) and
+10 left out (the left-out table also lists parts that are not principles).
+
 Adopted, with the decision each one changed here:
 
 | Principle | What it changed |
 |---|---|
 | Build the Lever | counts come from a script anyone can rerun, not from an agent reading files |
-| Explain the Number | every column states its source and its limit (a shared file counts in each feature; the window is anchored to HEAD) |
+| Explain the Number | every column states its source and its limit (a shared file counts in each feature; the window is anchored to HEAD; a CHANGELOG cell is an upper bound; a shallow clone prints `--` for history and says why) |
 | Prove It Works | the ledger's device status is the real-Finder record; unit tests are listed separately and never stand in for it |
 | Encode Lessons in Structure | the stale-spine rule is an exit code, not advice |
 | Boundary Discipline | the spine is validated once at load (shape, then stale paths); the measuring code trusts it |
@@ -107,6 +138,7 @@ Adopted, with the decision each one changed here:
 | Subtract Before You Add | blocks carry no history, and a fixed finding's line is deleted, not annotated |
 | Foundational Thinking, Model the Domain | the spine's shape (id, process vocabulary, `[]` vs absent) was fixed before the generator logic |
 | Never Block on the Human | the open questions took their defaults and are listed in the handoff |
+| Laziness Protocol | the smallest thing that does the job: one dependency-free script, no CI job or gate change in this deliverable, no defaults or ownership checker until it is asked for (follow-ups below) |
 
 From pstack's feature map example, the **user-POV "how a user gets there"** field became the ledger's *Reached*
 line; its driving instructions, states and gotchas already live in `.agents/skills/macos-device-test/features/`, so
