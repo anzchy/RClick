@@ -51,6 +51,30 @@ final class BookmarkAccessLeaser: ScopedAccessLeasing {
     }
 
     func beginAccess(covering directories: [URL]) -> ScopedAccessLease {
-        ScopedAccessLease()
+        let targets = directories.map { $0.resolvingSymlinksInPath() }
+        guard !targets.isEmpty else { return ScopedAccessLease() }
+
+        var opened: [URL] = []
+        for data in loadBookmarks() {
+            var isStale = false
+            guard let url = try? URL(
+                resolvingBookmarkData: data,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) else { continue }
+            let root = url.resolvingSymlinksInPath()
+            guard targets.contains(where: { BookmarkManager.covers(root, $0) }) else { continue }
+            // 与 BookmarkManager 的那份访问互不影响：每次 startAccessing 都要有自己的 stop。
+            if url.startAccessingSecurityScopedResource() {
+                opened.append(url)
+            }
+        }
+        let leased = opened
+        return ScopedAccessLease(directories: leased) {
+            for url in leased {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
     }
 }
