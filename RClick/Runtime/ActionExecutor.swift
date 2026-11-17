@@ -13,7 +13,7 @@ import Foundation
 /// 每次 `run` 的工作闭包都在 actor 上同步执行（闭包内没有挂起点），
 /// 所以同一时刻只有一项工作在跑；actor 的默认执行器是全局协作线程池，不会是主线程。
 actor ActionExecutor {
-    nonisolated func run<T: Sendable, E: Error>(_ work: @Sendable () throws(E) -> T) async throws(E) -> T {
+    func run<T: Sendable, E: Error>(_ work: @Sendable () throws(E) -> T) async throws(E) -> T {
         try work()
     }
 }
