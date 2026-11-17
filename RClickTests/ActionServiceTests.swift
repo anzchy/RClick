@@ -261,4 +261,35 @@ final class ActionServiceTests {
         }
     }
 
+    // MARK: - Injected file operations (#13)
+
+    @Test func injectedRemoveFailureReachesTheDeleteResult() async throws {
+        let (dirA, fileA) = try makeTempFile()
+        let (dirB, fileB) = try makeTempFile()
+        defer {
+            try? FileManager.default.removeItem(at: dirA)
+            try? FileManager.default.removeItem(at: dirB)
+        }
+
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        let confirmation = MockConfirmation()
+        let fileOperations = FaultInjectingFileOperations()
+        fileOperations.failRemoving(fileA.path)   // 原件无法删除
+        let service = ActionService(
+            state: MockState(), permission: permission, confirmation: confirmation,
+            fileOperations: fileOperations
+        )
+
+        let result = await service.deleteFoldorFile([fileA.path, fileB.path], "ctx-items")
+
+        #expect(fileOperations.removeCalls == [fileA.path, fileB.path])
+        #expect(result.failures.map(\.path) == [fileA.path])
+        #expect(result.failures.first?.error as? FaultInjectingFileOperations.InjectedFault
+                == .init(operation: "remove", path: fileA.path))
+        #expect(result.completed == [fileB.path])
+        #expect(FileManager.default.fileExists(atPath: fileA.path))
+        #expect(!FileManager.default.fileExists(atPath: fileB.path))
+    }
+
 }

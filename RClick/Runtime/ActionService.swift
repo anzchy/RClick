@@ -20,11 +20,18 @@ final class ActionService {
     private let state: ActionStateProviding
     private let permission: PermissionProviding
     private let confirmation: DeleteConfirmationProviding
+    private let fileOperations: any FileOperations
 
-    init(state: ActionStateProviding, permission: PermissionProviding, confirmation: DeleteConfirmationProviding) {
+    init(
+        state: ActionStateProviding,
+        permission: PermissionProviding,
+        confirmation: DeleteConfirmationProviding,
+        fileOperations: any FileOperations = SystemFileOperations()
+    ) {
         self.state = state
         self.permission = permission
         self.confirmation = confirmation
+        self.fileOperations = fileOperations
     }
 
     // MARK: - SystemActions
@@ -332,7 +339,8 @@ final class ActionService {
         logger.info("隐藏操作完成")
     }
 
-    func deleteFoldorFile(_ target: [String], _ trigger: String, optionKeyPressed: Bool = false) async {
+    @discardableResult
+    func deleteFoldorFile(_ target: [String], _ trigger: String, optionKeyPressed: Bool = false) async -> FileActionResult {
         logger.info("---- deleteFoldorFile trigger:\(trigger) option:\(optionKeyPressed)")
         let fm = FileManager.default
 
@@ -343,7 +351,7 @@ final class ActionService {
             alert.alertStyle = .warning
             alert.addButton(withTitle: AppLocalization.localized("OK"))
             alert.runModal()
-            return
+            return FileActionResult()
         }
 
         var pathsToDelete: [String] = []
@@ -364,7 +372,7 @@ final class ActionService {
             pathsToDelete.append(decodedPath)
         }
 
-        guard !pathsToDelete.isEmpty else { return }
+        guard !pathsToDelete.isEmpty else { return FileActionResult() }
 
         // 先把授权问完，再让确认框当最后一道关卡：确认框里的条目数就是
         // "确认后真的会被删掉的数量"，取消授权的项在确认之前就已经出局。
@@ -385,13 +393,13 @@ final class ActionService {
             authorized.append(decodedPath)
         }
 
-        guard !authorized.isEmpty else { return }
+        guard !authorized.isEmpty else { return FileActionResult() }
 
         // 绕过废纸篓的删除默认必须确认；按住 Option 点击是唯一跳过确认的方式。
         if !optionKeyPressed {
             guard confirmation.confirmPermanentDelete(paths: authorized) else {
                 logger.info("用户取消了删除确认，共 \(authorized.count) 项未删除")
-                return
+                return FileActionResult()
             }
         }
 
@@ -399,6 +407,7 @@ final class ActionService {
             do { try fm.removeItem(atPath: decodedPath) }
             catch { logger.error("delete \(decodedPath) file run error \(error)") }
         }
+        return FileActionResult()
     }
 
     // MARK: - NewFileActions
