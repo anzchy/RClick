@@ -13,12 +13,18 @@ const OUTPUT_REL = "docs/feature-metrics.md";
 const CODE_EXTENSIONS = new Set([".swift", ".m", ".h", ".mjs", ".js", ".ts", ".py", ".sh"]);
 const HASH_COMMENT = new Set([".py", ".sh"]);
 
+const WINDOW_DAYS = 90;
+const USAGE = "usage: node scripts/feature-ledger/gen-feature-ledger.mjs [--root=<repo>] [--out=<file>] [--spine=<file>] [--window-days=<n>]";
+
 function parseArgs(argv) {
-  const opts = { root: DEFAULT_ROOT, out: null, spine: SPINE_REL };
+  const opts = { root: DEFAULT_ROOT, out: null, spine: SPINE_REL, windowDays: WINDOW_DAYS };
   for (const a of argv) {
-    const m = /^--(root|out|spine)=(.+)$/.exec(a);
-    if (!m) throw new Error(`unknown argument ${JSON.stringify(a)}`);
-    opts[m[1]] = m[2];
+    const m = /^--(root|out|spine|window-days)=(.+)$/.exec(a);
+    if (!m) throw new Error(`unknown argument ${JSON.stringify(a)}\n${USAGE}`);
+    if (m[1] === "window-days") {
+      if (!/^[1-9][0-9]*$/.test(m[2])) throw new Error(`--window-days needs a positive whole number of days, got ${JSON.stringify(m[2])}\n${USAGE}`);
+      opts.windowDays = Number(m[2]);
+    } else opts[m[1]] = m[2];
   }
   opts.root = path.resolve(opts.root);
   opts.out = path.resolve(opts.root, opts.out ?? OUTPUT_REL);
@@ -76,6 +82,48 @@ function testCases(text) {
   return names;
 }
 
+/** Every commit, newest first, with its commit time and its name-status entries (renames detected). */
+function readHistory(root) {
+  const raw = git(root, ["-c", "core.quotePath=false", "log", "-M", "--name-status", "--format=%x01%H %ct"]);
+  const commits = [];
+  for (const block of raw.split("\x01").slice(1)) {
+    const [head, ...lines] = block.split("\n");
+    const [sha, ct] = head.split(" ");
+    const changes = lines.filter(Boolean).map((l) => {
+      const [status, ...names] = l.split("\t");
+      return { status: status[0], names };
+    });
+    commits.push({ sha, time: Number(ct), changes });
+  }
+  return commits;
+}
+
+/**
+ * Commits that touched a feature, newest first, following renames backwards: a file the feature owns
+ * today brings its earlier names along, so a rename does not reset the feature's history.
+ */
+function touchingCommits(history, currentFiles, dirPrefixes) {
+  const names = new Set(currentFiles);
+  const owns = (n) => names.has(n) || dirPrefixes.some((d) => n.startsWith(d + "/"));
+  const hits = [];
+  for (const c of history) {
+    let touched = false;
+    for (const ch of c.changes) {
+      if (ch.status === "R" && ch.names.length === 2) {
+        const [from, to] = ch.names;
+        if (owns(to) || owns(from)) {
+          touched = true;
+          names.add(from);
+        }
+      } else if (ch.names.some(owns)) touched = true;
+    }
+    if (touched) hits.push(c);
+  }
+  return hits;
+}
+
+const isoDay = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+
 // THE HONESTY RULE: a signal nobody measured is `null` and prints `--`; a measured zero is 0.
 // A spine field that is ABSENT means nobody looked; an EMPTY list means someone looked and found none.
 const UNMEASURED = null;
@@ -87,16 +135,21 @@ function changelogMentions(changelog, terms) {
   return changelog.split("\n").filter((l) => lower.some((t) => l.toLowerCase().includes(t))).length;
 }
 
-function measure(root, files, feature, changelog) {
+function measure(root, files, feature, changelog, ctx) {
   const read = (f) => readFileSync(path.join(root, f), "utf8");
   const code = [...new Set(feature.paths.flatMap((p) => expand(files, p)))]
     .filter((f) => CODE_EXTENSIONS.has(path.extname(f)));
+  const owned = [...new Set(feature.paths.flatMap((p) => expand(files, p)))];
+  const dirs = feature.paths.map((p) => p.replace(/\/+$/, "")).filter((p) => !files.includes(p));
+  const hits = touchingCommits(ctx.history, owned, dirs);
   const tests = Array.isArray(feature.tests) ? [...new Set(feature.tests.flatMap((p) => expand(files, p)))] : UNMEASURED;
   return {
     codeFiles: code.length,
     codeLines: code.reduce((s, f) => s + codeLines(read(f), path.extname(f)), 0),
     testFiles: tests === UNMEASURED ? UNMEASURED : tests.length,
     testCases: tests === UNMEASURED ? UNMEASURED : tests.reduce((s, f) => s + testCases(read(f)).length, 0),
+    lastTouch: hits.length ? `${hits[0].sha.slice(0, 7)} ${isoDay(hits[0].time)}` : UNMEASURED,
+    commits: ctx.headTime === null ? UNMEASURED : hits.filter((c) => c.time >= ctx.headTime - ctx.windowDays * 86400).length,
     specs: Array.isArray(feature.specs) ? feature.specs.length : UNMEASURED,
     changelog: changelogMentions(changelog, feature.changelog),
   };
@@ -105,13 +158,13 @@ function measure(root, files, feature, changelog) {
 /** A measured number, or `--` for a signal nobody measured. Never turns `--` into 0. */
 const cell = (v) => (v === UNMEASURED || v === undefined ? "--" : String(v));
 
-function render(spine, rows) {
+function render(spine, rows, opts) {
   const out = ["# Feature metrics", "",
-    "| Feature | Code files | Code lines | Test files | Test cases | Specs | CHANGELOG |",
-    "|---|---:|---:|---:|---:|---:|---:|"];
+    `| Feature | Code files | Code lines | Test files | Test cases | Last touch | Commits (${opts.windowDays} d) | Specs | CHANGELOG |`,
+    "|---|---:|---:|---:|---:|---|---:|---:|---:|"];
   spine.features.forEach((f, i) => {
     const r = rows[i];
-    const cells = [r.codeFiles, r.codeLines, r.testFiles, r.testCases, r.specs, r.changelog].map(cell);
+    const cells = [r.codeFiles, r.codeLines, r.testFiles, r.testCases, r.lastTouch, r.commits, r.specs, r.changelog].map(cell);
     out.push(`| \`${f.id}\` | ${cells.join(" | ")} |`);
   });
   return out.join("\n") + "\n";
@@ -184,10 +237,12 @@ function main() {
   }
   const changelogPath = path.join(opts.root, "CHANGELOG.md");
   const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : null;
-  const rows = spine.features.map((f) => measure(opts.root, files, f, changelog));
+  const history = attempt(66, "git cannot read the history:", () => readHistory(opts.root));
+  const ctx = { history, headTime: history.length ? history[0].time : null, windowDays: opts.windowDays };
+  const rows = spine.features.map((f) => measure(opts.root, files, f, changelog, ctx));
   mkdirSync(path.dirname(opts.out), { recursive: true });
   const tmp = `${opts.out}.tmp-${process.pid}`;
-  writeFileSync(tmp, render(spine, rows));
+  writeFileSync(tmp, render(spine, rows, opts));
   renameSync(tmp, opts.out);
 }
 
