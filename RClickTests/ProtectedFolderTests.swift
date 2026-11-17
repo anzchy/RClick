@@ -79,4 +79,25 @@ struct ProtectedFolderTests {
         #expect(Utils.isProtectedFolder(home + "/Library/", homeDirectory: home))
         #expect(!Utils.isProtectedFolder(home + "/Documents/missing", homeDirectory: home))
     }
+
+    @Test func directoryLinkSuffixesCannotDeleteProtectedTargets() throws {
+        let fm = FileManager.default
+        for suffix in ["", "/", "/."] {
+            let root = fm.temporaryDirectory.appendingPathComponent("protected-link-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: root) }
+            let home = root.appendingPathComponent("Home")
+            try fm.createDirectory(at: home, withIntermediateDirectories: true)
+            let marker = home.appendingPathComponent("keep.txt")
+            try Data("keep".utf8).write(to: marker)
+            let link = root.appendingPathComponent("link")
+            try fm.createSymbolicLink(at: link, withDestinationURL: home)
+            let path = link.path + suffix
+            let protected = Utils.isProtectedFolder(path, homeDirectory: home.path)
+            #expect(protected == !suffix.isEmpty, "Directory traversal suffix: \(suffix)")
+            if !protected { try fm.removeItem(atPath: path) }
+            #expect(fm.fileExists(atPath: home.path))
+            #expect(fm.fileExists(atPath: marker.path))
+        }
+    }
+
 }

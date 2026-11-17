@@ -6,7 +6,10 @@ public class Utils {
     }
 
     static func isProtectedFolder(_ path: String, homeDirectory: String) -> Bool {
-        let url = URL(fileURLWithPath: path.removingPercentEncoding ?? path).standardizedFileURL
+        let rawURL = URL(fileURLWithPath: path.removingPercentEncoding ?? path)
+        // A directory traversal suffix acts on the target of a leaf directory link.
+        let traversesLeaf = path.hasSuffix("/") || path.hasSuffix("/.")
+        let url = (traversesLeaf ? rawURL.resolvingSymlinksInPath() : rawURL).standardizedFileURL
         // Resolve only the parent: acting on a leaf symlink must act on the link itself.
         let candidate = url.path == "/" ? "/" : url.deletingLastPathComponent()
             .resolvingSymlinksInPath().appendingPathComponent(url.lastPathComponent).path
