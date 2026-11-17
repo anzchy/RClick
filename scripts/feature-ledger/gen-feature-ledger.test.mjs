@@ -203,3 +203,40 @@ test("a malformed spine entry is refused", () => {
   assert.match(r.stderr, /paths/);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("history follows renames: last touch and commits in the window", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE, "App/Other.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/PathCopier.swift"] }],
+    T0, // created (the spine names the post-rename path, so add the spine after the rename below)
+  );
+  put(root, "App/Copier.swift", SWIFT_SOURCE + "// edit 1\n");
+  commitAll(root, "edit before the rename", T0 + 10 * DAY);
+  git(root, ["mv", "App/Copier.swift", "App/PathCopier.swift"]);
+  commitAll(root, "rename", T0 + 20 * DAY);
+  put(root, "App/Other.swift", SWIFT_SOURCE + "// unrelated\n");
+  commitAll(root, "unrelated", T0 + 150 * DAY);
+  put(root, "App/PathCopier.swift", SWIFT_SOURCE + "// edit 2\n");
+  commitAll(root, "edit after the rename", T0 + 200 * DAY);
+  const head = git(root, ["rev-parse", "--short=7", "HEAD"]);
+
+  const wide = generate(root, ["--window-days=365"]);
+  assert.equal(wide.status, 0, wide.stderr);
+  const w = row(wide.text, "copy");
+  assert.equal(w["Commits (365 d)"], "4"); // create, edit 1, rename, edit 2; not the unrelated commit
+  assert.equal(w["Last touch"], `${head} 2024-06-01`);
+
+  const narrow = generate(root); // default window: 90 days before HEAD's commit date
+  assert.equal(narrow.status, 0, narrow.stderr);
+  assert.equal(row(narrow.text, "copy")["Commits (90 d)"], "1");
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a bad --window-days is a usage error", () => {
+  const root = fixture({ "App/Copier.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }]);
+  const r = generate(root, ["--window-days=soon"]);
+  assert.equal(r.status, 64);
+  assert.equal(r.text, null);
+  rmSync(root, { recursive: true, force: true });
+});
