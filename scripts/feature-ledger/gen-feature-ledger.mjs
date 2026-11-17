@@ -72,15 +72,68 @@ function codeLines(text, ext) {
   return n;
 }
 
-/** Test case names in a test file: Swift Testing `@Test`, XCTest `func test…`, Python `def test_…`, node:test `test(`. */
-function testCases(text) {
-  const names = [];
-  const swift = /@Test\b(?:\([^)]*\))?[\s\S]*?\bfunc\s+(\w+)/g;
-  for (const m of text.matchAll(swift)) names.push(m[1]);
-  for (const m of text.matchAll(/\bfunc\s+(test\w*)\s*\(/g)) if (!names.includes(m[1])) names.push(m[1]);
-  for (const m of text.matchAll(/^\s*def\s+(test\w*)\s*\(/gm)) names.push(m[1]);
-  for (const m of text.matchAll(/^\s*(?:test|it)\(\s*(["'`])(.*?)\1/gm)) names.push(m[2]);
-  return names;
+const stripStrings = (line) => line.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');
+
+/** Last line of the block that opens at or after `start`: braces for Swift and JS, indentation for Python. */
+function blockEnd(lines, start, python) {
+  if (python) {
+    const indent = lines[start].search(/\S/);
+    let end = start;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (lines[i].trim() === "") continue;
+      if (lines[i].search(/\S/) <= indent) break;
+      end = i;
+    }
+    return end;
+  }
+  let depth = 0;
+  let opened = false;
+  for (let i = start; i < lines.length; i++) {
+    for (const ch of stripStrings(lines[i])) {
+      if (ch === "{") { depth++; opened = true; } else if (ch === "}") depth--;
+    }
+    if (opened && depth <= 0) return i;
+  }
+  return lines.length - 1;
+}
+
+/**
+ * Test cases in a test file, each with the line range of its declaration and body: Swift Testing `@Test`,
+ * XCTest `func test…`, Python `def test_…`, node:test `test(…)`.
+ */
+function testCases(text, ext) {
+  const lines = text.split("\n");
+  const python = ext === ".py";
+  const cases = [];
+  let attribute = null; // line of a pending Swift `@Test` attribute
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let name = null;
+    let start = i;
+    if (python) {
+      const m = /^\s*(?:async\s+)?def\s+(test\w*)\s*\(/.exec(line);
+      if (m) name = m[1];
+    } else {
+      if (/^\s*@Test\b/.test(line)) attribute ??= i;
+      const swift = /\bfunc\s+(\w+)\s*\(/.exec(line);
+      const js = /^\s*(?:test|it)\(\s*(["'`])(.*?)\1/.exec(line);
+      if (swift && (attribute !== null || swift[1].startsWith("test"))) {
+        name = swift[1];
+        start = attribute ?? i;
+      } else if (js) name = js[2];
+      if (swift) attribute = null;
+    }
+    if (name === null) continue;
+    const end = blockEnd(lines, i, python);
+    cases.push({ name, lines: lines.slice(start, end + 1).join("\n") });
+  }
+  return cases;
+}
+
+/** `file::name` splits a shared test file by case name; a bare entry takes the whole file. */
+function splitTestEntry(entry) {
+  const at = entry.indexOf("::");
+  return at === -1 ? { path: entry, filter: null } : { path: entry.slice(0, at), filter: entry.slice(at + 2) };
 }
 
 /** Every commit, newest first, with its commit time and its name-status entries (renames detected). */
@@ -136,6 +189,36 @@ function changelogMentions(changelog, terms) {
   return changelog.split("\n").filter((l) => lower.some((t) => l.toLowerCase().includes(t))).length;
 }
 
+/** Test files, cases and lines of a feature's test entries; a file named whole and by filter counts once. */
+function measureTests(entries, files, read) {
+  const perFile = new Map();
+  for (const e of entries) {
+    const { path: p, filter } = splitTestEntry(e);
+    for (const f of expand(files, p)) {
+      const slot = perFile.get(f) ?? { whole: false, filters: [] };
+      if (filter === null) slot.whole = true;
+      else slot.filters.push(filter.toLowerCase());
+      perFile.set(f, slot);
+    }
+  }
+  let cases = 0;
+  let lines = 0;
+  for (const [f, slot] of perFile) {
+    const text = read(f);
+    const ext = path.extname(f);
+    const all = testCases(text, ext);
+    if (slot.whole) {
+      cases += all.length;
+      lines += codeLines(text, ext);
+    } else {
+      const picked = all.filter((c) => slot.filters.some((x) => c.name.toLowerCase().includes(x)));
+      cases += picked.length;
+      lines += picked.reduce((s, c) => s + codeLines(c.lines, ext), 0);
+    }
+  }
+  return { files: perFile.size, cases, lines };
+}
+
 function measure(root, files, feature, changelog, ctx) {
   const read = (f) => readFileSync(path.join(root, f), "utf8");
   const code = [...new Set(feature.paths.flatMap((p) => expand(files, p)))]
@@ -143,12 +226,13 @@ function measure(root, files, feature, changelog, ctx) {
   const owned = [...new Set(feature.paths.flatMap((p) => expand(files, p)))];
   const dirs = feature.paths.map((p) => p.replace(/\/+$/, "")).filter((p) => !files.includes(p));
   const hits = touchingCommits(ctx.history, owned, dirs);
-  const tests = Array.isArray(feature.tests) ? [...new Set(feature.tests.flatMap((p) => expand(files, p)))] : UNMEASURED;
+  const tests = Array.isArray(feature.tests) ? measureTests(feature.tests, files, read) : UNMEASURED;
   return {
     codeFiles: code.length,
     codeLines: code.reduce((s, f) => s + codeLines(read(f), path.extname(f)), 0),
-    testFiles: tests === UNMEASURED ? UNMEASURED : tests.length,
-    testCases: tests === UNMEASURED ? UNMEASURED : tests.reduce((s, f) => s + testCases(read(f)).length, 0),
+    testFiles: tests === UNMEASURED ? UNMEASURED : tests.files,
+    testCases: tests === UNMEASURED ? UNMEASURED : tests.cases,
+    testLines: tests === UNMEASURED ? UNMEASURED : tests.lines,
     lastTouch: hits.length ? `${hits[0].sha.slice(0, 7)} ${isoDay(hits[0].time)}` : UNMEASURED,
     commits: ctx.headTime === null ? UNMEASURED : hits.filter((c) => c.time >= ctx.headTime - ctx.windowDays * 86400).length,
     specs: Array.isArray(feature.specs) ? feature.specs.length : UNMEASURED,
@@ -182,6 +266,7 @@ function render(spine, rows, opts) {
     "| Code lines | non-blank lines of those files that are not only a comment. A file listed by several features counts in each: the column is how much code a reader opens, not an ownership share |",
     "| Test files | tracked files under the feature's `tests` entries |",
     "| Test cases | Swift Testing `@Test` and XCTest `func test…` declarations, Python `def test_…`, node:test `test(…)` in those files; an entry `file::name` counts only the cases whose name contains `name` |",
+    "| Test lines | non-blank, non-comment lines of those test files; for a `file::name` entry, only the lines of the matched cases (declaration through closing brace, or the indented body in Python) |",
     "| Last touch | the newest commit that changed one of the feature's files, through renames (`git log -M --name-status`), with its commit date |",
     `| Commits (${w} d) | commits that changed the feature's files in the ${w} days before the generating commit's date (\`--window-days\`), through renames |`,
     "| Specs | linked spec files (every one must exist, or the generator refuses) |",
@@ -196,11 +281,11 @@ function render(spine, rows, opts) {
   ];
   for (const p of PROCESSES) out.push(`| ${p} | ${spine.features.filter((f) => f.process.includes(p)).length} |`);
   out.push("", "## Metrics", "",
-    `| Feature | Name | Area | Process | Code files | Code lines | Test files | Test cases | Last touch | Commits (${w} d) | Specs | CHANGELOG |`,
-    "|---|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|");
+    `| Feature | Name | Area | Process | Code files | Code lines | Test files | Test cases | Test lines | Last touch | Commits (${w} d) | Specs | CHANGELOG |`,
+    "|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|");
   spine.features.forEach((f, i) => {
     const r = rows[i];
-    const cells = [r.codeFiles, r.codeLines, r.testFiles, r.testCases, r.lastTouch, r.commits, r.specs, r.changelog].map(cell);
+    const cells = [r.codeFiles, r.codeLines, r.testFiles, r.testCases, r.testLines, r.lastTouch, r.commits, r.specs, r.changelog].map(cell);
     out.push(`| \`${f.id}\` | ${escapeCell(f.name)} | ${escapeCell(f.area)} | ${f.process.join(", ")} | ${cells.join(" | ")} |`);
   });
   return out.join("\n") + "\n";
@@ -233,12 +318,17 @@ function shapeErrors(spine) {
 }
 
 /** Stale-spine errors: a path, test or spec entry that matches no tracked file. */
-function staleErrors(spine, files) {
+function staleErrors(spine, files, read) {
   const errors = [];
   for (const f of spine.features) {
     for (const k of ["paths", "tests", "specs"]) {
-      for (const p of f[k] ?? []) {
-        if (expand(files, p).length === 0) errors.push(`${f.id}: ${k} entry "${p}" matches no tracked file`);
+      for (const entry of f[k] ?? []) {
+        const { path: p, filter } = k === "tests" ? splitTestEntry(entry) : { path: entry, filter: null };
+        const hits = expand(files, p);
+        if (hits.length === 0) errors.push(`${f.id}: ${k} entry "${entry}" matches no tracked file`);
+        else if (filter !== null && !hits.some((h) => testCases(read(h), path.extname(h)).some((c) => c.name.toLowerCase().includes(filter.toLowerCase())))) {
+          errors.push(`${f.id}: ${k} entry "${entry}" matches no test case`);
+        }
       }
     }
   }
@@ -266,7 +356,7 @@ function main() {
   const shape = shapeErrors(spine);
   if (shape.length) refuse(65, `${opts.spine} is malformed; nothing was written:`, shape);
   const files = attempt(66, "git cannot list the tracked files:", () => trackedFiles(opts.root));
-  const stale = staleErrors(spine, files);
+  const stale = staleErrors(spine, files, (f) => readFileSync(path.join(opts.root, f), "utf8"));
   if (stale.length) {
     refuse(65, `${opts.spine} is stale; nothing was written. Fix the entry, do not delete the feature:`, stale);
   }
