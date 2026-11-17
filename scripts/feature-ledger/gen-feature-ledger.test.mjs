@@ -498,3 +498,23 @@ test("the output is replaced atomically: the old file is never written in place"
   assert.equal(readFileSync(path.join(root, "out", "old-inode"), "utf8"), "old table\n", "the old file was written in place");
   assert.deepEqual(readdirSync(path.join(root, "out")).sort(), ["feature-metrics.md", "old-inode"], "no temporary file is left");
 });
+
+test("a test file the generator cannot parse for cases prints --, not 0", (t) => {
+  const root = fixture(t,
+    { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS, "docs/manual-test-plan.md": "# Plan\n- step\n" },
+    [
+      { id: "manual", name: "Manual", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: ["docs/manual-test-plan.md"] },
+      { id: "mixed", name: "Mixed", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: ["AppTests/CopierTests.swift", "docs/manual-test-plan.md"] },
+    ],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  for (const id of ["manual", "mixed"]) {
+    const cells = row(r.text, id);
+    assert.equal(cells["Test cases"], "--", `${id}: cases nobody can count are not 0`);
+    assert.equal(cells["Test lines"], "--", `${id}: a partial line count is not a measurement`);
+  }
+  assert.equal(row(r.text, "mixed")["Test files"], "2");
+});
