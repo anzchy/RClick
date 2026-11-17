@@ -160,4 +160,11 @@ struct ProtectedFolderTests {
         #expect(Utils.isProtectedFolder("relative/Documents", homeDirectory: home.path))
     }
 
+
+    @Test func productionEntryPointProtectsRealHomeAndSystemFolders() {
+        #expect(Utils.isProtectedFolder("/Applications"))
+        #expect(Utils.isProtectedFolder(Utils.getRealHomeDir() + "/Documents"))
+        #expect(!Utils.isProtectedFolder(Utils.getRealHomeDir() + "/Documents/rclick-nonexistent"))
+    }
+
 }
