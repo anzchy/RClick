@@ -287,7 +287,7 @@ final class ActionService {
         let fileManager = FileManager.default
 
         if trigger == "ctx-container", let dirPath = target.first {
-            let path = dirPath.removingPercentEncoding ?? dirPath
+            let path = dirPath
             logger.info("处理主目录：\(path)")
             let url = URL(fileURLWithPath: path)
 
