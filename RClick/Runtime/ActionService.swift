@@ -241,7 +241,7 @@ final class ActionService {
         logger.info("开始取消隐藏文件和目录，目标路径：\(target)")
         if let dirPath = target.first {
             let fileManager = FileManager.default
-            let path = dirPath.removingPercentEncoding ?? dirPath
+            let path = dirPath
             logger.info("处理主目录：\(path)")
             let url = URL(fileURLWithPath: path)
 
