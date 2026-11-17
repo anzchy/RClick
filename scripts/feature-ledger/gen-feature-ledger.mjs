@@ -21,6 +21,11 @@
 // NO ISSUE-COUNT COLUMN: Hide, Unhide, AirDrop and Common Dirs are off by default, so they draw no
 // issues because nobody reaches them; a count would restate the default and read as evidence.
 //
+// SHALLOW CLONES: a `--depth` clone's oldest commit is a grafted boundary that shows every file as
+// added, so Last touch and Commits read from it are wrong, not partial. The generator does not refuse
+// (code, tests, specs and CHANGELOG are still measured from the tree); it prints `--` in every history
+// cell and says why in the legend, which is the honesty rule applied to history nobody can read here.
+//
 // REPRODUCIBLE: rows keep the spine's order, the commit window counts back from HEAD's commit date
 // (not the wall clock), and the only run identifier in the body is "generated from commit <sha>".
 // Node 22, ES modules, no network, no dependency beyond git.
@@ -329,8 +334,8 @@ function measure(root, files, feature, changelog, ctx) {
     testFiles: tests === UNMEASURED ? UNMEASURED : tests.files,
     testCases: tests === UNMEASURED ? UNMEASURED : tests.cases,
     testLines: tests === UNMEASURED ? UNMEASURED : tests.lines,
-    lastTouch: hits.length ? `${hits[0].sha.slice(0, 7)} ${isoDay(hits[0].time)}` : UNMEASURED,
-    commits: ctx.headTime === null ? UNMEASURED : hits.filter((c) => c.time >= ctx.headTime - ctx.windowDays * 86400).length,
+    lastTouch: ctx.shallow || !hits.length ? UNMEASURED : `${hits[0].sha.slice(0, 7)} ${isoDay(hits[0].time)}`,
+    commits: ctx.shallow || ctx.headTime === null ? UNMEASURED : hits.filter((c) => c.time >= ctx.headTime - ctx.windowDays * 86400).length,
     specs: Array.isArray(feature.specs) ? feature.specs.length : UNMEASURED,
     changelog: changelogMentions(changelog, feature.changelog),
   };
@@ -353,6 +358,7 @@ function render(spine, rows, opts) {
     "",
     "**`--` means not measured; `0` means measured and none.** A spine entry with no `tests`, `specs` or `changelog` list was never linked by anyone, so those cells print `--`. An empty list is a deliberate \"looked, found none\" and prints `0`. Without a `CHANGELOG.md` every CHANGELOG cell is `--`.",
     "",
+    ...(opts.shallow ? ["**This repository is a shallow clone, so every Last touch and Commits cell prints `--`.** Its oldest commit is a grafted boundary that shows every file as added, so history read from it would be wrong, not partial. Regenerate from a full clone.", ""] : []),
     "## Columns",
     "",
     "| Column | Measured from |",
@@ -461,7 +467,10 @@ function main() {
   const history = attempt(66, "git cannot read the history:", () => readHistory(opts.root));
   const head = history.length ? attempt(66, "git cannot resolve HEAD:", () => git(opts.root, ["log", "-1", "--format=%H %ct", "HEAD"]).trim().split(" ")) : null;
   opts.headSha = head ? head[0] : null;
-  const ctx = { history, headTime: head ? Number(head[1]) : null, windowDays: opts.windowDays };
+  const shallow = attempt(66, "git cannot tell whether the repository is shallow:",
+    () => git(opts.root, ["rev-parse", "--is-shallow-repository"]).trim() === "true");
+  opts.shallow = shallow;
+  const ctx = { history, shallow, headTime: head ? Number(head[1]) : null, windowDays: opts.windowDays };
   const rows = spine.features.map((f) => measure(opts.root, files, f, changelog, ctx));
   mkdirSync(path.dirname(opts.out), { recursive: true });
   const tmp = `${opts.out}.tmp-${process.pid}`;
