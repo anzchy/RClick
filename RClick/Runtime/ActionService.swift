@@ -368,20 +368,20 @@ final class ActionService {
 
         var pathsToDelete: [String] = []
         for item in target {
-            let decodedPath = item.removingPercentEncoding ?? item
+            let path = item
 
-            if Utils.isProtectedFolder(decodedPath) {
+            if Utils.isProtectedFolder(path) {
                 let alert = NSAlert()
                 alert.messageText = AppLocalization.localized("Warning")
-                alert.informativeText = String(format: AppLocalization.localized("Protected system folders cannot be deleted: %@"), decodedPath)
+                alert.informativeText = String(format: AppLocalization.localized("Protected system folders cannot be deleted: %@"), path)
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: AppLocalization.localized("OK"))
                 alert.runModal()
-                logger.warning("试图删除受保护的系统文件夹，操作已被阻止：\(decodedPath)")
+                logger.warning("试图删除受保护的系统文件夹，操作已被阻止：\(path)")
                 continue
             }
 
-            pathsToDelete.append(decodedPath)
+            pathsToDelete.append(path)
         }
 
         guard !pathsToDelete.isEmpty else { return FileActionResult() }
@@ -390,19 +390,19 @@ final class ActionService {
         // "确认后真的会被删掉的数量"，取消授权的项在确认之前就已经出局。
         // 授权由 BookmarkManager 持有到进程结束，提前检查不会失效。
         var authorized: [String] = []
-        for decodedPath in pathsToDelete {
-            let dirURL = URL(fileURLWithPath: decodedPath).deletingLastPathComponent()
+        for path in pathsToDelete {
+            let dirURL = URL(fileURLWithPath: path).deletingLastPathComponent()
             if !permission.hasAccess(to: dirURL) {
                 guard await permission.promptForPermission(for: dirURL) != nil else {
-                    logger.warning("用户取消授权，跳过删除：\(decodedPath)")
+                    logger.warning("用户取消授权，跳过删除：\(path)")
                     continue
                 }
                 guard permission.hasAccess(to: dirURL) else {
-                    logger.warning("授权未覆盖目标目录，跳过删除：\(decodedPath)")
+                    logger.warning("授权未覆盖目标目录，跳过删除：\(path)")
                     continue
                 }
             }
-            authorized.append(decodedPath)
+            authorized.append(path)
         }
 
         guard !authorized.isEmpty else { return FileActionResult() }
@@ -425,12 +425,12 @@ final class ActionService {
         defer { lease.end() }
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
-            for decodedPath in paths {
+            for path in paths {
                 do {
-                    try fileOperations.removeItem(at: URL(fileURLWithPath: decodedPath))
-                    result.completed.append(decodedPath)
+                    try fileOperations.removeItem(at: URL(fileURLWithPath: path))
+                    result.completed.append(path)
                 } catch {
-                    result.failures.append(FileActionFailure(path: decodedPath, error: error))
+                    result.failures.append(FileActionFailure(path: path, error: error))
                 }
             }
             return result

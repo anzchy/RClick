@@ -81,6 +81,32 @@ final class ActionServiceTests {
         return (dir, file)
     }
 
+    private func percentSiblings() throws -> (root: URL, selected: URL, sibling: URL, marker: URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rclick-percent-\(UUID().uuidString)")
+        let selected = root.appendingPathComponent("%2544ocuments")
+        let sibling = root.appendingPathComponent("%44ocuments")
+        try FileManager.default.createDirectory(at: selected, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        let marker = sibling.appendingPathComponent("marker.txt")
+        try Data("keep".utf8).write(to: marker)
+        return (root, selected, sibling, marker)
+    }
+
+    @Test func deletePreservesRawPercentSelection() async throws {
+        let f = try percentSiblings()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        let confirmation = MockConfirmation()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: confirmation)
+        let result = await service.deleteFoldorFile([f.selected.path], "ctx-items")
+        #expect(!FileManager.default.fileExists(atPath: f.selected.path))
+        #expect(FileManager.default.fileExists(atPath: f.sibling.path))
+        #expect(FileManager.default.fileExists(atPath: f.marker.path))
+        #expect(result.completed == [f.selected.path])
+        #expect(confirmation.confirmCalls == [[f.selected.path]])
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
