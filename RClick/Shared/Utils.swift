@@ -6,9 +6,14 @@ public class Utils {
     }
 
     static func isProtectedFolder(_ path: String, homeDirectory: String) -> Bool {
-        let candidate = URL(fileURLWithPath: path.removingPercentEncoding ?? path).standardizedFileURL.path
+        let url = URL(fileURLWithPath: path.removingPercentEncoding ?? path).standardizedFileURL
+        // Resolve only the parent: acting on a leaf symlink must act on the link itself.
+        let candidate = url.path == "/" ? "/" : url.deletingLastPathComponent()
+            .resolvingSymlinksInPath().appendingPathComponent(url.lastPathComponent).path
         return Constants.protectedDirs(homeDirectory: homeDirectory).contains { protectedPath in
-            candidate == URL(fileURLWithPath: protectedPath).standardizedFileURL.path
+            let protectedURL = URL(fileURLWithPath: protectedPath).standardizedFileURL
+            // Some protected entries (such as /var) are themselves system symlinks.
+            return candidate == protectedURL.path || candidate == protectedURL.resolvingSymlinksInPath().path
         }
     }
     // MARK: 
