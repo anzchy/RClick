@@ -9,6 +9,7 @@
 import AppKit
 import Foundation
 import SwiftData
+import Synchronization
 import Testing
 @testable import RClick
 
@@ -311,4 +312,108 @@ final class ActionServiceTests {
         #expect(pasteboard.string(forType: .string) == "a.txt\nb.md")
     }
 
+
+    // MARK: - Access held through the background removal (#13, fix r1 M1)
+
+    /// 沙盒访问的模型：每个目录一个计数，BookmarkManager 的授权与操作租约各占一份。
+    nonisolated private final class FakeSandbox: Sendable {
+        private let counts = Mutex([String: Int]())
+
+        func open(_ dir: URL) { counts.withLock { $0[dir.path, default: 0] += 1 } }
+        func close(_ dir: URL) { counts.withLock { $0[dir.path, default: 0] -= 1 } }
+        func openCount(_ dir: URL) -> Int { counts.withLock { $0[dir.path, default: 0] } }
+        func canWrite(in dir: URL) -> Bool { openCount(dir) > 0 }
+    }
+
+    /// 租约替身：每个目录在沙盒里多开一份访问，end() 时关掉。
+    @MainActor
+    private final class FakeLeaser: ScopedAccessLeasing {
+        let sandbox: FakeSandbox
+        var begun: [[URL]] = []
+        init(sandbox: FakeSandbox) { self.sandbox = sandbox }
+
+        func beginAccess(covering directories: [URL]) -> ScopedAccessLease {
+            begun.append(directories)
+            let dirs = Array(Set(directories.map(\.standardizedFileURL)))
+            let sandbox = self.sandbox
+            dirs.forEach(sandbox.open)
+            return ScopedAccessLease(directories: dirs) { dirs.forEach(sandbox.close) }
+        }
+    }
+
+    /// 只在沙盒里有访问时才删得掉；可以在删某个路径之前停住，等测试放行。
+    nonisolated private final class SandboxedFileOperations: FileOperations {
+        private let base = SystemFileOperations()
+        private let sandbox: FakeSandbox
+        private let pauseBefore: String
+        private let paused = Mutex(false)
+        private let resume = DispatchSemaphore(value: 0)
+
+        init(sandbox: FakeSandbox, pauseBefore path: String) {
+            self.sandbox = sandbox
+            self.pauseBefore = path
+        }
+
+        var isPaused: Bool { paused.withLock { $0 } }
+        func proceed() { resume.signal() }
+
+        func removeItem(at url: URL) throws {
+            if url.path == pauseBefore {
+                paused.withLock { $0 = true }
+                resume.wait()
+            }
+            guard sandbox.canWrite(in: url.deletingLastPathComponent().standardizedFileURL) else {
+                throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: url.path])
+            }
+            try base.removeItem(at: url)
+        }
+
+        func moveItem(at source: URL, to destination: URL) throws { try base.moveItem(at: source, to: destination) }
+        func copyItem(at source: URL, to destination: URL) throws { try base.copyItem(at: source, to: destination) }
+        func volumeIdentity(of url: URL) throws -> VolumeIdentity { try base.volumeIdentity(of: url) }
+        func fileIdentity(of url: URL) throws -> FileIdentity { try base.fileIdentity(of: url) }
+        func isWritable(_ url: URL) -> Bool { base.isWritable(url) }
+        func coordinatedTransfer(_ kind: FileTransferKind, from source: URL, to destination: URL) throws {
+            try base.coordinatedTransfer(kind, from: source, to: destination)
+        }
+    }
+
+    @Test func revokingTheGrantMidBatchDoesNotStopTheRemainingRemovals() async throws {
+        let (dir, fileA) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fileB = dir.appendingPathComponent("second.txt")
+        try Data("y".utf8).write(to: fileB)
+        let grantedDir = dir.standardizedFileURL
+
+        let sandbox = FakeSandbox()
+        sandbox.open(grantedDir)                       // BookmarkManager 恢复/保存书签时开的那一份
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        let leaser = FakeLeaser(sandbox: sandbox)
+        let fileOperations = SandboxedFileOperations(sandbox: sandbox, pauseBefore: fileB.path)
+        defer { fileOperations.proceed() }
+        let service = ActionService(
+            state: MockState(), permission: permission, confirmation: MockConfirmation(),
+            fileOperations: fileOperations, accessLeaser: leaser
+        )
+
+        let deletion = Task {
+            await service.deleteFoldorFile([fileA.path, fileB.path], "ctx-items", optionKeyPressed: true)
+        }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !fileOperations.isPaused, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        try #require(fileOperations.isPaused)          // 批次停在 A 删完、B 之前
+
+        sandbox.close(grantedDir)                      // 设置页撤销授权：BookmarkManager.removeDirectory → stopAccessing
+        fileOperations.proceed()
+        let result = await deletion.value
+
+        #expect(result.failures.map(\.path) == [])
+        #expect(result.completed == [fileA.path, fileB.path])
+        #expect(!FileManager.default.fileExists(atPath: fileB.path))
+        #expect(leaser.begun.count == 1)
+        #expect(sandbox.openCount(grantedDir) == 0)    // 租约在批次结束后归还
+    }
 }

@@ -24,6 +24,8 @@ final class ActionService {
     private let pasteboard: NSPasteboard
     /// 当前时间；只用于自动重命名等待 Finder 的截止时间。
     private let now: @Sendable () -> Date
+    /// 删除批次在后台执行期间持有的目录访问。
+    private let accessLeaser: any ScopedAccessLeasing
     /// 长时间文件操作的串行后台执行器；弹窗与授权面板不进这里。
     private let executor = ActionExecutor()
 
@@ -33,7 +35,8 @@ final class ActionService {
         confirmation: DeleteConfirmationProviding,
         fileOperations: any FileOperations = SystemFileOperations(),
         pasteboard: NSPasteboard = .general,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser()
     ) {
         self.state = state
         self.permission = permission
@@ -41,6 +44,7 @@ final class ActionService {
         self.fileOperations = fileOperations
         self.pasteboard = pasteboard
         self.now = now
+        self.accessLeaser = accessLeaser
     }
 
     // MARK: - SystemActions
