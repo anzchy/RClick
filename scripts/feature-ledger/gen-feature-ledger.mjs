@@ -163,9 +163,7 @@ function codeLines(text, ext) {
   return codeFlags(text, ext).filter(Boolean).length;
 }
 
-const stripStrings = (line) => line.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');
-
-/** Last line of the block that opens at or after `start`: braces for Swift and JS, indentation for Python. */
+/** Last line of the block that opens at or after `start` (masked lines): braces for Swift and JS, indentation for Python. */
 function blockEnd(lines, start, python) {
   if (python) {
     const indent = lines[start].search(/\S/);
@@ -180,7 +178,7 @@ function blockEnd(lines, start, python) {
   let depth = 0;
   let opened = false;
   for (let i = start; i < lines.length; i++) {
-    for (const ch of stripStrings(lines[i])) {
+    for (const ch of lines[i]) {
       if (ch === "{") { depth++; opened = true; } else if (ch === "}") depth--;
     }
     if (opened && depth <= 0) return i;
@@ -190,15 +188,17 @@ function blockEnd(lines, start, python) {
 
 /**
  * Test cases in a test file, each with the line range of its declaration and body: Swift Testing `@Test`,
- * XCTest `func test…`, Python `def test_…`, node:test `test(…)`.
+ * XCTest `func test…`, Python `def test_…`, node:test `test(…)`. Declarations are read from the
+ * scanner's mask, so a commented-out test or a declaration inside a string does not count.
  */
 function testCases(text, ext) {
   const lines = text.split("\n");
+  const masked = mask(text, ext).split("\n");
   const python = ext === ".py";
   const cases = [];
   let attribute = null; // line of a pending Swift `@Test` attribute
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (let i = 0; i < masked.length; i++) {
+    const line = masked[i];
     let name = null;
     let start = i;
     if (python) {
@@ -207,16 +207,20 @@ function testCases(text, ext) {
     } else {
       if (/^\s*@Test\b/.test(line)) attribute ??= i;
       const swift = /\bfunc\s+(\w+)\s*\(/.exec(line);
-      const js = /^\s*(?:test|it)\(\s*(["'`])(.*?)\1/.exec(line);
+      const js = /^\s*(?:test|it)\(\s*(["'`])/.exec(line);
       if (swift && (attribute !== null || swift[1].startsWith("test"))) {
         name = swift[1];
         start = attribute ?? i;
-      } else if (js) name = js[2];
+      } else if (js) {
+        // The name is a string, so the mask hides it: read it from the original line between the quotes.
+        const open = js[0].length;
+        const close = line.indexOf(js[1], open);
+        name = lines[i].slice(open, close === -1 ? undefined : close);
+      }
       if (swift) attribute = null;
     }
     if (name === null) continue;
-    const end = blockEnd(lines, i, python);
-    cases.push({ name, lines: lines.slice(start, end + 1).join("\n") });
+    cases.push({ name, start, end: blockEnd(masked, i, python) });
   }
   return cases;
 }
@@ -298,13 +302,14 @@ function measureTests(entries, files, read) {
     const text = read(f);
     const ext = path.extname(f);
     const all = testCases(text, ext);
+    const flags = codeFlags(text, ext);
     if (slot.whole) {
       cases += all.length;
-      lines += codeLines(text, ext);
+      lines += flags.filter(Boolean).length;
     } else {
       const picked = all.filter((c) => slot.filters.some((x) => c.name.toLowerCase().includes(x)));
       cases += picked.length;
-      lines += picked.reduce((s, c) => s + codeLines(c.lines, ext), 0);
+      lines += picked.reduce((s, c) => s + flags.slice(c.start, c.end + 1).filter(Boolean).length, 0);
     }
   }
   return { files: perFile.size, cases, lines };

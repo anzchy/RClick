@@ -316,3 +316,50 @@ test("code lines: a comment and code on one line count as code, strings are not 
   assert.equal(row(r.text, "strings")["Code lines"], "6"); // every line: no comment here
   assert.equal(row(r.text, "python")["Code lines"], "5"); // all but the first line
 });
+
+// Commented-out tests and declarations inside strings are not test cases.
+const SWIFT_TESTS_WITH_DEAD_CODE = [
+  "import Testing",
+  "struct Tests {",
+  "    // func testRetired() {}",
+  "    /* @Test func blockRetired() {} */",
+  "    /*",
+  "    @Test",
+  "    */",
+  "    func helper() {}",
+  '    let note = "func testInString() {}"',
+  "    @Test func real() {",
+  "        #expect(true)",
+  "    }",
+  "}",
+  "",
+].join("\n");
+
+test("a commented-out test or a declaration inside a string is not a test case", (t) => {
+  const root = fixture(t,
+    { "App/Copier.swift": SWIFT_SOURCE, "AppTests/Tests.swift": SWIFT_TESTS_WITH_DEAD_CODE },
+    [{ id: "whole", name: "Whole", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+      tests: ["AppTests/Tests.swift"] }],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "whole")["Test cases"], "1"); // only real()
+});
+
+test("a test filter that matches only a comment or a string is a stale spine entry", (t) => {
+  const dead = ["testRetired", "blockRetired", "helper", "testInString"];
+  const root = fixture(t,
+    { "App/Copier.swift": SWIFT_SOURCE, "AppTests/Tests.swift": SWIFT_TESTS_WITH_DEAD_CODE },
+    [
+      { id: "live", name: "Live", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: ["AppTests/Tests.swift::real"] },
+      ...dead.map((name) => ({ id: `dead-${name.toLowerCase()}`, name, area: "Menu", process: ["app"],
+        paths: ["App/Copier.swift"], tests: [`AppTests/Tests.swift::${name}`] })),
+    ],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 65, `a filter matching only dead text must fail closed:\n${r.stderr}`);
+  for (const name of dead) assert.match(r.stderr, new RegExp(`Tests\\.swift::${name}" matches no test case`));
+  assert.doesNotMatch(r.stderr, /::real/, "a live filter is not reported");
+  assert.equal(r.text, null);
+});
