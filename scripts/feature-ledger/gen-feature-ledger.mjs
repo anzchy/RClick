@@ -306,11 +306,15 @@ const isoDay = (t) => new Date(t * 1000).toISOString().slice(0, 10);
 // A spine field that is ABSENT means nobody looked; an EMPTY list means someone looked and found none.
 const UNMEASURED = null;
 
-/** CHANGELOG lines (entries) that name any of the terms, case-insensitively; null when either side is missing. */
+/**
+ * CHANGELOG lines (entries) that name any of the terms, case-insensitively, where the term starts a word:
+ * "Hide" counts "Hides" but not "Unhide" or "Chide". Null when either side is missing.
+ */
 function changelogMentions(changelog, terms) {
   if (changelog === null || !Array.isArray(terms)) return UNMEASURED;
-  const lower = terms.map((t) => t.toLowerCase());
-  return changelog.split("\n").filter((l) => lower.some((t) => l.toLowerCase().includes(t))).length;
+  const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = terms.map((t) => new RegExp(`(?<![\\p{L}\\p{N}_])${escape(t)}`, "iu"));
+  return changelog.split("\n").filter((l) => patterns.some((p) => p.test(l))).length;
 }
 
 /** Test files, cases and lines of a feature's test entries; a file named whole and by filter counts once. */
@@ -396,7 +400,7 @@ function render(spine, rows, opts) {
     "| Last touch | the newest commit that changed one of the feature's files, through renames (`git log -M --name-status`), with its commit date |",
     `| Commits (${w} d) | commits that changed the feature's files in the ${w} days before the generating commit's date (\`--window-days\`), through renames |`,
     "| Specs | linked spec files (every one must exist, or the generator refuses) |",
-    "| CHANGELOG | lines of `CHANGELOG.md` naming one of the feature's `changelog` terms, case-insensitive |",
+    "| CHANGELOG | lines of `CHANGELOG.md` naming one of the feature's `changelog` terms, case-insensitive, where the term starts a word (`Hide` counts `Hides`, not `Unhide`). A line counts whatever sense the word has there (`Update` also counts \"Update the settings links\"), so read the cell as an upper bound |",
     "",
     "There is no issue-count column: a feature that is off by default (Hide, Unhide, AirDrop, Common Dirs) draws no issues because nobody reaches it, so a low count would restate the default and read as evidence. Issues are linked in the spine and discussed in the ledger.",
     "",
