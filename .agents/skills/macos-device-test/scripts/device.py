@@ -269,7 +269,7 @@ PLUGINKIT_LINE = re.compile(r'^\s*([+\-!=?]*)\s*(\S+)\(([^)]*)\)\s*$')
 
 
 def parse_pluginkit(output):
-    """Parse `pluginkit -m -v -i <id>` output into [{flags, id, version, path}].
+    """Parse `pluginkit -m -v` registration output into [{flags, id, version, path}].
 
     Lines look like `+    cn.anzchy.RClick.FinderSyncExt(2.3.4)\t<uuid>\t<date>\t/path/FinderSyncExt.appex`.
     Flags: `+` enabled by the user, `-` disabled, `=` superseded, `!` debug, empty = undecided.
@@ -289,10 +289,11 @@ def parse_pluginkit(output):
 
 def extension_entries():
     # Read-only. Never `pluginkit -e use|ignore` or `-a/-r` from a script: that changes system state.
-    r = command(['/usr/bin/pluginkit', '-m', '-v', '-i', EXT_ID])
+    r = command(['/usr/bin/pluginkit', '-m', '-v', '-p', 'com.apple.FinderSync'])
     if r.returncode not in (0, 1):
         raise RuntimeError('pluginkit query failed: ' + (r.stderr.strip() or str(r.returncode)))
-    return parse_pluginkit(r.stdout)
+    # Include dormant upstream and other RClick identities, not just the fork ID.
+    return [entry for entry in parse_pluginkit(r.stdout) if 'rclick' in entry['id'].lower()]
 
 
 def accessibility_trusted():
@@ -461,7 +462,7 @@ def collect(run, expected):
 
 def verdicts(data):
     app = Path(data['appPath']) if data.get('appPath') else None
-    ours = [e for e in data.get('extensions', []) if app and e.get('path') and Path(e['path']).is_relative_to(app)]
+    ours = [e for e in data.get('extensions', []) if e.get('id') == EXT_ID and app and e.get('path') and Path(e['path']).is_relative_to(app)]
     foreign = [e for e in data.get('extensions', []) if e not in ours]
     ext_procs = data.get('extProcesses', [])
     checks = [
@@ -477,7 +478,7 @@ def verdicts(data):
         ('launch-log', LAUNCH_LOG in data.get('log', ''), f'public "{LAUNCH_LOG}" log line missing for this PID'),
         ('extension-registered', len(ours) == 1 and not foreign,
          f'expected exactly one {EXT_ID} registration, inside this run\'s bundle; found '
-         + (', '.join(str(e.get('path')) for e in data.get('extensions', [])) or 'none')),
+         + (', '.join(str(e.get('id')) + ' at ' + str(e.get('path')) for e in data.get('extensions', [])) or 'none')),
         ('extension-enabled', len(ours) == 1 and '+' in ours[0].get('flags', ''),
          'extension not enabled; the user enables it in System Settings (never pluginkit -e from a run)'),
         ('extension-process', len(ext_procs) == 1 and app is not None and Path(ext_procs[0]).is_relative_to(app),

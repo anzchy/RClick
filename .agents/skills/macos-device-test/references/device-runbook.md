@@ -39,12 +39,16 @@ menus are native AppKit; @2x is not a criterion for RClick unless a brief says s
   when `RCLICK_PICSEE_GUI_SCRIPT` / `RCLICK_MDPRO_GUI_SCRIPT` are set). Acquire before the first launch, Finder
   window, click, key or screenshot; hold it across relaunches; release after cleanup, also on aborted runs. Builds
   and log reads don't need it.
-- **One RClick per machine.** All copies share the bundle ID, the App Group, the IPC notification names and the HMAC
-  key, so two running copies both execute every Finder click. `build.sh`, `launch.sh` and `adopt.sh` refuse when any
+- **One RClick per machine for device attribution.** Copies of the fork share its bundle ID, App Group and IPC
+  channels. The fork uses `cn.anzchy.RClick.MainToExtension` / `cn.anzchy.RClick.ExtensionToMain`, isolating its
+  clicks, acknowledgements and configuration from upstream copies. The HMAC key and message format are unchanged. `build.sh`, `launch.sh` and `adopt.sh` refuse when any
   `RClick` process is running that this run did not record. Ask the user to quit it; never quit it for them.
 - **One extension registration.** If another `RClick.app` (an installed copy, an Xcode DerivedData build) has its
   `FinderSyncExt` registered, pluginkit may load that one instead. Doctor's `extension-registered` line fails and
-  names the other path. Ask the user how to resolve it (remove the other copy, or approve a `pluginkit` change);
+  names the other identity and path, including dormant upstream registrations. Doctor inventories all FinderSync
+  registrations via `pluginkit -m -v -p com.apple.FinderSync`, filters bundle IDs containing `RClick`
+  (case-insensitive), and treats any non-fork identity or path outside this run as foreign. Fork and upstream
+  extensions can both register and produce separate menu sections despite isolated IPC. Ask the user how to resolve it (remove the other copy, or approve a `pluginkit` change);
   don't decide it.
 
 ## 4. Build
@@ -112,7 +116,7 @@ exits non-zero on any FAIL. Collection errors become FAIL on the affected lines.
 | `fresh-sources` | build inputs still match the recorded inventory |
 | `single-instance` | the recorded PID is the only `RClick` process |
 | `launch-log` | this PID logged the public `launch decision:` line since `start.txt` |
-| `extension-registered` | exactly one `FinderSyncExt` registration, inside this run's bundle |
+| `extension-registered` | exactly one fork `FinderSyncExt` registration inside this run's bundle; no foreign RClick registration, even dormant |
 | `extension-enabled` | that registration has the `+` (user-enabled) flag |
 | `extension-process` | exactly one `FinderSyncExt` process, running from this run's bundle |
 | `accessibility` | the host terminal is AX-trusted (needed for menus, alerts and panels) |
