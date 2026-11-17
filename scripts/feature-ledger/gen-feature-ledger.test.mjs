@@ -47,9 +47,10 @@ function writeSpine(root, features) {
   put(root, SPINE_REL, JSON.stringify({ features }, null, 2) + "\n");
 }
 
-/** A fresh fixture repository with one commit. Returns its root. */
-function fixture(files, features, when = T0) {
+/** A fresh fixture repository with one commit, removed when the test ends. Returns its root. */
+function fixture(t, files, features, when = T0) {
   const root = mkdtempSync(path.join(tmpdir(), "feature-ledger-"));
+  t.after(() => rmSync(root, { recursive: true, force: true })); // also when an assertion fails
   git(root, ["init", "-q"]);
   for (const [rel, text] of Object.entries(files)) put(root, rel, text);
   writeSpine(root, features);
@@ -102,8 +103,8 @@ const SWIFT_TESTS = [
   "",
 ].join("\n");
 
-test("a measured feature reports its code lines and test cases", () => {
-  const root = fixture(
+test("a measured feature reports its code lines and test cases", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
     [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
       tests: ["AppTests/CopierTests.swift"], specs: [], changelog: [] }],
@@ -115,11 +116,10 @@ test("a measured feature reports its code lines and test cases", () => {
   assert.equal(cells["Code lines"], "4"); // import, struct, func, closing brace
   assert.equal(cells["Test files"], "1");
   assert.equal(cells["Test cases"], "2");
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("an unmeasured signal prints -- and a measured zero prints 0", () => {
-  const root = fixture(
+test("an unmeasured signal prints -- and a measured zero prints 0", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "App/Hider.swift": SWIFT_SOURCE, "CHANGELOG.md": "# Changelog\n- Added Copy\n" },
     [
       // Inspected: no tests exist, no spec exists, the CHANGELOG term matches nothing.
@@ -138,11 +138,10 @@ test("an unmeasured signal prints -- and a measured zero prints 0", () => {
     assert.equal(unlooked[col], "--", `${col} of an unlooked feature`);
     assert.notEqual(unlooked[col], "0", `${col}: -- must never collapse to 0`);
   }
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a missing CHANGELOG makes every CHANGELOG cell --, never 0", () => {
-  const root = fixture(
+test("a missing CHANGELOG makes every CHANGELOG cell --, never 0", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE },
     [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
       tests: [], specs: [], changelog: ["Copy"] }],
@@ -150,11 +149,10 @@ test("a missing CHANGELOG makes every CHANGELOG cell --, never 0", () => {
   const r = generate(root);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(row(r.text, "copy")["CHANGELOG"], "--");
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a spine path that matches nothing fails closed and names the entry", () => {
-  const root = fixture(
+test("a spine path that matches nothing fails closed and names the entry", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
     [
       { id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
@@ -171,11 +169,10 @@ test("a spine path that matches nothing fails closed and names the entry", () =>
   }
   assert.doesNotMatch(r.stderr, /App\/Copier\.swift/, "a live path is not reported");
   assert.equal(r.text, null, "nothing is written from a stale spine");
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a file renamed away from its spine path makes the spine stale", () => {
-  const root = fixture(
+test("a file renamed away from its spine path makes the spine stale", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE },
     [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }],
   );
@@ -185,11 +182,10 @@ test("a file renamed away from its spine path makes the spine stale", () => {
   const r = generate(root);
   assert.equal(r.status, 65);
   assert.match(r.stderr, /copy.*App\/Copier\.swift/);
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a malformed spine entry is refused", () => {
-  const root = fixture(
+test("a malformed spine entry is refused", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE },
     [
       { id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] },
@@ -201,11 +197,10 @@ test("a malformed spine entry is refused", () => {
   assert.match(r.stderr, /duplicate id "copy"/);
   assert.match(r.stderr, /process "daemon"/);
   assert.match(r.stderr, /paths/);
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("history follows renames: last touch and commits in the window", () => {
-  const root = fixture(
+test("history follows renames: last touch and commits in the window", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "App/Other.swift": SWIFT_SOURCE },
     [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/PathCopier.swift"] }],
     T0, // created (the spine names the post-rename path, so add the spine after the rename below)
@@ -229,20 +224,18 @@ test("history follows renames: last touch and commits in the window", () => {
   const narrow = generate(root); // default window: 90 days before HEAD's commit date
   assert.equal(narrow.status, 0, narrow.stderr);
   assert.equal(row(narrow.text, "copy")["Commits (90 d)"], "1");
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a bad --window-days is a usage error", () => {
-  const root = fixture({ "App/Copier.swift": SWIFT_SOURCE },
+test("a bad --window-days is a usage error", (t) => {
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE },
     [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }]);
   const r = generate(root, ["--window-days=soon"]);
   assert.equal(r.status, 64);
   assert.equal(r.text, null);
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("the output is reproducible: same commit, same bytes, and only the commit identifies the run", () => {
-  const root = fixture(
+test("the output is reproducible: same commit, same bytes, and only the commit identifies the run", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "App/Hider.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
     [
       { id: "hide", name: "Hide", area: "Menu", process: ["app"], paths: ["App/Hider.swift"] },
@@ -263,11 +256,10 @@ test("the output is reproducible: same commit, same bytes, and only the commit i
   // Rows keep the spine's order, and carry the spine's process.
   assert.ok(second.text.indexOf("`hide`") < second.text.indexOf("`copy`"), "rows follow the spine order");
   assert.equal(row(second.text, "copy")["Process"], "extension, shared");
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a shared test file is split by case name, and test lines follow the split", () => {
-  const root = fixture(
+test("a shared test file is split by case name, and test lines follow the split", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
     [
       { id: "whole", name: "Whole", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
@@ -285,11 +277,10 @@ test("a shared test file is split by case name, and test lines follow the split"
   assert.equal(one["Test files"], "1");
   assert.equal(one["Test cases"], "1");
   assert.equal(one["Test lines"], "3"); // the @Test line, its #expect, its closing brace
-  rmSync(root, { recursive: true, force: true });
 });
 
-test("a test filter that matches no case is a stale spine entry", () => {
-  const root = fixture(
+test("a test filter that matches no case is a stale spine entry", (t) => {
+  const root = fixture(t,
     { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
     [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
       tests: ["AppTests/CopierTests.swift::pastes"] }],
@@ -297,5 +288,4 @@ test("a test filter that matches no case is a stale spine entry", () => {
   const r = generate(root);
   assert.equal(r.status, 65);
   assert.match(r.stderr, /copy.*CopierTests\.swift::pastes/);
-  rmSync(root, { recursive: true, force: true });
 });
