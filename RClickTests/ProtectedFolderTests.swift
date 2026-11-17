@@ -131,4 +131,33 @@ struct ProtectedFolderTests {
         #expect(!Utils.isProtectedFolder(callerPath, homeDirectory: home.path))
     }
 
+
+    @Test func refusesUnresolvedParentsButAllowsMissingChildren() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("protected-denied-\(UUID().uuidString)")
+        let locked = root.appendingPathComponent("locked")
+        defer {
+            try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path)
+            try? fm.removeItem(at: root)
+        }
+        let home = root.appendingPathComponent("Home")
+        try fm.createDirectory(at: home.appendingPathComponent("Documents"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: locked, withIntermediateDirectories: true)
+        let alias = locked.appendingPathComponent("alias")
+        try fm.createSymbolicLink(at: alias, withDestinationURL: home)
+        let protectedPath = alias.path + "/Documents"
+        let child = alias.path + "/Documents/missing"
+        #expect(Utils.isProtectedFolder(protectedPath, homeDirectory: home.path))
+        #expect(!Utils.isProtectedFolder(child, homeDirectory: home.path))
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        #expect(Utils.isProtectedFolder(protectedPath, homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder(child, homeDirectory: home.path))
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path)
+        #expect(Utils.isProtectedFolder(protectedPath, homeDirectory: home.path))
+        #expect(!Utils.isProtectedFolder(child, homeDirectory: home.path))
+        #expect(!Utils.isProtectedFolder(home.path + "/Documents/nonexistent", homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder("", homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder("relative/Documents", homeDirectory: home.path))
+    }
+
 }
