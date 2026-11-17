@@ -38,6 +38,10 @@ public class Utils {
     }
     // MARK: 
     public static func getRealHomeDir() -> String {
+        // The account record retains relocated homes and avoids the sandbox container.
+        if let directory = getpwuid(getuid())?.pointee.pw_dir {
+            return String(cString: directory)
+        }
         let fullPath = NSHomeDirectory()
         let components = fullPath.components(separatedBy: "/")
         let limitedComponents = Array(components.prefix(3))  // 取前3个是因为第一个是空字符串（路径以/开头）
