@@ -131,7 +131,7 @@ final class ActionService {
         logger.debug("开始打开常用目录，目标路径：\(target)")
 
         for dirPath in target {
-            let path = dirPath.removingPercentEncoding ?? dirPath
+            let path = dirPath
             let url = URL(fileURLWithPath: path, isDirectory: true)
 
             if !permission.hasAccess(to: url) {

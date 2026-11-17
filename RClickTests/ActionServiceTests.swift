@@ -164,6 +164,16 @@ final class ActionServiceTests {
         #expect(permission.promptCalls.map(\.path) == [f.selected.path])
     }
 
+    @Test func commonDirectoryRequestsAccessForRawPercentPath() async throws {
+        let f = try percentSiblings()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let permission = MockPermission()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation())
+        // Refuse permission so the test never opens Finder.
+        await service.openCommonDirs(target: [f.selected.path])
+        #expect(permission.promptCalls.map(\.path) == [f.selected.path])
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }
