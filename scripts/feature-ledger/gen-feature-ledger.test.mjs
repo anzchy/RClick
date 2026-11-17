@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, renameSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, renameSync, linkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -482,4 +482,19 @@ test("Specs counts the linked specs, and a CHANGELOG term matches at the start o
   assert.equal(row(r.text, "hide")["CHANGELOG"], "3");
   assert.equal(row(r.text, "unhide")["CHANGELOG"], "2");
   assert.equal(row(r.text, "copy-path")["CHANGELOG"], "1");
+});
+
+test("the output is replaced atomically: the old file is never written in place", (t) => {
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }]);
+  const out = path.join(root, "out", "feature-metrics.md");
+  put(root, "out/feature-metrics.md", "old table\n");
+  // A hard link shares the old file's inode. A write in place (truncate, then write) would change what the
+  // link reads, and a reader of the old file could see it half written; a rename leaves the old inode whole.
+  linkSync(out, path.join(root, "out", "old-inode"));
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.text, /^\| `copy` \|/m);
+  assert.equal(readFileSync(path.join(root, "out", "old-inode"), "utf8"), "old table\n", "the old file was written in place");
+  assert.deepEqual(readdirSync(path.join(root, "out")).sort(), ["feature-metrics.md", "old-inode"], "no temporary file is left");
 });
