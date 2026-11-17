@@ -21,6 +21,8 @@ final class ActionService {
     private let permission: PermissionProviding
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
+    /// 长时间文件操作的串行后台执行器；弹窗与授权面板不进这里。
+    private let executor = ActionExecutor()
 
     init(
         state: ActionStateProviding,
@@ -342,7 +344,6 @@ final class ActionService {
     @discardableResult
     func deleteFoldorFile(_ target: [String], _ trigger: String, optionKeyPressed: Bool = false) async -> FileActionResult {
         logger.info("---- deleteFoldorFile trigger:\(trigger) option:\(optionKeyPressed)")
-        let fm = FileManager.default
 
         if trigger == "ctx-container" {
             let alert = NSAlert()
@@ -403,11 +404,25 @@ final class ActionService {
             }
         }
 
-        for decodedPath in authorized {
-            do { try fm.removeItem(atPath: decodedPath) }
-            catch { logger.error("delete \(decodedPath) file run error \(error)") }
+        // 真正的删除放到串行后台执行器：确认框与授权面板已经在主线程上问完了。
+        let fileOperations = self.fileOperations
+        let paths = authorized
+        let result = await executor.run { () -> FileActionResult in
+            var result = FileActionResult()
+            for decodedPath in paths {
+                do {
+                    try fileOperations.removeItem(at: URL(fileURLWithPath: decodedPath))
+                    result.completed.append(decodedPath)
+                } catch {
+                    result.failures.append(FileActionFailure(path: decodedPath, error: error))
+                }
+            }
+            return result
         }
-        return FileActionResult()
+        for failure in result.failures {
+            logger.error("delete \(failure.path) file run error \(failure.error)")
+        }
+        return result
     }
 
     // MARK: - NewFileActions
