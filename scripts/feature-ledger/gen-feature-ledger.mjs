@@ -1,6 +1,34 @@
 #!/usr/bin/env node
 // Generates docs/feature-metrics.md, the per-feature evidence table of RClick's feature ledger.
-// See docs/agents/feature-ledger.md for who runs it and when.
+//
+// The spine (docs/feature-ledger/feature-map.json) is the one hand-typed table: it names each feature
+// and the paths, tests and specs it occupies. Every number in the output is measured from the
+// repository here: code and test lines, test files and cases, last touch and commits in a window
+// (git, through renames), CHANGELOG mentions, linked specs. Nothing is estimated. The qualitative
+// half, docs/feature-ledger.md, is written by hand and cites these cells instead of restating them.
+// After xiaolai/vmark's scripts/gen-feature-ledger.mjs, adapted to a Swift app with no coverage,
+// no tokei and no settings-defaults file to join.
+//
+// THE HONESTY RULE: a signal nobody measured prints `--`, never `0`. `0` says "measured, none";
+// `--` says "nobody looked". An absent tests/specs/changelog field in the spine is `--`; an empty
+// list is a deliberate 0. A missing CHANGELOG.md makes every CHANGELOG cell `--`.
+//
+// FAILS CLOSED: a spine paths, tests or specs entry that matches no tracked file, a test filter
+// (`file::name`) that matches no test case, or a malformed entry exits 65, names each offending
+// entry and writes nothing. A table that silently drops a renamed feature looks as green as one
+// that works. A git failure exits 66; a bad argument exits 64.
+//
+// NO ISSUE-COUNT COLUMN: Hide, Unhide, AirDrop and Common Dirs are off by default, so they draw no
+// issues because nobody reaches them; a count would restate the default and read as evidence.
+//
+// REPRODUCIBLE: rows keep the spine's order, the commit window counts back from HEAD's commit date
+// (not the wall clock), and the only run identifier in the body is "generated from commit <sha>".
+// Node 22, ES modules, no network, no dependency beyond git.
+//
+// Run:   node scripts/feature-ledger/gen-feature-ledger.mjs [--root=<repo>] [--out=<file>]
+//            [--spine=<file>] [--window-days=<n>]       (default window: 90 days)
+// Tests: node --test scripts/feature-ledger/*.test.mjs
+// Who runs it and when: docs/agents/feature-ledger.md.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
