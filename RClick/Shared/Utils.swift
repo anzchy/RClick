@@ -5,8 +5,9 @@ public class Utils {
         isProtectedFolder(path, homeDirectory: getRealHomeDir())
     }
 
+    /// Accept an already-decoded filesystem path, exactly as used by the file operation.
     static func isProtectedFolder(_ path: String, homeDirectory: String) -> Bool {
-        let rawURL = URL(fileURLWithPath: path.removingPercentEncoding ?? path)
+        let rawURL = URL(fileURLWithPath: path)
         // A directory traversal suffix acts on the target of a leaf directory link.
         let traversesLeaf = path.hasSuffix("/") || path.hasSuffix("/.")
         let url = (traversesLeaf ? rawURL.resolvingSymlinksInPath() : rawURL).standardizedFileURL

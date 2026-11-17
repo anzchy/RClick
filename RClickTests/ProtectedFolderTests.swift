@@ -11,11 +11,14 @@ struct ProtectedFolderTests {
                        "/Users", "/usr", "/bin", "/sbin", "/var"]
         for folder in folders {
             let spellings = [folder, folder + "/", folder + "/.", folder + "/child/..",
-                             folder.replacingOccurrences(of: "/", with: "//"),
-                             folder.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!]
+                             folder.replacingOccurrences(of: "/", with: "//")]
             for path in spellings {
                 #expect(Utils.isProtectedFolder(path, homeDirectory: home), "Must protect \(path)")
             }
+            // Decode transport encoding once, as item-action callers do.
+            let encoded = folder.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+            let callerPath = encoded.removingPercentEncoding!
+            #expect(Utils.isProtectedFolder(callerPath, homeDirectory: home), "Must protect decoded \(encoded)")
         }
         for path in ["/ApplicationsX", "/Applications/Foo.app", home + "/Documents/x", home + "/Desktop/danger"] {
             #expect(!Utils.isProtectedFolder(path, homeDirectory: home), "Must allow \(path)")
@@ -98,6 +101,34 @@ struct ProtectedFolderTests {
             #expect(fm.fileExists(atPath: home.path))
             #expect(fm.fileExists(atPath: marker.path))
         }
+    }
+
+
+    @Test func filesystemPathsPreserveLiteralPercentNames() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("protected-percent-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let home = root.appendingPathComponent("Percent%41Home")
+        let documents = home.appendingPathComponent("Documents")
+        let lookalike = home.appendingPathComponent("%44ocuments")
+        try fm.createDirectory(at: documents, withIntermediateDirectories: true)
+        try fm.createDirectory(at: lookalike, withIntermediateDirectories: true)
+        let ordinaryHome = root.appendingPathComponent("Home")
+        try fm.createDirectory(at: ordinaryHome.appendingPathComponent("%44ocuments"), withIntermediateDirectories: true)
+        #expect(!Utils.isProtectedFolder(ordinaryHome.path + "/%44ocuments", homeDirectory: ordinaryHome.path))
+        // Hide-contents uses URL.path directly.
+        #expect(Utils.isProtectedFolder(home.path, homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder(documents.path, homeDirectory: home.path))
+        #expect(!Utils.isProtectedFolder(lookalike.path, homeDirectory: home.path))
+        // Item actions decode once before checking and acting on the same path.
+        for url in [home, documents] {
+            let encoded = url.path.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+            let callerPath = try #require(encoded.removingPercentEncoding)
+            #expect(Utils.isProtectedFolder(callerPath, homeDirectory: home.path))
+        }
+        let encodedLookalike = lookalike.path.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let callerPath = try #require(encodedLookalike.removingPercentEncoding)
+        #expect(!Utils.isProtectedFolder(callerPath, homeDirectory: home.path))
     }
 
 }
