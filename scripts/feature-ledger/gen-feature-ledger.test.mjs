@@ -117,3 +117,38 @@ test("a measured feature reports its code lines and test cases", () => {
   assert.equal(cells["Test cases"], "2");
   rmSync(root, { recursive: true, force: true });
 });
+
+test("an unmeasured signal prints -- and a measured zero prints 0", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE, "App/Hider.swift": SWIFT_SOURCE, "CHANGELOG.md": "# Changelog\n- Added Copy\n" },
+    [
+      // Inspected: no tests exist, no spec exists, the CHANGELOG term matches nothing.
+      { id: "inspected", name: "Inspected", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: [], specs: [], changelog: ["Paste"] },
+      // Nobody linked tests, specs or CHANGELOG terms: those signals were not measured.
+      { id: "unlooked", name: "Unlooked", area: "Menu", process: ["app"], paths: ["App/Hider.swift"] },
+    ],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  const inspected = row(r.text, "inspected");
+  const unlooked = row(r.text, "unlooked");
+  for (const col of ["Test files", "Test cases", "Specs", "CHANGELOG"]) {
+    assert.equal(inspected[col], "0", `${col} of an inspected feature`);
+    assert.equal(unlooked[col], "--", `${col} of an unlooked feature`);
+    assert.notEqual(unlooked[col], "0", `${col}: -- must never collapse to 0`);
+  }
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a missing CHANGELOG makes every CHANGELOG cell --, never 0", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+      tests: [], specs: [], changelog: ["Copy"] }],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "copy")["CHANGELOG"], "--");
+  rmSync(root, { recursive: true, force: true });
+});
