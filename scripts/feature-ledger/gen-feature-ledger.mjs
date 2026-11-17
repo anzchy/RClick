@@ -50,6 +50,8 @@ const SPINE_REL = "docs/feature-ledger/feature-map.json";
 const OUTPUT_REL = "docs/feature-metrics.md";
 
 const PROCESSES = new Set(["app", "extension", "shared", "ipc"]);
+/** Files whose test cases the generator can find; a test entry in any other format has no case count. */
+const CASE_EXTENSIONS = new Set([".swift", ".js", ".mjs", ".ts", ".py"]);
 const CODE_EXTENSIONS = new Set([".swift", ".m", ".h", ".mjs", ".js", ".ts", ".py", ".sh"]);
 
 const WINDOW_DAYS = 90;
@@ -329,6 +331,10 @@ function measureTests(entries, files, read) {
       perFile.set(f, slot);
     }
   }
+  // A file with no case parser (a Markdown plan, a JSON fixture) leaves cases and lines unmeasured, not 0.
+  if ([...perFile.keys()].some((f) => !CASE_EXTENSIONS.has(path.extname(f)))) {
+    return { files: perFile.size, cases: UNMEASURED, lines: UNMEASURED };
+  }
   let cases = 0;
   let lines = 0;
   for (const [f, slot] of perFile) {
@@ -395,8 +401,8 @@ function render(spine, rows, opts) {
     "| Code files | tracked files under the feature's `paths` with a code extension (" + [...CODE_EXTENSIONS].join(" ") + ") |",
     "| Code lines | non-blank lines of those files that are not only a comment. A file listed by several features counts in each: the column is how much code a reader opens, not an ownership share |",
     "| Test files | tracked files under the feature's `tests` entries |",
-    "| Test cases | Swift Testing `@Test` and XCTest `func test…` declarations, Python `def test_…`, node:test `test(…)` in those files; an entry `file::name` counts only the cases whose name contains `name` |",
-    "| Test lines | non-blank, non-comment lines of those test files; for a `file::name` entry, only the lines of the matched cases (declaration through closing brace, or the indented body in Python) |",
+    "| Test cases | Swift Testing `@Test` and XCTest `func test…` declarations, Python `def test_…`, node:test `test(…)` in those files, read past comments and strings; an entry `file::name` counts only the cases whose name contains `name`. `--` when a listed file is in another format (" + [...CASE_EXTENSIONS].join(" ") + " are parsed) |",
+    "| Test lines | non-blank, non-comment lines of those test files; for a `file::name` entry, only the lines of the matched cases (declaration through closing brace, or the indented body in Python); `--` when Test cases is `--` |",
     "| Last touch | the newest commit that changed one of the feature's files, through renames (`git log -M --name-status`), with its commit date |",
     `| Commits (${w} d) | commits that changed the feature's files in the ${w} days before the generating commit's date (\`--window-days\`), through renames |`,
     "| Specs | linked spec files (every one must exist, or the generator refuses) |",
