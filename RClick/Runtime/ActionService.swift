@@ -45,12 +45,12 @@ final class ActionService {
     /// 复制全部选中项的路径到剪贴板（一行一个），并写入文件 URL。
     /// 与扩展内的离线快链路共用 Clipboard 实现。
     func copyPath(_ target: [String]) {
-        Clipboard.copyPaths(target)
+        Clipboard.copyPaths(target, to: pasteboard)
     }
 
     /// 复制全部选中项的文件名（不含路径）到剪贴板，一行一个。
     func copyFileName(_ target: [String]) {
-        Clipboard.copyFileNames(target)
+        Clipboard.copyFileNames(target, to: pasteboard)
     }
 
     // MARK: - AppActions
