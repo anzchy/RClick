@@ -42,6 +42,39 @@ class Pluginkit(unittest.TestCase):
                 with patch.object(device, 'command', return_value=completed(0, output)):
                     self.assertEqual(device.extension_entries(), entries)
 
+    def test_inventory_includes_unelected_registrations_and_explains_enablement(self):
+        dormant = ('     cn.anzchy.RClick.FinderSyncExt(2.3.4)\t<uuid>\t<date>'
+                   '\t/tmp/rclick-device-test/RClick.app/Contents/PlugIns/FinderSyncExt.appex\n')
+        legacy = dormant.replace(device.EXT_ID, 'cn.wflixu.RClick.FinderSyncExt')
+        unrelated = dormant.replace(device.EXT_ID, 'com.example.OtherFinderExtension')
+        for label, all_rows, elected_rows, expected_ids, diagnostic in (
+                ('dormant fork', dormant, '', [device.EXT_ID], 'registered but not enabled'),
+                ('dormant legacy', legacy + unrelated, unrelated,
+                 ['cn.wflixu.RClick.FinderSyncExt'], 'foreign registration'),
+                ('no registration', '', '', [], 'no registration')):
+            with self.subTest(case=label):
+                def inventory(argv):
+                    rows = all_rows if '-A' in argv else elected_rows
+                    return completed(0, rows + f'({len(rows.splitlines())} plug-ins)\n\n')
+                with patch.object(device, 'command', side_effect=inventory):
+                    entries = device.extension_entries()
+                self.assertEqual([entry['id'] for entry in entries], expected_ids)
+                data = good_data()
+                data['extensions'] = entries
+                lines, passed = device.verdicts(data)
+                self.assertFalse(passed)
+                enabled = next(line for line in lines if 'extension-enabled' in line)
+                registered = next(line for line in lines if 'extension-registered' in line)
+                self.assertTrue(enabled.startswith('FAIL'))
+                if label == 'dormant fork':
+                    self.assertEqual(registered, 'PASS extension-registered')
+                    self.assertIn(diagnostic, enabled)
+                    self.assertIn('owner enables it in System Settings', enabled)
+                else:
+                    self.assertTrue(registered.startswith('FAIL'))
+                    self.assertIn(diagnostic, registered)
+                    self.assertIn(diagnostic, enabled)
+
     def test_summary_like_unknown_lines_still_fail_closed(self):
         for line in ('(two plug-ins)', '(2 plug-ins) extra', '(2 plugins)', 'unknown format'):
             with self.subTest(line=line), self.assertRaisesRegex(RuntimeError, 'unrecognised pluginkit line'):

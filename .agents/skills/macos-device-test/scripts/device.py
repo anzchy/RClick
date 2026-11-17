@@ -289,7 +289,7 @@ def parse_pluginkit(output):
 
 def extension_entries():
     # Read-only. Never `pluginkit -e use|ignore` or `-a/-r` from a script: that changes system state.
-    r = command(['/usr/bin/pluginkit', '-m', '-v', '-p', 'com.apple.FinderSync'])
+    r = command(['/usr/bin/pluginkit', '-m', '-A', '-v', '-p', 'com.apple.FinderSync'])
     if r.returncode not in (0, 1):
         raise RuntimeError('pluginkit query failed: ' + (r.stderr.strip() or str(r.returncode)))
     # Include dormant upstream and other RClick identities, not just the fork ID.
@@ -465,6 +465,14 @@ def verdicts(data):
     ours = [e for e in data.get('extensions', []) if e.get('id') == EXT_ID and app and e.get('path') and Path(e['path']).is_relative_to(app)]
     foreign = [e for e in data.get('extensions', []) if e not in ours]
     ext_procs = data.get('extProcesses', [])
+    registration_problem = (
+        'foreign registration: ' + ', '.join(str(e.get('id')) + ' at ' + str(e.get('path')) for e in foreign)
+        if foreign else
+        'no registration for ' + EXT_ID if not ours else
+        'expected exactly one ' + EXT_ID + ' registration inside this run\'s bundle; found ' + str(len(ours)))
+    enablement_problem = (
+        'extension registered but not enabled; the owner enables it in System Settings'
+        if len(ours) == 1 else registration_problem)
     checks = [
         ('bundle-hash', data.get('hashesMatch') is True and bool(data.get('expectedSHA'))
          and data.get('recordedSHA') == data.get('expectedSHA'),
@@ -477,10 +485,8 @@ def verdicts(data):
         ('single-instance', data.get('alone') is True, 'recorded PID is not the only RClick instance'),
         ('launch-log', LAUNCH_LOG in data.get('log', ''), f'public "{LAUNCH_LOG}" log line missing for this PID'),
         ('extension-registered', len(ours) == 1 and not foreign,
-         f'expected exactly one {EXT_ID} registration, inside this run\'s bundle; found '
-         + (', '.join(str(e.get('id')) + ' at ' + str(e.get('path')) for e in data.get('extensions', [])) or 'none')),
-        ('extension-enabled', len(ours) == 1 and '+' in ours[0].get('flags', ''),
-         'extension not enabled; the user enables it in System Settings (never pluginkit -e from a run)'),
+         registration_problem),
+        ('extension-enabled', len(ours) == 1 and '+' in ours[0].get('flags', ''), enablement_problem),
         ('extension-process', len(ext_procs) == 1 and app is not None and Path(ext_procs[0]).is_relative_to(app),
          f'expected one {EXT_NAME} process from this bundle; found ' + (', '.join(ext_procs) or 'none')),
         ('accessibility', data.get('accessibility') is True,
