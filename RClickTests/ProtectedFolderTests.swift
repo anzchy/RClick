@@ -21,4 +21,28 @@ struct ProtectedFolderTests {
             #expect(!Utils.isProtectedFolder(path, homeDirectory: home), "Must allow \(path)")
         }
     }
+
+    @Test func resolvesParentsButPreservesLeafSymlinks() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("protected-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let realParent = root.appendingPathComponent("real")
+        let home = realParent.appendingPathComponent("Home")
+        try fm.createDirectory(at: home.appendingPathComponent("Documents"), withIntermediateDirectories: true)
+        let alias = root.appendingPathComponent("alias")
+        try fm.createSymbolicLink(at: alias, withDestinationURL: realParent)
+        let leaf = root.appendingPathComponent("home-link")
+        try fm.createSymbolicLink(at: leaf, withDestinationURL: home)
+
+        #expect(Utils.isProtectedFolder(alias.appendingPathComponent("Home").path, homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder(alias.appendingPathComponent("Home/Documents").path, homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder(home.path, homeDirectory: alias.appendingPathComponent("Home").path))
+        #expect(!Utils.isProtectedFolder(leaf.path, homeDirectory: home.path))
+        let systemLink = root.appendingPathComponent("applications-link")
+        try fm.createSymbolicLink(at: systemLink, withDestinationURL: URL(fileURLWithPath: "/Applications"))
+        #expect(!Utils.isProtectedFolder(systemLink.path, homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder("/private/var", homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder("/var", homeDirectory: home.path))
+    }
+
 }
