@@ -21,6 +21,12 @@
 // NO ISSUE-COUNT COLUMN: Hide, Unhide, AirDrop and Common Dirs are off by default, so they draw no
 // issues because nobody reaches them; a count would restate the default and read as evidence.
 //
+// PROVENANCE: the generator measures the working tree but names HEAD's commit, so it refuses (exit 65)
+// when a tracked file differs from HEAD or the spine is untracked: the named commit must contain every
+// input. The output file itself is exempt, so regenerating twice is not "dirty". `--allow-dirty` is for
+// a local look; its provenance line says "plus uncommitted changes (dirty)". The committed table is
+// generated from a clean commit of the inputs and committed on its own (docs/agents/feature-ledger.md).
+//
 // SHALLOW CLONES: a `--depth` clone's oldest commit is a grafted boundary that shows every file as
 // added, so Last touch and Commits read from it are wrong, not partial. The generator does not refuse
 // (code, tests, specs and CHANGELOG are still measured from the tree); it prints `--` in every history
@@ -31,7 +37,7 @@
 // Node 22, ES modules, no network, no dependency beyond git.
 //
 // Run:   node scripts/feature-ledger/gen-feature-ledger.mjs [--root=<repo>] [--out=<file>]
-//            [--spine=<file>] [--window-days=<n>]       (default window: 90 days)
+//            [--spine=<file>] [--window-days=<n>] [--allow-dirty]       (default window: 90 days)
 // Tests: node --test scripts/feature-ledger/*.test.mjs
 // Who runs it and when: docs/agents/feature-ledger.md.
 import { execFileSync } from "node:child_process";
@@ -47,11 +53,12 @@ const PROCESSES = new Set(["app", "extension", "shared", "ipc"]);
 const CODE_EXTENSIONS = new Set([".swift", ".m", ".h", ".mjs", ".js", ".ts", ".py", ".sh"]);
 
 const WINDOW_DAYS = 90;
-const USAGE = "usage: node scripts/feature-ledger/gen-feature-ledger.mjs [--root=<repo>] [--out=<file>] [--spine=<file>] [--window-days=<n>]";
+const USAGE = "usage: node scripts/feature-ledger/gen-feature-ledger.mjs [--root=<repo>] [--out=<file>] [--spine=<file>] [--window-days=<n>] [--allow-dirty]";
 
 function parseArgs(argv) {
-  const opts = { root: DEFAULT_ROOT, out: null, spine: SPINE_REL, windowDays: WINDOW_DAYS };
+  const opts = { root: DEFAULT_ROOT, out: null, spine: SPINE_REL, windowDays: WINDOW_DAYS, allowDirty: false };
   for (const a of argv) {
+    if (a === "--allow-dirty") { opts.allowDirty = true; continue; }
     const m = /^--(root|out|spine|window-days)=(.+)$/.exec(a);
     if (!m) throw new Error(`unknown argument ${JSON.stringify(a)}\n${USAGE}`);
     if (m[1] === "window-days") {
@@ -71,6 +78,23 @@ function git(root, args) {
 /** Tracked files that are present on disk, sorted. */
 function trackedFiles(root) {
   return git(root, ["ls-files", "-z"]).split("\0").filter((f) => f && existsSync(path.join(root, f))).sort();
+}
+
+/**
+ * Tracked paths whose working copy differs from HEAD (staged or not), except the output file itself:
+ * the generator measures the working tree, so a dirty tree is not the commit the provenance line names.
+ */
+function dirtyPaths(root, outRel) {
+  const entries = git(root, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "--untracked-files=no"]).split("\0");
+  const dirty = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (!e) continue;
+    if (e[0] === "R" || e[0] === "C") i++; // the next entry is the rename's source
+    const p = e.slice(3);
+    if (p !== outRel) dirty.push(p);
+  }
+  return dirty.sort();
 }
 
 /** The tracked files a spine path names: the file itself, or every file under the directory. */
@@ -352,7 +376,7 @@ function render(spine, rows, opts) {
     "<!-- GENERATED FILE. Do not edit by hand: run `node scripts/feature-ledger/gen-feature-ledger.mjs`. -->",
     "# RClick feature metrics",
     "",
-    `Generated from commit \`${opts.headSha ?? "--"}\` by \`scripts/feature-ledger/gen-feature-ledger.mjs\` from the spine \`${opts.spine}\`.`,
+    `Generated from commit \`${opts.headSha ?? "--"}\`${opts.dirty ? " plus uncommitted changes (dirty)" : ""} by \`scripts/feature-ledger/gen-feature-ledger.mjs\` from the spine \`${opts.spine}\`.`,
     "This is the quantitative half of the feature ledger. Every cell below is measured from the repository; nothing is typed by hand or estimated.",
     "The qualitative half, `docs/feature-ledger.md`, cites these cells and never restates them. Maintenance: `docs/agents/feature-ledger.md`.",
     "",
@@ -462,8 +486,16 @@ function main() {
   if (stale.length) {
     refuse(65, `${opts.spine} is stale; nothing was written. Fix the entry, do not delete the feature:`, stale);
   }
-  const changelogPath = path.join(opts.root, "CHANGELOG.md");
-  const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : null;
+  const outRel = path.relative(opts.root, opts.out).split(path.sep).join("/");
+  const dirty = attempt(66, "git cannot read the working tree status:", () => dirtyPaths(opts.root, outRel));
+  const spineRel = path.relative(opts.root, path.resolve(opts.root, opts.spine)).split(path.sep).join("/");
+  if (!files.includes(spineRel)) dirty.push(`${spineRel} (not tracked)`);
+  if (dirty.length && !opts.allowDirty) {
+    refuse(65, "The working tree has uncommitted changes to tracked inputs, so it is not the commit the output would name; nothing was written. Commit the inputs first (or pass --allow-dirty for a local look; the output then says dirty):", dirty);
+  }
+  opts.dirty = dirty.length > 0;
+  // Only a tracked CHANGELOG is an input: an untracked one is not in the commit the output names.
+  const changelog = files.includes("CHANGELOG.md") ? readFileSync(path.join(opts.root, "CHANGELOG.md"), "utf8") : null;
   const history = attempt(66, "git cannot read the history:", () => readHistory(opts.root));
   const head = history.length ? attempt(66, "git cannot resolve HEAD:", () => git(opts.root, ["log", "-1", "--format=%H %ct", "HEAD"]).trim().split(" ")) : null;
   opts.headSha = head ? head[0] : null;
