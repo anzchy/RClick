@@ -174,6 +174,26 @@ final class ActionServiceTests {
         #expect(permission.promptCalls.map(\.path) == [f.selected.path])
     }
 
+    @Test func newFilePreservesRawPercentTarget() async throws {
+        let f = try percentSiblings()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let permission = MockPermission()
+        permission.hasAccessResult = true
+        var revealed: [URL] = []
+        let service = ActionService(
+            state: MockState(), permission: permission, confirmation: MockConfirmation(),
+            revealNewFile: { revealed.append($0) }
+        )
+        let existing = f.selected.appendingPathComponent(AppLocalization.localized("Untitled"))
+        try Data("keep existing".utf8).write(to: existing)
+        await service.createFile(rid: NewFileMenuItem.customFileId, target: [f.selected.path])
+        let created = f.selected.appendingPathComponent(AppLocalization.localized("Untitled") + "1")
+        #expect(FileManager.default.fileExists(atPath: created.path))
+        #expect(try String(contentsOf: existing, encoding: .utf8) == "keep existing")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: f.sibling.path) == ["marker.txt"])
+        #expect(revealed == [created])
+    }
+
     @Test func deleteIsSkippedWhenAuthorizationIsCancelled() async throws {
         let (dir, file) = try makeTempFile()
         defer { try? FileManager.default.removeItem(at: dir) }

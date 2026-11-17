@@ -6,7 +6,7 @@ public class Utils {
         isProtectedFolder(path, homeDirectory: getRealHomeDir())
     }
 
-    /// Accept an already-decoded filesystem path, exactly as used by the file operation.
+    /// Accept a raw filesystem path, exactly as used by the file operation.
     static func isProtectedFolder(_ path: String, homeDirectory: String) -> Bool {
         guard path.hasPrefix("/") else { return true }
         let rawURL = URL(fileURLWithPath: path)
