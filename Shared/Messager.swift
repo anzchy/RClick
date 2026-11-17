@@ -260,19 +260,21 @@ class Messager: @unchecked Sendable {
     nonisolated(unsafe) private var extensionToMainHandlers: [ExtensionToMainAction: (Data?) -> Void] = [:]
 
     // 通知名称
-    static let mainToExtensionNotification = "RClick.MainToExtension"
-    static let extensionToMainNotification = "RClick.ExtensionToMain"
+    static let mainToExtensionNotification = "cn.anzchy.RClick.MainToExtension"
+    static let extensionToMainNotification = "cn.anzchy.RClick.ExtensionToMain"
 
     private let isExtension: Bool
+    private let center: NotificationCenter
 
-    private init() {
+    // Inject a private in-process center in tests; never post test traffic globally.
+    init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default()) {
         // 判断当前是否为 Extension 进程
         let bundleId = Bundle.main.bundleIdentifier ?? ""
-        self.isExtension = bundleId.hasSuffix(".FinderSyncExt")
+        self.isExtension = isExtension ?? bundleId.hasSuffix(".FinderSyncExt")
+        self.center = center
 
         // Danger note: DistributedNotificationCenter 初始化线程安全
-        let center = DistributedNotificationCenter.default()
-        if isExtension {
+        if self.isExtension {
             center.addObserver(
                 self,
                 selector: #selector(handleMainToExtensionMessage(_:)),
@@ -287,6 +289,10 @@ class Messager: @unchecked Sendable {
                 object: nil
             )
         }
+    }
+
+    deinit {
+        center.removeObserver(self)
     }
 
     // MARK: - 发送消息（nonisolated，不访问 @MainActor 状态）
@@ -318,12 +324,16 @@ class Messager: @unchecked Sendable {
         }
 
         logger.debug("Sending message via \(notificationName)")
-        DistributedNotificationCenter.default().postNotificationName(
-            NSNotification.Name(notificationName),
-            object: jsonString,
-            userInfo: nil,
-            deliverImmediately: true
-        )
+        if let distributedCenter = center as? DistributedNotificationCenter {
+            distributedCenter.postNotificationName(
+                NSNotification.Name(notificationName),
+                object: jsonString,
+                userInfo: nil,
+                deliverImmediately: true
+            )
+        } else {
+            center.post(name: NSNotification.Name(notificationName), object: jsonString)
+        }
     }
 
     // MARK: - 注册处理器
