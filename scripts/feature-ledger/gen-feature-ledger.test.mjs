@@ -363,3 +363,28 @@ test("a test filter that matches only a comment or a string is a stale spine ent
   assert.doesNotMatch(r.stderr, /::real/, "a live filter is not reported");
   assert.equal(r.text, null);
 });
+
+test("in a shallow clone the history cells print --, not the grafted boundary", (t) => {
+  const root = fixture(t,
+    { "App/Copier.swift": SWIFT_SOURCE, "App/Other.swift": SWIFT_SOURCE },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }],
+  );
+  put(root, "App/Copier.swift", SWIFT_SOURCE + "// edit\n");
+  commitAll(root, "edit", T0 + DAY);
+  put(root, "App/Other.swift", SWIFT_SOURCE + "// unrelated\n");
+  commitAll(root, "unrelated", T0 + 2 * DAY);
+  const full = generate(root);
+  assert.equal(full.status, 0, full.stderr);
+  assert.equal(row(full.text, "copy")["Commits (90 d)"], "2"); // the fixture commit and the edit
+
+  const clone = mkdtempSync(path.join(tmpdir(), "feature-ledger-shallow-"));
+  t.after(() => rmSync(clone, { recursive: true, force: true }));
+  git(root, ["clone", "-q", "--depth", "1", `file://${root}`, clone]);
+  const r = generate(clone);
+  assert.equal(r.status, 0, r.stderr);
+  const cells = row(r.text, "copy");
+  assert.equal(cells["Last touch"], "--", "the boundary commit adds every file; it is not the last touch");
+  assert.equal(cells["Commits (90 d)"], "--");
+  assert.equal(cells["Code lines"], "4", "the working tree is still measured");
+  assert.match(r.text, /shallow clone/i, "the legend says why history is --");
+});
