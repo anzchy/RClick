@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
 
 ### Fixed
+- Delete Direct, Hide and AirDrop now refuse protected folders: the check previously failed to match Finder paths. The home folder, ~/Documents, ~/Library and / are now protected too
 - Updates no longer report success when the install failed. Installation errors are surfaced, the staged bundle's version is checked before it replaces the old app, and a failed relaunch keeps the current app running instead of quitting
 - Updating from outside /Applications installs the new version and moves the old copy to the Trash, and an older RClick instance now quits itself as soon as a newer one starts. Two copies used to stay on disk and handle every Finder click twice
 - External disks and mounted disk images no longer wear RClick's app icon in the Finder sidebar. RClick declares the `externaldrive` symbol, so those entries keep a drive icon instead

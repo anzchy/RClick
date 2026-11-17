@@ -6,11 +6,9 @@ public class Utils {
     }
 
     static func isProtectedFolder(_ path: String, homeDirectory: String) -> Bool {
-        print("isProtectedFolder: \(path)")
-        
+        let candidate = URL(fileURLWithPath: path.removingPercentEncoding ?? path).standardizedFileURL.path
         return Constants.protectedDirs(homeDirectory: homeDirectory).contains { protectedPath in
-            print("Comparing with protected path: \(protectedPath)")
-            return path == protectedPath
+            candidate == URL(fileURLWithPath: protectedPath).standardizedFileURL.path
         }
     }
     // MARK: 

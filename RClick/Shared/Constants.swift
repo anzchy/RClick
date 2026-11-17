@@ -11,20 +11,18 @@ import Foundation
 public enum Constants {
     /// The identifier for the settings window.
     static let settingsWindowID = "rclick-settings"
+    /// Protect the home and its essential folders, the filesystem root, and OS installation roots.
+    /// Match these folders themselves; their children remain available for file actions.
     static func protectedDirs(homeDirectory: String) -> [String] {
         [
-        homeDirectory + "/Desktop/",
-        homeDirectory + "/Desktop/danger/",
-        homeDirectory + "/Applications/",
-        "/Applications/",
-        "/System/",
-        "/Library/",
-        "/Users/",
-        "/usr/",
-        "/bin/",
-        "/sbin/",
-        "/var/"
-    ]
+            homeDirectory,
+            homeDirectory + "/Desktop",
+            homeDirectory + "/Documents",
+            homeDirectory + "/Library",
+            homeDirectory + "/Applications",
+            "/", "/Applications", "/System", "/Library", "/Users",
+            "/usr", "/bin", "/sbin", "/var"
+        ]
     }
     static let suitName = SharedAppGroup.identifier
 
