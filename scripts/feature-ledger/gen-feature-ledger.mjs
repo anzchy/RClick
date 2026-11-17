@@ -76,24 +76,43 @@ function testCases(text) {
   return names;
 }
 
-function measure(root, files, feature) {
+// THE HONESTY RULE: a signal nobody measured is `null` and prints `--`; a measured zero is 0.
+// A spine field that is ABSENT means nobody looked; an EMPTY list means someone looked and found none.
+const UNMEASURED = null;
+
+/** CHANGELOG lines (entries) that name any of the terms, case-insensitively; null when either side is missing. */
+function changelogMentions(changelog, terms) {
+  if (changelog === null || !Array.isArray(terms)) return UNMEASURED;
+  const lower = terms.map((t) => t.toLowerCase());
+  return changelog.split("\n").filter((l) => lower.some((t) => l.toLowerCase().includes(t))).length;
+}
+
+function measure(root, files, feature, changelog) {
   const read = (f) => readFileSync(path.join(root, f), "utf8");
   const code = [...new Set(feature.paths.flatMap((p) => expand(files, p)))]
     .filter((f) => CODE_EXTENSIONS.has(path.extname(f)));
-  const tests = [...new Set(feature.tests.flatMap((p) => expand(files, p)))];
+  const tests = Array.isArray(feature.tests) ? [...new Set(feature.tests.flatMap((p) => expand(files, p)))] : UNMEASURED;
   return {
     codeFiles: code.length,
     codeLines: code.reduce((s, f) => s + codeLines(read(f), path.extname(f)), 0),
-    testFiles: tests.length,
-    testCases: tests.reduce((s, f) => s + testCases(read(f)).length, 0),
+    testFiles: tests === UNMEASURED ? UNMEASURED : tests.length,
+    testCases: tests === UNMEASURED ? UNMEASURED : tests.reduce((s, f) => s + testCases(read(f)).length, 0),
+    specs: Array.isArray(feature.specs) ? feature.specs.length : UNMEASURED,
+    changelog: changelogMentions(changelog, feature.changelog),
   };
 }
 
+/** A measured number, or `--` for a signal nobody measured. Never turns `--` into 0. */
+const cell = (v) => (v === UNMEASURED || v === undefined ? "--" : String(v));
+
 function render(spine, rows) {
-  const out = ["# Feature metrics", "", "| Feature | Code files | Code lines | Test files | Test cases |", "|---|---:|---:|---:|---:|"];
+  const out = ["# Feature metrics", "",
+    "| Feature | Code files | Code lines | Test files | Test cases | Specs | CHANGELOG |",
+    "|---|---:|---:|---:|---:|---:|---:|"];
   spine.features.forEach((f, i) => {
     const r = rows[i];
-    out.push(`| \`${f.id}\` | ${r.codeFiles} | ${r.codeLines} | ${r.testFiles} | ${r.testCases} |`);
+    const cells = [r.codeFiles, r.codeLines, r.testFiles, r.testCases, r.specs, r.changelog].map(cell);
+    out.push(`| \`${f.id}\` | ${cells.join(" | ")} |`);
   });
   return out.join("\n") + "\n";
 }
@@ -102,7 +121,9 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   const spine = JSON.parse(readFileSync(path.join(opts.root, opts.spine), "utf8"));
   const files = trackedFiles(opts.root);
-  const rows = spine.features.map((f) => measure(opts.root, files, f));
+  const changelogPath = path.join(opts.root, "CHANGELOG.md");
+  const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : null;
+  const rows = spine.features.map((f) => measure(opts.root, files, f, changelog));
   mkdirSync(path.dirname(opts.out), { recursive: true });
   const tmp = `${opts.out}.tmp-${process.pid}`;
   writeFileSync(tmp, render(spine, rows));
