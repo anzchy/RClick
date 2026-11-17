@@ -265,3 +265,37 @@ test("the output is reproducible: same commit, same bytes, and only the commit i
   assert.equal(row(second.text, "copy")["Process"], "extension, shared");
   rmSync(root, { recursive: true, force: true });
 });
+
+test("a shared test file is split by case name, and test lines follow the split", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
+    [
+      { id: "whole", name: "Whole", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: ["AppTests/CopierTests.swift"] },
+      { id: "one", name: "One", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+        tests: ["AppTests/CopierTests.swift::copiesOne"] },
+    ],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  const whole = row(r.text, "whole");
+  assert.equal(whole["Test cases"], "2");
+  assert.equal(whole["Test lines"], "9"); // every non-blank line of the file
+  const one = row(r.text, "one");
+  assert.equal(one["Test files"], "1");
+  assert.equal(one["Test cases"], "1");
+  assert.equal(one["Test lines"], "3"); // the @Test line, its #expect, its closing brace
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a test filter that matches no case is a stale spine entry", () => {
+  const root = fixture(
+    { "App/Copier.swift": SWIFT_SOURCE, "AppTests/CopierTests.swift": SWIFT_TESTS },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"],
+      tests: ["AppTests/CopierTests.swift::pastes"] }],
+  );
+  const r = generate(root);
+  assert.equal(r.status, 65);
+  assert.match(r.stderr, /copy.*CopierTests\.swift::pastes/);
+  rmSync(root, { recursive: true, force: true });
+});
