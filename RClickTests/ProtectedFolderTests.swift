@@ -45,7 +45,6 @@ struct ProtectedFolderTests {
         #expect(Utils.isProtectedFolder("/var", homeDirectory: home.path))
     }
 
-
     @Test func protectsCaseVariants() {
         let home = "/nonexistent/Protected Home"
         for path in ["/applications", "/SYSTEM/", "/uSr", "/PRIVATE/VAR",
@@ -56,4 +55,28 @@ struct ProtectedFolderTests {
         #expect(!Utils.isProtectedFolder(home.uppercased() + "/DOCUMENTS/child", homeDirectory: home))
     }
 
+    @Test func protectsCanonicallyEquivalentUnicodeNames() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("protected-unicode-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let home = root.appendingPathComponent("Caf\u{00E9}")
+        try fm.createDirectory(at: home.appendingPathComponent("Documents"), withIntermediateDirectories: true)
+        // Cover a nonexistent spelling as well as the real temporary home.
+        let missingHome = root.path + "/Missing Caf\u{00E9}"
+        #expect(Utils.isProtectedFolder(root.path + "/Missing Cafe\u{0301}", homeDirectory: missingHome))
+        #expect(!Utils.isProtectedFolder(root.path + "/Cafe", homeDirectory: home.path))
+        let decomposedHome = root.path + "/Cafe\u{0301}"
+        #expect(Utils.isProtectedFolder(decomposedHome, homeDirectory: home.path))
+        #expect(Utils.isProtectedFolder(decomposedHome + "/Documents", homeDirectory: home.path))
+        #expect(!Utils.isProtectedFolder(decomposedHome + "/Documents/child", homeDirectory: home.path))
+    }
+
+    @Test func protectsNonexistentPathsWithoutThrowing() {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("never-created-\(UUID().uuidString)").path
+        #expect(!FileManager.default.fileExists(atPath: home))
+        #expect(Utils.isProtectedFolder(home + "/Documents/child/..", homeDirectory: home))
+        #expect(Utils.isProtectedFolder(home + "/Library/", homeDirectory: home))
+        #expect(!Utils.isProtectedFolder(home + "/Documents/missing", homeDirectory: home))
+    }
 }

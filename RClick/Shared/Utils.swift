@@ -13,7 +13,7 @@ public class Utils {
         // Darwin standardization also folds /private/var to /var; fold case first so
         // that aliases with case variants receive the same lexical normalization.
         func comparisonKey(_ value: String) -> String {
-            URL(fileURLWithPath: value.lowercased()).standardizedFileURL.path
+            URL(fileURLWithPath: value.lowercased()).standardizedFileURL.path.precomposedStringWithCanonicalMapping
         }
         return Constants.protectedDirs(homeDirectory: homeDirectory).contains { protectedPath in
             let protectedURL = URL(fileURLWithPath: protectedPath).standardizedFileURL
