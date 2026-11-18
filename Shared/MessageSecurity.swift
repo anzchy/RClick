@@ -114,6 +114,8 @@ nonisolated final class IPCReceiver: Sendable {
         let envelope = try IPCEnvelope.parse(wire)
         guard MessageSecurity.verify(envelope, key: key) else { throw IPCSecurityError.unauthenticated }
         guard envelope.direction == direction else { throw IPCSecurityError.direction }
+        let age = clock.wallTime - envelope.timestamp
+        guard age <= 5, age >= -1 else { throw IPCSecurityError.freshness }
         try nonces.withLock { cache in
             let now = clock.monotonicTime
             cache = cache.filter { now - $0.value < 15 }
