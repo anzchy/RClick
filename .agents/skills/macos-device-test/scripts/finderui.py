@@ -8,6 +8,7 @@ menu dump). Everything here decides from such dumps, so the unit tests replay re
 (fixtures/) and never touch the desktop.
 """
 import json
+import re
 import unicodedata
 
 OK, USAGE, REFUSED, ENVIRONMENT = 0, 64, 65, 70
@@ -141,3 +142,74 @@ def find_row(rows, name):
     if not row.visible:
         raise Refused(f'row {name!r} is not visible in its scroll area; scroll it into view or enlarge the window')
     return row
+
+
+# English titles the extension can put at the top level of its section (FinderSyncExt.swift, RCAction.all,
+# the default Open With app). `%@ (skip confirmation)` is matched by its base title. Open With apps and common
+# folders the user added have their own names: pass them with --also.
+RCLICK_TITLES = (
+    'Copy Path', 'Copy File Name', 'Delete Direct', 'Hide', 'Unhide', 'AirDrop', 'Terminal',
+    'Actions', 'Open With', 'New File', 'Common Dirs',
+    'RClick is not running', 'Restart RClick to restore the menu', 'RClick (loading...)',
+)
+SKIP_SUFFIX = ' (skip confirmation)'
+COMPRESS_ONE = re.compile(r'Compress “(.+)”')
+COMPRESS_MANY = re.compile(r'Compress (\d+) Items')
+
+
+class MenuItem:
+    def __init__(self, index, title, enabled, point, path, sub):
+        self.index, self.title, self.enabled, self.point, self.path, self.sub = index, title, enabled, point, path, sub
+
+    def __repr__(self):
+        return f'MenuItem({self.index}, {self.title!r}, enabled={self.enabled}, point={self.point})'
+
+
+def menu_items(nodes):
+    """Top-level items of a menu dump (paths relative to the menu: [i] item, [i, 0] its submenu, [i, 0, j] a
+    submenu item), in AX order, which for menus is the on-screen order (alternates share a position)."""
+    items = []
+    for node in nodes:
+        path = node['path']
+        if len(path) != 1 or node['role'] != 'AXMenuItem':
+            continue
+        sub = [(nfc(label(child)), child['path']) for child in nodes
+               if len(child['path']) == 3 and child['path'][0] == path[0] and child['role'] == 'AXMenuItem']
+        point = centre(node['frame']) if node.get('frame') else None
+        items.append(MenuItem(path[0], nfc(node.get('title')), node.get('enabled') is not False, point, path, sub))
+    return items
+
+
+def compress_titles(items):
+    """Distinct titles of Finder's own Compress item (`Compress “name”`, `Compress N Items`)."""
+    titles = {item.title for item in items if COMPRESS_ONE.fullmatch(item.title) or COMPRESS_MANY.fullmatch(item.title)}
+    return sorted(titles)
+
+
+def base_title(title):
+    return title[:-len(SKIP_SUFFIX)] if title.endswith(SKIP_SUFFIX) else title
+
+
+def rclick_group(items, also=()):
+    """RClick's section: Finder lists extension items after its own `Quick Actions` item with no separator between
+    extensions (i22-device-20261116e). The group starts after the last `Quick Actions` (or at the first known
+    RClick title when there is none) and ends at the first title that is not an RClick title or repeats one, so
+    another extension's `New File` or `Copy Path` right after it is not taken for RClick's."""
+    known = set(RCLICK_TITLES) | {nfc(title) for title in also}
+    quick = [i for i, item in enumerate(items) if item.title == 'Quick Actions']
+    if quick:
+        start = quick[-1] + 1
+    else:
+        start = next((i for i, item in enumerate(items) if base_title(item.title) in known), len(items))
+    group, seen = [], set()
+    for item in items[start:]:
+        if not item.title:
+            if group:
+                break
+            continue
+        title = base_title(item.title)
+        if title not in known or title in seen:
+            break
+        seen.add(title)
+        group.append(item)
+    return group
