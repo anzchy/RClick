@@ -128,4 +128,16 @@ def contains(frame, point):
 
 
 def find_row(rows, name):
-    raise Refused('not implemented')
+    """The one visible row whose name is exactly `name` (NFC-normalised, case and spaces significant), else Refused."""
+    wanted = nfc(name)
+    matches = [row for row in rows if row.name == wanted]
+    if not matches:
+        raise Refused(f'no row named {name!r} in the front Finder window (list view?); rows: '
+                      + ', '.join(repr(row.name) for row in rows[:12]))
+    if len(matches) > 1:
+        raise Refused(f'{len(matches)} rows named {name!r} (display rows '
+                      + ', '.join(str(row.index) for row in matches) + '); collapse folders or rename the fixture')
+    row = matches[0]
+    if not row.visible:
+        raise Refused(f'row {name!r} is not visible in its scroll area; scroll it into view or enlarge the window')
+    return row
