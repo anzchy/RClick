@@ -153,7 +153,8 @@ struct CutActionServiceTests {
         var warnings: [String] = []
         let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
                                     fileOperations: operations, pasteboard: board, accessLeaser: lease,
-                                    cutWarning: { warnings.append($0) }, cutVolumeIsReadOnly: { _ in readOnlyVolume })
+                                    cutWarning: { warnings.append($0) },
+                                    cutVolumeIsReadOnly: { url in readOnlyVolume && url.path == files[0].path })
         await service.actionHandler(rid: "cut", target: [files[0].path], trigger: "ctx-items")
         #expect(permission.prompts == [root])
         #expect(service.pendingCut == nil)

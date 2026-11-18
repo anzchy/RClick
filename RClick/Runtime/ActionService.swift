@@ -223,7 +223,7 @@ final class ActionService {
         for url in urls {
             let parent = url.deletingLastPathComponent()
             let values = try? parent.resourceValues(forKeys: [.isWritableKey])
-            if cutVolumeIsReadOnly(parent) || values?.isWritable == false || !fileOperations.isWritable(parent) {
+            if cutVolumeIsReadOnly(url) || values?.isWritable == false || !fileOperations.isWritable(parent) {
                 cutWarning(String(format: AppLocalization.localized("The source is on a read-only disk or in an unwritable folder: %@"), url.path))
                 return
             }
