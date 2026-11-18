@@ -46,6 +46,7 @@ final class IPCAuthenticationTests: XCTestCase {
         changed = original; changed.nonce[0] ^= 1; variants.append(changed)
         changed = original; changed.payload = Data("null".utf8); variants.append(changed)
         for envelope in variants {
+            XCTAssertFalse(MessageSecurity.verify(envelope, key: key))
             XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(envelope.wireString(), key: key))
         }
         XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(original.wireString(), key: Data(repeating: 7, count: 32)))
@@ -182,6 +183,99 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertFalse(ext.hasReadableKey)
         XCTAssertFalse(ext.canUseCachedMenus)
         XCTAssertEqual(received.withLock { $0 }, 0)
+    }
+
+    func testValidMACOnWrongChannelIsRejected() {
+        let key = Data(repeating: 0x42, count: 32)
+        let wire = MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: "heartbeat", id: "id", session: "",
+                                                   timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16)), key: key).wireString()
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(wire, key: key))
+    }
+    func testInvalidMACDoesNotConsumeNonceAndExpiryUsesTimeOnly() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let receiver = IPCReceiver(direction: .toMain, clock: clock, capacity: 1)
+        func signed(_ n: UInt8) -> IPCEnvelope {
+            MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "id", session: "",
+                                              timestamp: clock.wallTime, nonce: Data(repeating: n, count: 16)), key: key)
+        }
+        var invalid = signed(1)
+        invalid.mac = Data(repeating: 0, count: 32)
+        XCTAssertThrowsError(try receiver.receive(invalid.wireString(), key: key))
+        XCTAssertNoThrow(try receiver.receive(signed(1).wireString(), key: key))
+        clock.advance(14)
+        XCTAssertThrowsError(try receiver.receive(signed(2).wireString(), key: key))
+        clock.advance(1)
+        XCTAssertNoThrow(try receiver.receive(signed(2).wireString(), key: key))
+    }
+    func testOptionFlagCannotChangeWithoutInvalidatingMAC() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        var signed = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "id", session: "session",
+                                                      timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16),
+                                                      payload: try JSONEncoder().encode(ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selection"], trigger: .contextualItems, optionKeyPressed: false))), key: key)
+        signed.payload = try JSONEncoder().encode(ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selection"], trigger: .contextualItems, optionKeyPressed: true))
+        XCTAssertFalse(MessageSecurity.verify(signed, key: key))
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain, session: "session").receive(signed.wireString(), key: key))
+    }
+    func testLargeMenuFitsAndOversizeRejectedBeforeParsing() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let apps = (0..<250).map { index in
+            AppMenuItem(id: "application-\(index)", name: "Example Productivity Application \(index)", icon: "app", tag: index,
+                        appURL: "/Applications/Example Productivity Application \(index).app")
+        }
+        let payload = try JSONEncoder().encode(MenuConfigPayload(version: 1, apps: apps))
+        let large = MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: "menu-config", id: "id", session: "session",
+                                                     timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16), payload: payload), key: key).wireString()
+        print("IPC_SIZE apps=250 payload=\(payload.count) wire=\(large.utf8.count) cap=\(IPCEnvelope.maximumWireBytes)")
+        XCTAssertLessThan(large.utf8.count, IPCEnvelope.maximumWireBytes)
+        XCTAssertEqual(try IPCReceiver(direction: .toExtension).receive(large, key: key).decode(MenuConfigPayload.self)?.apps.count, 250)
+        let oversized = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "id", session: "",
+                                                         timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16),
+                                                         payload: Data(repeating: 0x61, count: 256 * 1024)), key: key).wireString()
+        // A valid, correctly MACed and otherwise admissible message: removing
+        // the pre-parse cap makes both assertions fail.
+        XCTAssertThrowsError(try IPCEnvelope.parse(oversized))
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(oversized, key: key))
+        XCTAssertThrowsError(try IPCEnvelope.parse("{\"action\":\"quit\"}"))
+    }
+    func testPayloadFreeMessagesAreAcceptedWhenAuthenticated() {
+        let center = NotificationCenter()
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key)
+        let actions = Mutex<[String]>([])
+        ext.onMainMessage(.quit) { message in actions.withLock { $0.append(message.action) } }
+        ext.onMainMessage(.actionAck) { message in actions.withLock { $0.append(message.inReplyTo) } }
+        app.onExtensionMessage(.heartbeat) { message in actions.withLock { $0.append(message.action) } }
+        app.onExtensionMessage(.requestConfig) { message in actions.withLock { $0.append(message.action) } }
+        app.sendRunningNotification()
+        app.sendQuitNotification()
+        app.sendActionAck(inReplyTo: "click-id")
+        ext.sendHeartbeat()
+        ext.requestMenuConfig()
+        XCTAssertEqual(actions.withLock { $0 }, ["quit", "click-id", "heartbeat", "request-config"])
+    }
+    func testSenderVersionsConfigMonotonically() {
+        let center = NotificationCenter()
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key)
+        let messages = Mutex<[VerifiedMessage]>([])
+        ext.onMainMessage(.menuConfig) { message in messages.withLock { $0.append(message) } }
+        app.sendMenuConfig(MenuConfigPayload(version: 100))
+        app.sendMenuConfig(MenuConfigPayload(version: 100))
+        XCTAssertEqual(messages.withLock { $0 }.compactMap { $0.decode(MenuConfigPayload.self)?.version }, [1, 2])
+    }
+    func testConstantTimeAPIAndKeychainAttributesRemainRequired() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let security = try String(contentsOf: root.appendingPathComponent("Shared/MessageSecurity.swift"), encoding: .utf8)
+        let provider = try String(contentsOf: root.appendingPathComponent("Shared/IPCKeyProvider.swift"), encoding: .utf8)
+        XCTAssertTrue(security.contains("HMAC<SHA256>.isValidAuthenticationCode"))
+        XCTAssertFalse(security.contains("elementsEqual"))
+        XCTAssertFalse(security.contains("RClick_IPC_SharedKey"))
+        XCTAssertTrue(provider.contains("kSecUseDataProtectionKeychain as String: true"))
+        XCTAssertTrue(provider.contains("kSecAttrAccessGroup as String: SharedAppGroup.identifier"))
+        XCTAssertTrue(provider.contains("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"))
     }
 
 }
