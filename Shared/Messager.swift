@@ -188,6 +188,10 @@ nonisolated final class Messager: NSObject, Sendable {
         var main: [MainToExtensionAction: @Sendable (VerifiedMessage) -> Void] = [:]
         var ext: [ExtensionToMainAction: @Sendable (VerifiedMessage) -> Void] = [:]
         var key: Data?
+        var nextValidation: TimeInterval = 0
+        var nextMACRefresh: TimeInterval = 0
+        var readBackoff: TimeInterval = 1
+        var macBackoff: TimeInterval = 1
         var configVersion = 0
         var lastConfig: Data?
         var invalidated: (@Sendable () -> Void)?
@@ -203,7 +207,7 @@ nonisolated final class Messager: NSObject, Sendable {
     private let logger = Logger(subsystem: "cn.anzchy.RClick", category: "Messager")
 
     init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default(),
-         keyProvider: any KeyProvider = KeychainKeyProvider(), clock: any IPCClock = SystemIPCClock(),
+         keyProvider: any KeyProvider, clock: any IPCClock = SystemIPCClock(),
          random: any IPCRandom = SystemIPCRandom()) {
         let ext = isExtension ?? (Bundle.main.bundleIdentifier ?? "").hasSuffix(".FinderSyncExt")
         self.isExtension = ext
@@ -213,7 +217,9 @@ nonisolated final class Messager: NSObject, Sendable {
         self.random = random
         let launchSession = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
         self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock, session: launchSession)
-        self.state = Mutex(State(key: try? keyProvider.key(createIfMissing: !ext)))
+        let initialKey = try? keyProvider.key(createIfMissing: !ext)
+        self.state = Mutex(State(key: initialKey, nextValidation: clock.monotonicTime + (initialKey == nil ? 1 : 10),
+                                 nextMACRefresh: clock.monotonicTime + (initialKey == nil ? 1 : 0)))
         super.init()
         if !hasReadableKey { logger.error("IPC signing and verification unavailable: no readable key") }
         if !ext && launchSession.isEmpty { logger.error("IPC unavailable: session creation failed") }
@@ -225,11 +231,34 @@ nonisolated final class Messager: NSObject, Sendable {
     var canUseCachedMenus: Bool { hasReadableKey && !receiver.currentSession.isEmpty }
     var hasReadableKey: Bool { state.withLock { $0.key != nil } }
 
-    private func key() -> Data? {
-        if let key = state.withLock({ $0.key }) { return key }
-        guard let key = try? keyProvider.key(createIfMissing: !isExtension) else { return nil }
-        state.withLock { $0.key = key }
-        return key
+    /// Never called from menu construction. Periodic checks run on send/receive
+    /// cycles (at most once per 10 s); failed reads and MAC-triggered refreshes
+    /// back off 1,2,4,...,30 s. Holding the mutex coalesces concurrent misses.
+    private func key(onMACFailure: Bool = false) -> Data? {
+        let result = state.withLock { state -> (Data?, Bool) in
+            let now = clock.monotonicTime
+            if onMACFailure {
+                guard now >= state.nextMACRefresh else { return (state.key, false) }
+                state.nextMACRefresh = now + state.macBackoff
+                state.macBackoff = min(30, state.macBackoff * 2)
+            } else {
+                guard now >= state.nextValidation else { return (state.key, false) }
+            }
+            let previous = state.key
+            state.key = try? keyProvider.key(createIfMissing: !isExtension)
+            if state.key == nil {
+                state.nextValidation = now + state.readBackoff
+                state.nextMACRefresh = max(state.nextMACRefresh, state.nextValidation)
+                state.readBackoff = min(30, state.readBackoff * 2)
+            } else {
+                state.nextValidation = now + 10
+                state.readBackoff = 1
+                if state.key != previous { state.macBackoff = 1 }
+            }
+            return (state.key, state.key != previous)
+        }
+        if result.1 { resynchronize() }
+        return result.0
     }
     func onMainMessage(_ action: MainToExtensionAction, handler: @escaping @Sendable (VerifiedMessage) -> Void) {
         state.withLock { $0.main[action] = handler }
@@ -255,8 +284,15 @@ nonisolated final class Messager: NSObject, Sendable {
     @objc private func receiveNotification(_ notification: NSNotification) {
         do {
             guard let wire = notification.object as? String, wire.utf8.count <= IPCEnvelope.maximumWireBytes else { throw IPCSecurityError.malformed }
+            _ = try IPCEnvelope.parse(wire) // Reject malformed floods BEFORE any key read.
             guard let key = key() else { throw IPCSecurityError.noKey }
-            let message = try receiver.receive(wire, key: key)
+            let message: VerifiedMessage
+            do {
+                message = try receiver.receive(wire, key: key)
+            } catch IPCSecurityError.unauthenticated {
+                guard let refreshed = self.key(onMACFailure: true) else { throw IPCSecurityError.noKey }
+                message = try receiver.receive(wire, key: refreshed) // One retry, never a loop.
+            }
             if isExtension, let action = MainToExtensionAction(rawValue: message.action) {
                 let handler = state.withLock { $0.main[action] }
                 handler?(message)

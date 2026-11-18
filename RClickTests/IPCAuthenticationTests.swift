@@ -56,6 +56,86 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(app.currentSession, session)
     }
 
+    func testLiveKeyLossInvalidatesCapabilityAndReplacementRecovers() {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let clicks = Mutex(0)
+        app.onExtensionMessage(.click) { _ in clicks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        XCTAssertTrue(ext.canUseCachedMenus)
+        provider.data.withLock { $0 = nil }
+        clock.advance(10)
+        ext.sendHeartbeat()
+        app.sendRunningNotification()
+        XCTAssertFalse(ext.hasReadableKey, "read failure must revoke cached key capability")
+        XCTAssertFalse(ext.canUseCachedMenus)
+        XCTAssertEqual(ext.currentSession, "")
+        XCTAssertFalse(app.hasReadableKey)
+        provider.data.withLock { $0 = Data(repeating: 7, count: 32) }
+        clock.advance(10)
+        app.sendRunningNotification()
+        ext.sendClickEvent(ClickEventPayload(itemId: "safe", itemType: .action, trigger: .contextualItems))
+        XCTAssertTrue(ext.canUseCachedMenus)
+        XCTAssertEqual(clicks.withLock { $0 }, 1)
+        XCTAssertTrue(provider.flags.withLock { $0.contains(true) && $0.contains(false) })
+    }
+
+    func testKeyReplacementAndOneProcessRestartRecoverWithoutFinderRestart() {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        var app: Messager? = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        app?.sendRunningNotification()
+        let firstSession = ext.currentSession
+        provider.data.withLock { $0 = Data(repeating: 7, count: 32) }
+        clock.advance(10)
+        app?.sendRunningNotification()
+        XCTAssertNotEqual(ext.currentSession, firstSession, "live replacement must retire the old session")
+        XCTAssertEqual(ext.currentSession, app?.currentSession)
+        app = nil
+        provider.data.withLock { $0 = Data(repeating: 8, count: 32) }
+        app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let clicks = Mutex(0)
+        app?.onExtensionMessage(.click) { _ in clicks.withLock { $0 += 1 } }
+        clock.advance(1)
+        app?.sendRunningNotification() // MAC miss must refresh before the periodic interval.
+        XCTAssertEqual(ext.currentSession, app?.currentSession)
+        ext.sendClickEvent(ClickEventPayload(itemId: "safe", itemType: .action, trigger: .contextualItems))
+        XCTAssertEqual(clicks.withLock { $0 }, 1)
+    }
+
+    func testKeylessMalformedFloodAndConcurrentMACMissesBoundProviderReads() {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        provider.data.withLock { $0 = nil }
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        for _ in 0..<1000 { center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: "x") }
+        XCTAssertEqual(provider.flags.withLock { $0.count }, 1, "parse malformed traffic before key retries")
+        let invalid = IPCEnvelope(direction: .toExtension, action: "running", id: "bad", session: "session", timestamp: 100,
+            nonce: Data(repeating: 1, count: 16), mac: Data(repeating: 0, count: 32)).wireString()
+        DispatchQueue.concurrentPerform(iterations: 1000) { _ in
+            center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: invalid)
+        }
+        XCTAssertLessThanOrEqual(provider.flags.withLock { $0.count }, 2)
+        for _ in 0..<60 {
+            clock.advance(1)
+            center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: invalid)
+        }
+        XCTAssertLessThanOrEqual(provider.flags.withLock { $0.count }, 9, "failed refreshes must back off exponentially")
+        XCTAssertFalse(ext.hasReadableKey)
+        XCTAssertTrue(provider.flags.withLock { $0.allSatisfy { !$0 } }, "extension must never request key creation")
+        let mainProvider = MutableIPCKeyProvider()
+        let main = Messager(isExtension: false, center: NotificationCenter(), keyProvider: mainProvider, clock: clock)
+        clock.advance(10)
+        main.sendRunningNotification()
+        XCTAssertTrue(mainProvider.flags.withLock { $0.count >= 2 && $0.allSatisfy { $0 } }, "main alone requests creation on init and refresh")
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
@@ -379,5 +459,15 @@ nonisolated final class UnavailableCountingKeyProvider: KeyProvider {
     func key(createIfMissing: Bool) throws -> Data {
         calls.withLock { $0 += 1 }
         throw IPCSecurityError.noKey
+    }
+}
+
+nonisolated final class MutableIPCKeyProvider: KeyProvider {
+    let data = Mutex<Data?>(Data(repeating: 0x42, count: 32))
+    let flags = Mutex<[Bool]>([])
+    func key(createIfMissing: Bool) throws -> Data {
+        flags.withLock { $0.append(createIfMissing) }
+        guard let key = data.withLock({ $0 }) else { throw IPCSecurityError.noKey }
+        return key
     }
 }
