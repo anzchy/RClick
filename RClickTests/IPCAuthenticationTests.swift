@@ -5,6 +5,57 @@ import Synchronization
 
 @MainActor
 final class IPCAuthenticationTests: XCTestCase {
+    func testClockDiscontinuityRejectsExactDestructiveReplayAndResyncs() throws {
+        for jump in [0.0, 60.0] {
+            let clock = TestIPCClock(wall: 100, monotonic: 200)
+            let center = NotificationCenter()
+            let key = Data(repeating: 0x42, count: 32)
+            let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+            let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+            let events = Mutex<[ClickEventPayload]>([])
+            app.onExtensionMessage(.click) { message in
+                if let event = message.decode(ClickEventPayload.self) { events.withLock { $0.append(event) } }
+            }
+            app.sendRunningNotification()
+            let oldSession = app.currentSession
+            let event = ClickEventPayload(itemId: "delete-direct", itemType: .action, target: ["/tmp/exact-disposable-selection"], trigger: .contextualItems, optionKeyPressed: true)
+            let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "destructive", session: oldSession,
+                timestamp: clock.wallTime, nonce: Data(repeating: 9, count: 16), payload: try JSONEncoder().encode(event)), key: key).wireString()
+            let receiver = IPCReceiver(direction: .toMain, clock: clock, session: oldSession)
+            XCTAssertNoThrow(try receiver.receive(wire, key: key))
+            center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+            clock.advance(3)
+            center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+            clock.step(wall: jump - 3, monotonic: 13)
+            XCTAssertThrowsError(try receiver.receive(wire, key: key))
+            center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+            XCTAssertEqual(events.withLock { $0.count }, 1, "expired protection must never reopen")
+            XCTAssertNotEqual(app.currentSession, oldSession, "clock step must rotate main session")
+            ext.requestMenuConfig()
+            app.sendRunningNotification()
+            ext.sendClickEvent(event)
+            XCTAssertEqual(events.withLock { $0.count }, 2, "legitimate post-resync click must dispatch")
+            XCTAssertEqual(events.withLock { $0.last?.target }, event.target)
+            XCTAssertEqual(events.withLock { $0.last?.optionKeyPressed }, true)
+        }
+    }
+
+    func testSubToleranceClockAdjustmentKeepsSessionUsable() {
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let center = NotificationCenter()
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        let clicks = Mutex(0)
+        app.onExtensionMessage(.click) { _ in clicks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        let session = app.currentSession
+        clock.step(wall: 0.75, monotonic: 1)
+        ext.sendClickEvent(ClickEventPayload(itemId: "safe", itemType: .action, trigger: .contextualItems))
+        XCTAssertEqual(clicks.withLock { $0 }, 1)
+        XCTAssertEqual(app.currentSession, session)
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
@@ -319,7 +370,8 @@ nonisolated final class TestIPCClock: IPCClock {
     init(wall: Double, monotonic: Double) { time = Mutex((wall, monotonic)) }
     var wallTime: TimeInterval { time.withLock { $0.0 } }
     var monotonicTime: TimeInterval { time.withLock { $0.1 } }
-    func advance(_ seconds: Double) { time.withLock { $0.0 += seconds; $0.1 += seconds } }
+    func advance(_ seconds: Double) { step(wall: seconds, monotonic: seconds) }
+    func step(wall: Double, monotonic: Double) { time.withLock { $0.0 += wall; $0.1 += monotonic } }
 }
 
 nonisolated final class UnavailableCountingKeyProvider: KeyProvider {
