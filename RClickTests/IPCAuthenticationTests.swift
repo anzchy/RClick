@@ -120,6 +120,20 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(accepted.withLock { $0 }, 1)
     }
 
+    func testMenuConfigCannotMoveBackwardWithinSession() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let receiver = IPCReceiver(direction: .toExtension)
+        func wire(_ revision: Int, _ session: String) throws -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: "menu-config", id: UUID().uuidString, session: session,
+                                              timestamp: Date().timeIntervalSince1970, nonce: Data(UUID().uuidString.utf8.prefix(16)),
+                                              payload: try JSONEncoder().encode(MenuConfigPayload(version: revision))), key: key).wireString()
+        }
+        XCTAssertNoThrow(try receiver.receive(wire(10, "first"), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire(9, "first"), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire(10, "first"), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire(1, "second"), key: key))
+    }
+
 }
 
 

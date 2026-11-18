@@ -106,6 +106,7 @@ nonisolated final class IPCReceiver: Sendable {
     private let capacity: Int
     private struct State {
         var session: String
+        var configVersion: Int?
         var nonces: [Data: TimeInterval] = [:]
     }
     private let state: Mutex<State>
@@ -139,6 +140,16 @@ nonisolated final class IPCReceiver: Sendable {
             guard cache[envelope.nonce] == nil else { throw IPCSecurityError.replay }
             guard cache.count < capacity else { throw IPCSecurityError.capacity }
             cache[envelope.nonce] = now
+            if envelope.action == "menu-config", direction == .toExtension {
+                struct Revision: Decodable { let version: Int }
+                guard let revision = try? JSONDecoder().decode(Revision.self, from: envelope.payload),
+                      revision.version >= 0 else { throw IPCSecurityError.configVersion }
+                let previous = envelope.session == state.session ? state.configVersion : nil
+                guard previous == nil || revision.version >= previous! else { throw IPCSecurityError.configVersion }
+                state.configVersion = revision.version
+            } else if announcesSession, envelope.session != state.session {
+                state.configVersion = nil
+            }
             if announcesSession { state.session = envelope.session }
         }
         return VerifiedMessage(envelope: envelope)
