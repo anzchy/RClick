@@ -4024,7 +4024,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keynote"
+            "value" : "Keynote 讲演"
           }
         }
       }
@@ -4829,7 +4829,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Numbers"
+            "value" : "Numbers 表格"
           }
         }
       }
@@ -5179,7 +5179,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pages"
+            "value" : "Pages 文稿"
           }
         }
       }
