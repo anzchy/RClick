@@ -47,4 +47,20 @@ struct MenuCompatibilityTests {
         #expect(decoded.isVisible(for: .contextualContainer) == !toolbarVisible)
         #expect(decoded.isVisible(for: .contextualSidebar) == !toolbarVisible)
     }
+    @Test func pendingCutFieldsRoundTripAndOldConfigsMeanNothingPending() throws {
+        let old = Data(#"{"version":1,"actions":[],"apps":[],"newFiles":[],"commonDirs":[],"actionsCollapsed":false,"appsCollapsed":false,"newFilesCollapsed":true,"commonDirsCollapsed":true}"#.utf8)
+        let legacy = try JSONDecoder().decode(MenuConfigPayload.self, from: old)
+        #expect(legacy.cutChangeCount == nil)
+        #expect(legacy.cutItemCount == 0)
+        let current = MenuConfigPayload(cutChangeCount: 42, cutItemCount: 3)
+        let decoded = try JSONDecoder().decode(MenuConfigPayload.self, from: JSONEncoder().encode(current))
+        #expect(decoded.cutChangeCount == 42)
+        #expect(decoded.cutItemCount == 3)
+        // Encoding includes both fields and preserves the existing version.
+        let fields = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
+        #expect(fields["cutChangeCount"] as? Int == 42)
+        #expect(fields["cutItemCount"] as? Int == 3)
+        #expect(fields["version"] as? Int == 1)
+    }
+
 }
