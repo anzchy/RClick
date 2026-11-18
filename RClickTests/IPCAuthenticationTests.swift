@@ -136,6 +136,34 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertTrue(mainProvider.flags.withLock { $0.count >= 2 && $0.allSatisfy { $0 } }, "main alone requests creation on init and refresh")
     }
 
+    func testExtensionDispatchControlsRenderingQuitAndCorrelatedAck() {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let delivery = IPCExtensionDelivery(messager: ext)
+        app.sendRunningNotification()
+        app.sendMenuConfig(MenuConfigPayload(actions: [ActionMenuItem(id: "safe", name: "Safe", icon: "", tag: 1)]))
+        XCTAssertTrue(delivery.isHostAppRunning)
+        XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.actions.map(\.id), ["safe"])
+        delivery.registerClick("first")
+        delivery.registerClick("second")
+        app.sendActionAck(inReplyTo: "unknown")
+        app.sendActionAck(inReplyTo: "second")
+        XCTAssertTrue(delivery.expireClick("first"))
+        XCTAssertFalse(delivery.expireClick("second"), "the actual ack handler must resolve its own deadline")
+        app.sendQuitNotification()
+        XCTAssertFalse(delivery.isHostAppRunning, "quit must go offline immediately")
+        app.sendRunningNotification()
+        XCTAssertTrue(delivery.isHostAppRunning)
+        provider.data.withLock { $0 = nil }
+        clock.advance(10)
+        ext.sendHeartbeat()
+        XCTAssertNil(delivery.menuConfig(as: MenuConfigPayload.self))
+        XCTAssertFalse(delivery.isHostAppRunning)
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
@@ -179,9 +207,12 @@ final class IPCAuthenticationTests: XCTestCase {
         changed = original; changed.payload = Data("null".utf8); variants.append(changed)
         for envelope in variants {
             XCTAssertFalse(MessageSecurity.verify(envelope, key: key))
-            XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(envelope.wireString(), key: key))
+            XCTAssertThrowsError(try IPCReceiver(direction: .toMain, session: "session").receive(envelope.wireString(), key: key))
         }
-        XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(original.wireString(), key: Data(repeating: 7, count: 32)))
+        XCTAssertNoThrow(try IPCReceiver(direction: .toMain, session: "session").receive(original.wireString(), key: key))
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain, session: "session").receive(original.wireString(), key: Data(repeating: 7, count: 32))) { error in
+            guard case IPCSecurityError.unauthenticated = error else { return XCTFail("wrong key must fail MAC, not session") }
+        }
     }
 
     func testReplayIsRejectedAtomically() throws {

@@ -9,7 +9,6 @@ import Cocoa
 import FinderSync
 import OSLog
 import AppKit
-import Synchronization
 
 // MARK: - Logger
 
@@ -29,9 +28,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     // MARK: - Properties
 
     /// 菜单配置缓存（内存缓存，从 Main App 推送）
-    private var cachedMenuConfig: MenuConfigPayload?
-    private var cachedMenuSession: String?
-    private let menuDeliveryOrder = Mutex(MenuConfigDeliveryOrder())
+    private let delivery = IPCExtensionDelivery(messager: .shared)
+    private var cachedMenuConfig: MenuConfigPayload? { delivery.menuConfig(as: MenuConfigPayload.self) }
 
     /// 图标内存缓存，避免每次构建菜单都重新创建 NSImage
     private var iconCache: [String: NSImage] = [:]
@@ -56,16 +54,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     // MARK: - 连接状态（UX 优化，非可靠性机制）
 
-    /// 最近一次收到主程序消息的时间
-    private var mainActivity = PeerActivity()
-
-    /// 是否认为主程序可通信（连续 3 次心跳未收到即判离线）
-    private var isHostAppRunning: Bool {
-        messager.canUseCachedMenus && mainActivity.isActive()
-    }
-
-    /// 待确认的点击事件 ack 计时器
-    private let pendingClicks = Mutex(PendingClicks())
+    private var isHostAppRunning: Bool { delivery.isHostAppRunning }
 
     // MARK: - Option 键状态
 
@@ -118,68 +107,11 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 注册消息处理器
     private func setupMessageHandlers() {
-        messager.onSessionInvalidated { [weak self] in
+        delivery.onConfigChanged { [weak self] in
             DispatchQueue.main.async { [weak self] in
-                self?.cachedMenuConfig = nil
-                self?.cachedMenuSession = nil
-                self?.mainActivity.disconnect()
+                guard let self, let config = self.delivery.menuConfig(as: MenuConfigPayload.self) else { return }
+                self.handleMenuConfig(config)
             }
-        }
-        // 处理主程序发送的菜单配置
-        messager.onMainMessage(.menuConfig) { [weak self] data in
-            guard let self = self else { return }
-            // 使用 decodeSignedData 解码签名数据
-            if let config = self.messager.decodeSignedData(data, as: MenuConfigPayload.self) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    let current = self.messager.currentSession
-                    guard self.messager.canUseCachedMenus,
-                          self.menuDeliveryOrder.withLock({ $0.accepts(session: data.session, version: config.version, currentSession: current) }) else { return }
-                    self.cachedMenuSession = data.session
-                    _ = self.mainActivity.receive()
-                    self.handleMenuConfig(config)
-                }
-            } else {
-                logger.warning("Invalid menu config data")
-            }
-        }
-
-        // 处理主程序发送的 running 通知
-        messager.onMainMessage(.running) { [weak self] data in
-            guard let self = self else { return }
-            if self.messager.decodeSignedData(data, as: RunningPayload.self) != nil {
-                self.markMainActivity()
-                // 可以根据 payload 更新监听目录
-            }
-        }
-
-        // 处理主程序发送的退出通知：立即置离线，消除"退出后 30s 假活"窗口
-        messager.onMainMessage(.quit) { [weak self] _ in
-            logger.info("Received quit notification from main app")
-            self?.markMainOffline()
-        }
-
-        // 点击事件确认：主程序已收到 click，取消 ack 超时提示
-        messager.onMainMessage(.actionAck) { [weak self] message in
-            DispatchQueue.main.async {
-                self?.pendingClicks.withLock { $0.acknowledge(message.inReplyTo) }
-            }
-        }
-    }
-
-    // MARK: - 连接状态辅助
-
-    /// 记录主程序最近活动（统一到主线程，避免 DNC 回调线程写 / menu 主线程读竞争）
-    private func markMainActivity() {
-        DispatchQueue.main.async { [weak self] in
-            _ = self?.mainActivity.receive()
-        }
-    }
-
-    /// 标记主程序离线（收到 .quit 时立即生效）
-    private func markMainOffline() {
-        DispatchQueue.main.async { [weak self] in
-            self?.mainActivity.disconnect()
         }
     }
 
@@ -196,10 +128,10 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         }
         // Register before sending so even an immediate matching ack is safe.
         let id = UUID().uuidString
-        pendingClicks.withLock { $0.register(id) }
+        delivery.registerClick(id)
         messager.sendClickEvent(event, id: id)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            guard let self, self.pendingClicks.withLock({ $0.expire(id) }) else { return }
+            guard let self, self.delivery.expireClick(id) else { return }
             Task { @MainActor in
                 self.showAlert(
                     title: AppLocalization.localized("RClick did not respond"),
@@ -231,7 +163,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
                 for app in apps { _ = AppPresets.simpleIcon(forAppPath: app.appURL) }
             }
         }
-        cachedMenuConfig = config
         preloadIcons(for: config)
         logger.debug("Menu config cached: version=\(config.version), actions=\(config.actions.count), apps=\(config.apps.count)")
     }
@@ -396,7 +327,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 构建并返回 Finder 上下文菜单
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
-        if !messager.canUseCachedMenus || cachedMenuSession != messager.currentSession { cachedMenuConfig = nil }
         let start = DispatchTime.now()
         let menu = buildMenu(for: menuKind)
         let ms = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000

@@ -401,3 +401,58 @@ nonisolated struct MenuConfigDeliveryOrder {
         return true
     }
 }
+
+/// Finder's actual handler/controller seam. Cached payloads, liveness and click
+/// deadlines are synchronized here; the thin extension only renders snapshots.
+nonisolated final class IPCExtensionDelivery: Sendable {
+    private struct State {
+        var config: VerifiedMessage?
+        var order = MenuConfigDeliveryOrder()
+        var activity = PeerActivity()
+        var pending = PendingClicks()
+        var configChanged: (@Sendable () -> Void)?
+    }
+    private let state = Mutex(State())
+    private let messager: Messager
+    init(messager: Messager) {
+        self.messager = messager
+        messager.onSessionInvalidated { [weak self] in
+            self?.state.withLock { $0.config = nil; $0.activity.disconnect() }
+        }
+        messager.onMainMessage(.menuConfig) { [weak self] message in self?.receiveConfig(message) }
+        messager.onMainMessage(.running) { [weak self] message in
+            guard message.decode(RunningPayload.self) != nil else { return }
+            self?.state.withLock { _ = $0.activity.receive() }
+        }
+        messager.onMainMessage(.quit) { [weak self] _ in self?.state.withLock { $0.activity.disconnect() } }
+        messager.onMainMessage(.actionAck) { [weak self] message in
+            self?.state.withLock { $0.pending.acknowledge(message.inReplyTo) }
+        }
+    }
+    func onConfigChanged(_ handler: @escaping @Sendable () -> Void) { state.withLock { $0.configChanged = handler } }
+    private func receiveConfig(_ message: VerifiedMessage) {
+        struct Revision: Decodable { let version: Int }
+        guard let config = message.decode(Revision.self) else { return }
+        let callback = state.withLock { state -> (@Sendable () -> Void)? in
+            guard messager.canUseCachedMenus,
+                  state.order.accepts(session: message.session, version: config.version, currentSession: messager.currentSession) else { return nil }
+            state.config = message
+            _ = state.activity.receive()
+            return state.configChanged
+        }
+        callback?()
+    }
+    func menuConfig<T: Decodable>(as type: T.Type) -> T? {
+        let message: VerifiedMessage? = state.withLock { state in
+            guard messager.canUseCachedMenus, state.config?.session == messager.currentSession else {
+                state.config = nil
+                return nil
+            }
+            return state.config
+        }
+        return message?.decode(type)
+    }
+    var isHostAppRunning: Bool { messager.canUseCachedMenus && state.withLock { $0.activity.isActive() } }
+    func registerClick(_ id: String) { state.withLock { $0.pending.register(id) } }
+    func expireClick(_ id: String) -> Bool { state.withLock { $0.pending.expire(id) } }
+}
