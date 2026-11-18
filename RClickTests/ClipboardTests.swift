@@ -23,13 +23,28 @@ struct ClipboardTests {
         #expect(items[1].string(forType: .fileURL) == "file:///tmp/b.txt")
     }
 
-    @Test func copyPathsDecodesPercentEncoding() {
+    @Test func copyPathsPreservesRawPathsInTextAndFileURLs() {
         let pasteboard = makePasteboard()
+        let paths = [
+            "/tmp/%2544ocuments", "/tmp/%41.txt", "/tmp/100%25 done.txt",
+            "/tmp/a%20b.txt", "/tmp/a b.txt", "/tmp/文档 & #?.txt",
+        ]
+        let expectedText = "/tmp/%2544ocuments\n/tmp/%41.txt\n/tmp/100%25 done.txt\n/tmp/a%20b.txt\n/tmp/a b.txt\n/tmp/文档 & #?.txt"
 
-        Clipboard.copyPaths(["/tmp/a%20b.txt"], to: pasteboard)
+        for path in paths {
+            Clipboard.copyPaths([path], to: pasteboard)
+            #expect(pasteboard.string(forType: .string) == path)
+            let fileURL = pasteboard.pasteboardItems?.first?.string(forType: .fileURL)
+            #expect(fileURL.flatMap(URL.init(string:))?.path == path)
+        }
 
-        #expect(pasteboard.string(forType: .string) == "/tmp/a b.txt")
-        #expect(pasteboard.pasteboardItems?.first?.string(forType: .fileURL) == "file:///tmp/a%20b.txt")
+        Clipboard.copyPaths(paths, to: pasteboard)
+
+        #expect(pasteboard.string(forType: .string) == expectedText)
+        let items = pasteboard.pasteboardItems ?? []
+        #expect(items.count == paths.count)
+        #expect(items.compactMap { $0.string(forType: .fileURL).flatMap(URL.init(string:))?.path } == paths)
+        #expect(items.dropFirst().allSatisfy { $0.string(forType: .string) == nil })
     }
 
     @Test func copyFileNamesWritesOneNamePerLineAndNoFileURLs() {
