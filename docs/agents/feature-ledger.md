@@ -53,9 +53,9 @@ node scripts/feature-ledger/gen-feature-ledger.mjs --window-days=30
 node --test scripts/feature-ledger/*.test.mjs
 ```
 
-Exit codes: `0` written; `64` bad argument; `65` stale or malformed spine, or uncommitted changes to tracked inputs
-or an untracked spine (each offending entry or path is printed; nothing is written); `66` the spine is not readable
-JSON or git failed. A stale-spine `65` means fix the spine entry, not delete the feature.
+Exit codes: `0` written; `64` bad argument; `65` stale or malformed spine, a test filter on an unscannable file,
+uncommitted changes to tracked inputs or an untracked spine (each offending entry or path is printed; nothing is
+written); `66` the spine is not readable JSON or git failed. A stale-spine `65` means fix the spine entry, not delete the feature.
 
 In a shallow clone (`git clone --depth …`, the CI checkout default) every Last touch and Commits cell prints `--` and
 the table says why: the grafted boundary commit shows every file as added. Regenerate the committed table from a full
@@ -65,6 +65,12 @@ whatever the word means on that line, so the cell is an upper bound.
 A `tests` entry may name part of a shared test file: `RClickTests/ActionServiceTests.swift::delete` counts only the
 test cases whose name contains `delete` (case-insensitive), and their lines. A filter that matches no case is a stale
 entry.
+
+Code lines, test cases and test lines are read past comments and string contents by one lexical scanner (header of
+`gen-feature-ledger.mjs`). For Swift it follows the language: raw strings and their `\#` escapes, and interpolation
+`\( … )` read as code with its own strings and comments. A file that ends inside a string, an interpolation or a block
+comment is **unscannable**: its Code lines, Test cases and Test lines cells print `--`, the legend names it with the
+reason, and a `file::name` filter on it exits `65`. Fix the file (it does not compile either), not the spine.
 
 ## Provenance and freshness
 
