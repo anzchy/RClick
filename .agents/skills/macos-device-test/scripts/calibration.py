@@ -353,7 +353,7 @@ class Run:
         return any(title == 'Grant Access' for w in ui.dialog_windows(nodes) for title, _ in w.buttons)
 
     def start(self, script, *args):
-        process = subprocess.Popen(['osascript', '-e', script, *args], stdout=subprocess.PIPE,
+        process = subprocess.Popen(['/usr/bin/osascript', '-e', script, *args], stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True)
         self.started.append(process)
         return process

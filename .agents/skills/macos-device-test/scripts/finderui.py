@@ -486,23 +486,16 @@ def panel_ready(nodes, folder, button='Grant Access'):
     return plan
 
 
-def parse_process_table(text):
-    """{pid: executable path} from `ps -o pid=,comm=` lines (macOS prints the full executable path as comm)."""
-    table = {}
-    for line in text.split('\n'):
-        pid, _, executable = line.strip().partition(' ')
-        if pid.isdecimal() and executable.strip():
-            table[int(pid)] = executable.strip()
-    return table
-
-
 FINDER_EXECUTABLE = '/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder'
 RCLICK_EXECUTABLE = '/RClick.app/Contents/MacOS/RClick'
 EXTENSION_EXECUTABLE = '/RClick.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt'
 
 
 def allowed_process(pid, table, rclick_pid=None, extra_pids=()):
-    """The process `press-button`/`grant` may press in, by its executable: Finder, an RClick build's FinderSyncExt,
+    """The process `press-button`/`grant` may press in, by its executable. `table` maps a pid to the path the kernel
+    resolved for its executable (finderdrive.executable_of, proc_pidpath), never to `ps -o comm=`: comm is the
+    process's own argv[0], `osascript` for a PATH lookup and any string the process chose (device run, 2026-11-18).
+    Allowed: Finder, an RClick build's FinderSyncExt,
     the RClick process of this run (`rclick_pid`, from $RUN_DIR/rclick.pid, and an RClick executable), or an
     osascript the calibration started (`extra_pids`). Anything else, above all a system or privacy prompt (TCC,
     UserNotificationCenter, System Settings, the open-panel service), is Refused."""

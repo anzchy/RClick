@@ -379,27 +379,50 @@ class PanelGrant(unittest.TestCase):
             finderui.panel_plan(self.nodes, 'fixtures/rclick-cal')
 
 
+def process_capture():
+    """fixtures/process-table.txt: {pid: (ps comm, executable resolved by proc_pidpath)}."""
+    rows = {}
+    for line in (FIXTURES / 'process-table.txt').read_text(encoding='utf-8').splitlines():
+        if line and not line.startswith('#'):
+            pid, comm, executable = line.split('\t')
+            rows[int(pid)] = (comm, executable)
+    return rows
+
+
 class ProcessAllowList(unittest.TestCase):
     """press-button and grant press only in RClick (its rclick.pid), RClick's FinderSyncExt, Finder or an osascript
-    the calibration started; never in a system or privacy prompt (audit r1 opus M3). Process table recorded with
-    `ps -axo pid=,comm=` on the test Mac (build paths replaced; RClick, osascript and the other extension added)."""
+    the calibration started; never in a system or privacy prompt (audit r1 opus M3). The table maps each pid to the
+    executable the kernel resolved (proc_pidpath), recorded on the test Mac with `ps` comm beside it (fixtures/)."""
 
     def setUp(self):
-        self.table = finderui.parse_process_table((FIXTURES / 'process-table.txt').read_text(encoding='utf-8'))
+        self.capture = process_capture()
+        self.table = {pid: executable for pid, (_, executable) in self.capture.items()}
 
-    def test_the_table_maps_pids_to_full_executable_paths(self):
+    def test_the_capture_maps_pids_to_full_executable_paths(self):
         self.assertEqual(self.table[562], '/System/Applications/System Settings.app/Contents/MacOS/System Settings')
-        self.assertEqual(len(self.table), 10)
+        self.assertEqual(len(self.table), 12)
 
     def test_rclick_its_extension_finder_and_the_calibration_osascript_are_allowed(self):
         self.assertEqual(finderui.allowed_process(415, self.table), 'Finder')
         self.assertEqual(finderui.allowed_process(2087, self.table), 'FinderSyncExt')
         self.assertEqual(finderui.allowed_process(28075, self.table, rclick_pid=28075), 'RClick')
-        self.assertEqual(finderui.allowed_process(50001, self.table, extra_pids={50001}), 'calibration osascript')
+        for pid in (50001, 50002):
+            with self.subTest(pid=pid):
+                self.assertEqual(finderui.allowed_process(pid, self.table, extra_pids={pid}), 'calibration osascript')
+
+    def test_ps_comm_is_argv0_not_the_executable(self):
+        # device run, 2026-11-18: the calibration's own osascript was refused because comm printed `osascript`; and a
+        # process can put Finder's path in its argv[0]. Neither may decide the allow-list.
+        self.assertEqual(self.capture[50001][0], 'osascript')
+        self.assertEqual(self.capture[50003], ('/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder',
+                                               '/bin/sleep'))
+        with self.assertRaises(finderui.Refused):
+            finderui.allowed_process(50003, self.table)
 
     def test_system_and_privacy_prompts_and_unbound_processes_are_refused(self):
         for pid, kwargs in ((92997, {}), (27725, {}), (3610, {}), (562, {}), (85839, {}), (60606, {}),
-                            (28075, {}), (50001, {}), (92997, {'rclick_pid': 92997}), (1234, {})):
+                            (28075, {}), (50001, {}), (50003, {'extra_pids': {50003}}), (92997, {'rclick_pid': 92997}),
+                            (1234, {})):
             with self.subTest(pid=pid, **{k: str(v) for k, v in kwargs.items()}):
                 with self.assertRaises(finderui.Refused):
                     finderui.allowed_process(pid, self.table, **kwargs)

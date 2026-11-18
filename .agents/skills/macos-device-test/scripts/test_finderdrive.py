@@ -62,10 +62,6 @@ class FakeDesktop:
             return self.completed(argv, HELD)
         if name == 'pgrep':
             return self.completed(argv, f'{FINDER}\n')
-        if name == 'ps':
-            pid = argv[argv.index('-p') + 1]
-            line = next((l for l in fixture('process-table.txt').splitlines() if l.split()[0] == pid), '')
-            return self.completed(argv, line + '\n' if line else '', 0 if line else 1)
         if name == 'axprobe':
             if argv[1] == 'trusted':
                 return self.completed(argv, 'true\n')
@@ -88,6 +84,13 @@ class FakeDesktop:
                 return self.completed(argv, self.front + '/\n')
             return self.completed(argv, '\n')
         return self.completed(argv, '', 99, f'fake desktop: unexpected {name}')
+
+    def executable_of(self, pid):
+        """The resolved executable of pid from the recorded capture (fixtures/process-table.txt)."""
+        for line in fixture('process-table.txt').splitlines():
+            if line and not line.startswith('#') and line.split('\t')[0] == str(pid):
+                return line.split('\t')[2]
+        return None
 
     def spawn(self, argv):
         argv = [str(a) for a in argv]
@@ -128,6 +131,7 @@ def drive(desktop, *argv):
     out, err = io.StringIO(), io.StringIO()
     with mock.patch.dict(os.environ, LOCK_ENV), mock.patch.object(finderdrive, 'run', desktop.run), \
             mock.patch.object(finderdrive, 'spawn', desktop.spawn, create=True), \
+            mock.patch.object(finderdrive, 'executable_of', desktop.executable_of, create=True), \
             mock.patch.object(finderdrive, 'probe_binary', lambda: Path('/fake/axprobe')), \
             mock.patch.object(finderdrive.time, 'sleep', lambda seconds: None), \
             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -491,6 +495,35 @@ class PressOnlyInAllowedProcesses(unittest.TestCase):
                 self.assertEqual(code, 65, err)
                 self.assertEqual(desktop.acted, [])
                 self.assertNotIn(['dump'], [call[1:2] for call in desktop.calls if Path(call[0]).name == 'axprobe'])
+
+
+class AllowListResolvesTheExecutable(unittest.TestCase):
+    """finderdrive.allowed_process on REAL processes (no desktop: `osascript -e 'delay 5'` and /bin/sleep): the
+    calibration's own osascript, spawned by its absolute path or by a PATH lookup, is allowed; a process whose argv[0]
+    claims to be Finder is not (device run, 2026-11-18: `pid N is osascript` refused the calibration's alert)."""
+
+    def spawn(self, argv, executable=None):
+        process = subprocess.Popen(argv, executable=executable, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def test_the_calibrations_osascript_is_allowed_however_it_was_spawned(self):
+        for argv in (['osascript', '-e', 'delay 5'], ['/usr/bin/osascript', '-e', 'delay 5']):
+            with self.subTest(argv=argv[0]):
+                pid = self.spawn(argv)
+                self.assertEqual(finderdrive.allowed_process(pid, extra_pids={pid}), 'calibration osascript')
+
+    def test_a_process_claiming_finders_path_in_argv0_is_refused(self):
+        pid = self.spawn(['/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder', '5'], executable='/bin/sleep')
+        with self.assertRaisesRegex(finderui.Refused, '/bin/sleep'):
+            finderdrive.allowed_process(pid)
+
+    def test_a_pid_that_is_not_running_is_refused(self):
+        process = subprocess.Popen(['/usr/bin/true'])
+        process.wait()
+        with self.assertRaisesRegex(finderui.Refused, 'not running'):
+            finderdrive.allowed_process(process.pid)
 
 
 class GrantByFullPath(unittest.TestCase):
