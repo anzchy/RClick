@@ -180,7 +180,8 @@ nonisolated final class Messager: NSObject, Sendable {
     static let shared: Messager = {
         // A hosted test must never create/read a production Keychain item.
         let testHost = ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("XCTest") }
-        return Messager(keyProvider: testHost ? InMemoryKeyProvider(data: nil) : KeychainKeyProvider())
+        return Messager(center: testHost ? NotificationCenter() : DistributedNotificationCenter.default(),
+                        keyProvider: testHost ? InMemoryKeyProvider(data: nil) : KeychainKeyProvider())
     }()
     static let mainToExtensionNotification = "cn.anzchy.RClick.MainToExtension"
     static let extensionToMainNotification = "cn.anzchy.RClick.ExtensionToMain"
@@ -210,7 +211,7 @@ nonisolated final class Messager: NSObject, Sendable {
     private let receiver: IPCReceiver
     private let logger = Logger(subsystem: "cn.anzchy.RClick", category: "Messager")
 
-    init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default(),
+    init(isExtension: Bool? = nil, center: NotificationCenter,
          keyProvider: any KeyProvider, clock: any IPCClock = SystemIPCClock(),
          random: any IPCRandom = SystemIPCRandom(), rejectionNotice: IPCRejectionNotice? = nil, diagnosticLog: (@Sendable (IPCDiagnostic) -> Void)? = nil) {
         let ext = isExtension ?? (Bundle.main.bundleIdentifier ?? "").hasSuffix(".FinderSyncExt")
