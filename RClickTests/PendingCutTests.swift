@@ -7,14 +7,24 @@ struct PendingCutTests {
     private final class ObservedPasteboard: CutPasteboard {
         let board: NSPasteboard
         var options: NSPasteboard.ContentsOptions?
+        var failure: String?
         init(_ board: NSPasteboard) { self.board = board }
         var changeCount: Int { board.changeCount }
-        var types: [NSPasteboard.PasteboardType]? { board.types }
+        var types: [NSPasteboard.PasteboardType]? {
+            let snapshot = board.types
+            if failure == "replaced" {
+                board.clearContents()
+                board.setString("another owner", forType: .string)
+            }
+            return failure == "missing-marker" ? snapshot?.filter { $0 != PendingCut.markerType } : snapshot
+        }
         func prepareForNewContents(with options: NSPasteboard.ContentsOptions) -> Int {
             self.options = options
             return board.prepareForNewContents(with: options)
         }
-        func writeObjects(_ objects: [any NSPasteboardWriting]) -> Bool { board.writeObjects(objects) }
+        func writeObjects(_ objects: [any NSPasteboardWriting]) -> Bool {
+            failure == "write-rejected" ? false : board.writeObjects(objects)
+        }
     }
 
     @Test func writesHostOnlyFileURLsMarkerAndSourceAndReturnsVerifiedCount() throws {
@@ -94,6 +104,18 @@ struct PendingCutTests {
                     }
                 }
             }
+        }
+    }
+
+    @Test(arguments: ["write-rejected", "missing-marker", "replaced"])
+    func unverifiedWriteNeverReturnsAPendingCounter(failure: String) {
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        let observed = ObservedPasteboard(board)
+        observed.failure = failure
+        #expect(PendingCut(pasteboard: observed).writeCut(["/tmp/a.txt"]) == nil)
+        if failure == "replaced" {
+            #expect(board.string(forType: .string) == "another owner")
         }
     }
 
