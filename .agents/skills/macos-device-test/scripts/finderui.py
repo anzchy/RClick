@@ -213,3 +213,47 @@ def rclick_group(items, also=()):
         seen.add(title)
         group.append(item)
     return group
+
+
+def clean_path(path):
+    path = nfc(path.strip())
+    return path.rstrip('/') or '/' if path else ''
+
+
+def parse_selection(text):
+    """POSIX paths read back from Finder's selection, one per line (folders end with '/', which is dropped)."""
+    return [clean_path(line) for line in text.splitlines() if line.strip()]
+
+
+def basename(path):
+    return clean_path(path).rsplit('/', 1)[-1]
+
+
+def check_guard(targets, selection, items, background=None, front=None):
+    """The pre-action guard. Before any RClick item is chosen, the open menu must be the menu of the intended
+    target: Finder's own `Compress “<name>”` (`Compress N Items`) title names it, and Finder's selection read back
+    through AppleScript is exactly the target set. For a window-background menu: nothing selected, no Compress
+    item, and the front Finder window shows `background`. Returns what matched; raises Refused otherwise (the
+    caller closes the menu and acts on nothing)."""
+    selected = sorted(clean_path(path) for path in selection)
+    titles = compress_titles(items)
+    if background is not None:
+        if selected:
+            raise Refused(f'background menu expected, but the Finder selection is {selected}')
+        if titles:
+            raise Refused(f'background menu expected, but the menu has {titles[0]!r} (an item menu)')
+        if clean_path(front or '') != clean_path(background):
+            raise Refused(f'the front Finder window shows {front!r}, not {background!r}')
+        return f'background menu of {clean_path(background)}'
+    wanted = sorted(clean_path(path) for path in targets)
+    if not wanted:
+        raise Refused('no target given')
+    if selected != wanted:
+        raise Refused(f'Finder selection {selected} is not the target {wanted}')
+    expected = f'Compress “{basename(wanted[0])}”' if len(wanted) == 1 else f'Compress {len(wanted)} Items'
+    if not titles:
+        raise Refused(f'no Finder Compress item in the menu (expected {expected!r}; a background or sidebar menu, '
+                      'or a system language other than English)')
+    if titles != [expected]:
+        raise Refused(f'menu shows {" / ".join(titles)}, expected {expected!r}: the menu belongs to another item')
+    return f'{expected} and selection {wanted}'
