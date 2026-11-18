@@ -246,5 +246,29 @@ class PanelGrant(unittest.TestCase):
             finderui.panel_plan(self.nodes, 'fixtures/rclick-cal')
 
 
+class Arguments(unittest.TestCase):
+    def test_commands_parse_into_their_options(self):
+        args = finderui.parse_args(['open-menu', '%2541.txt', '--option'])
+        self.assertEqual((args.command, args.name, args.option), ('open-menu', '%2541.txt', True))
+        args = finderui.parse_args(['choose', '620,225', 'New File', '--sub', 'TXT', '--target', '/tmp/a b.txt'])
+        self.assertEqual((args.point, args.title, args.sub, args.target), ((620, 225), 'New File', 'TXT', ['/tmp/a b.txt']))
+        args = finderui.parse_args(['guard', '620,225', '--background', '/tmp/rclick-cal'])
+        self.assertEqual((args.targets, args.background), ([], '/tmp/rclick-cal'))
+        args = finderui.parse_args(['press-button', '4242', 'Delete', '--window-text', 'Permanently delete'])
+        self.assertEqual((args.pid, args.title, args.window_text), (4242, 'Delete', 'Permanently delete'))
+
+    def test_bad_arguments_are_usage_errors(self):
+        for argv in ([], ['bogus'], ['menu', 'a,b'], ['menu', '620'], ['select', 'alpha.txt'],
+                     ['guard', '620,225'], ['guard', '620,225', '/tmp/a', '--background', '/tmp'],
+                     ['choose', '620,225', 'Copy Path'], ['dialog', 'Finder'], ['grant', '4242', 'fixtures'],
+                     ['open-menu'], ['calibrate', 'relative/run']):
+            with self.subTest(argv=argv), self.assertRaises(finderui.Usage):
+                finderui.parse_args(argv)
+
+    def test_menu_probe_points_start_right_below_the_click(self):
+        # A context menu opens to the lower right of the click unless a screen edge flips it.
+        self.assertEqual(finderui.probe_points((620, 225)), [(660, 237), (660, 213), (580, 237), (580, 213)])
+
+
 if __name__ == '__main__':
     unittest.main()
