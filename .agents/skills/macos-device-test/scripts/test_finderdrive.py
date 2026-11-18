@@ -510,10 +510,6 @@ class Source(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class CloseMenuAndBackground(unittest.TestCase):
     """`ui.sh close-menu` (Esc only while Finder is frontmost, under the lock: audit r1 L4) and `ui.sh open-menu
     --background` (right-click the empty list below the rows, nothing selected: audit r1 F10)."""
@@ -579,3 +575,7 @@ class CloseMenuAndBackground(unittest.TestCase):
         for argv in (['open-menu'], ['open-menu', 'alpha.txt', '--background']):
             with self.subTest(argv=argv), self.assertRaises(finderui.Usage):
                 finderui.parse_args(argv)
+
+
+if __name__ == '__main__':
+    unittest.main()
