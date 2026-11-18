@@ -32,4 +32,19 @@ struct PendingCutTests {
         #expect(board.string(forType: PendingCut.sourceType) == "cn.anzchy.RClick")
         #expect(observed.options == .currentHostOnly)
     }
+    @Test func pendingEndsAfterAnyOtherWriteWithoutReadingContents() throws {
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        let helper = PendingCut(pasteboard: board)
+        let count = try #require(helper.writeCut(["/tmp/a.txt"]))
+        #expect(helper.isStillPending(count))
+        board.clearContents()
+        board.setString("another copy", forType: .string)
+        #expect(!helper.isStillPending(count))
+        let next = try #require(helper.writeCut(["/tmp/b.txt"]))
+        #expect(helper.isStillPending(next))
+        board.clearContents()
+        #expect(!helper.isStillPending(next))
+    }
+
 }

@@ -22,6 +22,8 @@ struct PendingCut {
         self.pasteboard = pasteboard
     }
 
+    func isStillPending(_ changeCount: Int) -> Bool { pasteboard.changeCount == changeCount }
+
     func writeCut(_ paths: [String]) -> Int? {
         let items = paths.enumerated().map { index, path in
             let item = NSPasteboardItem()
