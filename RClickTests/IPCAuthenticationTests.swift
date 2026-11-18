@@ -286,6 +286,16 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertTrue(delivery.accepts(session: "next", version: 1, currentSession: "next"))
     }
 
+    func testOversizedNotificationDoesNotRetryUnavailableKeyProvider() {
+        let center = NotificationCenter()
+        let provider = UnavailableCountingKeyProvider()
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider)
+        XCTAssertFalse(ext.hasReadableKey)
+        XCTAssertEqual(provider.calls.withLock { $0 }, 1)
+        center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: String(repeating: "A", count: IPCEnvelope.maximumWireBytes + 4))
+        XCTAssertEqual(provider.calls.withLock { $0 }, 1)
+    }
+
 }
 
 
@@ -295,4 +305,12 @@ nonisolated final class TestIPCClock: IPCClock {
     var wallTime: TimeInterval { time.withLock { $0.0 } }
     var monotonicTime: TimeInterval { time.withLock { $0.1 } }
     func advance(_ seconds: Double) { time.withLock { $0.0 += seconds; $0.1 += seconds } }
+}
+
+nonisolated final class UnavailableCountingKeyProvider: KeyProvider {
+    let calls = Mutex(0)
+    func key(createIfMissing: Bool) throws -> Data {
+        calls.withLock { $0 += 1 }
+        throw IPCSecurityError.noKey
+    }
 }

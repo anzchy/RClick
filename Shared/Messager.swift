@@ -238,7 +238,7 @@ nonisolated final class Messager: NSObject, Sendable {
         state.withLock { $0.ext[action] = handler }
     }
     @objc private func receiveNotification(_ notification: NSNotification) {
-        guard let wire = notification.object as? String, let key = key(),
+        guard let wire = notification.object as? String, wire.utf8.count <= IPCEnvelope.maximumWireBytes, let key = key(),
               let message = try? receiver.receive(wire, key: key) else {
             let report = state.withLock { state in
                 let decision = state.failures.reject(now: clock.monotonicTime)
