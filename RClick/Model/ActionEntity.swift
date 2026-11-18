@@ -53,6 +53,7 @@ final class ActionEntity {
             ActionEntity(id: "hide", name: "Hide", icon: "eye.slash", isEnabled: false, sortOrder: 3),
             ActionEntity(id: "unhide", name: "Unhide", icon: "eye", isEnabled: false, sortOrder: 4),
             ActionEntity(id: "airdrop", name: "AirDrop", icon: "paperplane", isEnabled: false, sortOrder: 5),
+            ActionEntity(id: "cut", name: "Cut & Paste", icon: "scissors", isEnabled: false, sortOrder: 6),
         ]
     }
 }

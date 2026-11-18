@@ -38,9 +38,9 @@ struct ActionBackfillTests {
 
         let actions = try fetchActions(context)
         #expect(actions.map(\.id) == [
-            "copy-path", "copy-file-name", "delete-direct", "hide", "unhide", "airdrop",
+            "copy-path", "copy-file-name", "delete-direct", "hide", "unhide", "airdrop", "cut",
         ])
-        #expect(actions.map(\.sortOrder) == Array(0..<6))
+        #expect(actions.map(\.sortOrder) == Array(0..<7))
     }
 
     @Test func upgradeInsertsMissingActionWithoutDisturbingExistingOrder() async throws {
@@ -57,9 +57,9 @@ struct ActionBackfillTests {
 
         let actions = try fetchActions(context)
         #expect(actions.map(\.id) == [
-            "copy-path", "copy-file-name", "delete-direct", "hide", "unhide", "airdrop",
+            "copy-path", "copy-file-name", "delete-direct", "hide", "unhide", "airdrop", "cut",
         ])
-        #expect(actions.map(\.sortOrder) == Array(0..<6))
+        #expect(actions.map(\.sortOrder) == Array(0..<7))
     }
 
     @Test func builtInActionIconsFollowTheCurrentDefaults() async throws {
@@ -81,6 +81,27 @@ struct ActionBackfillTests {
         await SharedDataManager.initializeDefaultData(context: context)
 
         let count = try context.fetchCount(FetchDescriptor<ActionEntity>())
-        #expect(count == 6)
+        #expect(count == 7)
     }
+    @Test func cutBackfillsOffWithoutChangingExistingOrderOrToggles() async throws {
+        let context = try makeContext()
+        let ids = ["airdrop", "unhide", "copy-path", "hide", "delete-direct", "copy-file-name"]
+        let toggles = [true, false, false, true, false, true]
+        for (index, id) in ids.enumerated() {
+            context.insert(ActionEntity(id: id, name: id, icon: "doc", isEnabled: toggles[index], sortOrder: index))
+        }
+        try context.save()
+        await SharedDataManager.initializeDefaultData(context: context)
+        let actions = try fetchActions(context)
+        #expect(actions.map(\.id) == ids + ["cut"])
+        #expect(Array(actions.prefix(6)).map(\.isEnabled) == toggles)
+        #expect(actions.map(\.sortOrder) == Array(0..<7))
+        let cut = try #require(actions.last)
+        #expect(cut.id == "cut")
+        #expect(!cut.isEnabled)
+        let catalogCut = try #require(RCAction.all.first { $0.id == "cut" })
+        #expect(!catalogCut.enabled)
+        #expect(catalogCut.name == "Cut & Paste")
+    }
+
 }
