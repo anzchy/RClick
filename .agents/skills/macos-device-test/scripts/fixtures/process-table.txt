@@ -1,10 +1,19 @@
-  415 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
-  562 /System/Applications/System Settings.app/Contents/MacOS/System Settings
- 2087 /private/tmp/rclick-build/Debug/RClick.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt
- 3610 /System/Library/PrivateFrameworks/UniversalAccess.framework/Versions/A/Resources/universalAccessAuthWarn.app/Contents/MacOS/universalAccessAuthWarn
-27725 /System/Library/CoreServices/UserNotificationCenter.app/Contents/MacOS/UserNotificationCenter
-28075 /private/tmp/rclick-build/Debug/RClick.app/Contents/MacOS/RClick
-50001 /usr/bin/osascript
-60606 /private/tmp/other/Debug/Other.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt
-85839 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService
-92997 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd
+# pid<TAB>`ps -o pid=,comm= -p PID` comm<TAB>executable resolved by proc_pidpath (finderdrive.executable_of)
+# Recorded on the test Mac on 2026-11-18 (macOS 26.4) unless marked; build paths replaced by /private/tmp/rclick-build/….
+# 50001: `osascript -e 'delay 3'` spawned by a PATH lookup, as calibration.py did at 4111ff2: comm is `osascript`.
+# 50002: `/usr/bin/osascript -e 'delay 3'` spawned by its absolute path.
+# 50003: /bin/sleep spawned with argv[0] set to Finder's path: comm repeats argv[0], proc_pidpath does not.
+# 28075, 562, 60606, 85839: constructed in the same format (RClick, System Settings, another app's extension and the
+# open-panel service were not running when the capture was taken).
+415	/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder	/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+3610	/System/Library/PrivateFrameworks/UniversalAccess.framework/Versions/A/Resources/universalAccessAuthWarn.app/Contents/MacOS/universalAccessAuthWarn	/System/Library/PrivateFrameworks/UniversalAccess.framework/Versions/A/Resources/universalAccessAuthWarn.app/Contents/MacOS/universalAccessAuthWarn
+27725	/System/Library/CoreServices/UserNotificationCenter.app/Contents/MacOS/UserNotificationCenter	/System/Library/CoreServices/UserNotificationCenter.app/Contents/MacOS/UserNotificationCenter
+92997	/System/Library/PrivateFrameworks/TCC.framework/Support/tccd	/System/Library/PrivateFrameworks/TCC.framework/Support/tccd
+2087	/private/tmp/rclick-build/Debug/RClick.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt	/private/tmp/rclick-build/Debug/RClick.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt
+50001	osascript	/usr/bin/osascript
+50002	/usr/bin/osascript	/usr/bin/osascript
+50003	/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder	/bin/sleep
+28075	/private/tmp/rclick-build/Debug/RClick.app/Contents/MacOS/RClick	/private/tmp/rclick-build/Debug/RClick.app/Contents/MacOS/RClick
+562	/System/Applications/System Settings.app/Contents/MacOS/System Settings	/System/Applications/System Settings.app/Contents/MacOS/System Settings
+60606	/private/tmp/other/Debug/Other.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt	/private/tmp/other/Debug/Other.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt
+85839	/System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService	/System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService

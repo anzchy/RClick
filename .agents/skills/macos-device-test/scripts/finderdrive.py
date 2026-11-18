@@ -6,6 +6,7 @@ Never changes a system or privacy setting, never runs pluginkit, never quits a p
 types through the keyboard layer (Esc is a key code, not text). Acting commands refuse unless the shared GUI lock
 is held by an rclick run (gui-lock.sh).
 """
+import ctypes
 import hashlib
 import json
 import os
@@ -401,9 +402,21 @@ def print_menu(items, also=(), expected=()):
             print(f'  {item.title}: ' + ', '.join(name for name, _ in item.sub))
 
 
+def executable_of(pid):
+    """The executable the kernel ran for `pid` (proc_pidpath), or None when no such process. Not `ps -o comm=`, which
+    prints the process's own argv[0] (`osascript` for a PATH lookup, or any path it chose)."""
+    buffer = ctypes.create_string_buffer(4096)
+    try:
+        length = ctypes.CDLL('/usr/lib/libproc.dylib').proc_pidpath(int(pid), buffer, ctypes.sizeof(buffer))
+    except OSError as error:
+        raise ui.Environment(f'cannot load libproc to resolve pid {pid}: {error}') from error
+    return os.fsdecode(buffer.value) if length > 0 else None
+
+
 def allowed_process(pid, extra_pids=()):
-    """finderui.allowed_process on the live process table; the RClick pid is this run's $RUN_DIR/rclick.pid."""
-    table = ui.parse_process_table(run(['ps', '-p', pid, '-o', 'pid=,comm='], timeout=5).stdout)
+    """finderui.allowed_process on pid's resolved executable; the RClick pid is this run's $RUN_DIR/rclick.pid."""
+    executable = executable_of(pid)
+    table = {pid: executable} if executable else {}
     rclick_pid = None
     if os.environ.get('RUN_DIR'):
         try:
