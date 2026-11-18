@@ -574,3 +574,58 @@ test("a test filter that matches only text inside an interpolated or raw string 
   }
   assert.equal(r.text, null);
 });
+
+// Swift that the scanner cannot read to the end: each file ends inside a string, an interpolation or a
+// comment (the Swift parser rejects all three). Nothing measured from its text can be trusted.
+const UNSCANNABLE = {
+  "AppTests/Unterminated.swift": ["import Testing", "struct Tests {", "    @Test func real() {}",
+    '    let s = "never closed', "    @Test func after() {}", "}", ""].join("\n"),
+  "App/Interpolation.swift": ["struct A {", String.raw`    let s = "\(f("x")"`, "}", ""].join("\n"),
+  "App/Comment.swift": ["struct A {}", "/* open", ""].join("\n"),
+};
+
+test("a file the scanner cannot read to the end prints -- for its text cells, and the legend names it", (t) => {
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE, ...UNSCANNABLE }, [
+    { id: "tests", name: "Tests", area: "Menu", process: ["app"], paths: ["App/Copier.swift"], tests: ["AppTests/Unterminated.swift"] },
+    { id: "interp", name: "Interp", area: "Menu", process: ["app"], paths: ["App/Interpolation.swift", "App/Copier.swift"] },
+    { id: "comment", name: "Comment", area: "Menu", process: ["app"], paths: ["App/Comment.swift"] },
+    { id: "clean", name: "Clean", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] },
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  const tests = row(r.text, "tests");
+  assert.equal(tests["Test files"], "1", "the file is still counted");
+  assert.equal(tests["Test cases"], "--");
+  assert.equal(tests["Test lines"], "--");
+  assert.equal(tests["Code lines"], "4", "the feature's other files are unaffected");
+  const interp = row(r.text, "interp");
+  assert.equal(interp["Code files"], "2");
+  assert.equal(interp["Code lines"], "--", "one unscannable file makes the sum unmeasured, not smaller");
+  assert.equal(row(r.text, "comment")["Code lines"], "--");
+  assert.equal(row(r.text, "clean")["Code lines"], "4");
+  assert.match(r.text, /cannot be scanned/i, "the legend says why");
+  assert.match(r.text, /`AppTests\/Unterminated\.swift` \(a string that opens on line 4 does not close\)/);
+  assert.match(r.text, /`App\/Interpolation\.swift` \(a string that opens on line 2 does not close\)/);
+  assert.match(r.text, /`App\/Comment\.swift` \(a block comment that opens on line 2 does not close\)/);
+});
+
+test("a test filter on a file the scanner cannot read to the end fails closed, naming the file and the reason", (t) => {
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE, ...UNSCANNABLE }, [
+    { id: "tests", name: "Tests", area: "Menu", process: ["app"], paths: ["App/Copier.swift"], tests: ["AppTests/Unterminated.swift::real"] },
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 65, `even a filter that names a real case cannot be checked:\n${r.stderr}`);
+  assert.match(r.stderr, /tests: tests entry "AppTests\/Unterminated\.swift::real": AppTests\/Unterminated\.swift cannot be scanned \(a string that opens on line 4 does not close\)/);
+  assert.equal(r.text, null);
+});
+
+test("an interpolation that never closes is reported as such", (t) => {
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE,
+    "App/Open.swift": ["struct A {", String.raw`    let s = """`, String.raw`        \(f(1)`, "}", ""].join("\n") }, [
+    { id: "open", name: "Open", area: "Menu", process: ["app"], paths: ["App/Open.swift"] },
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "open")["Code lines"], "--");
+  assert.match(r.text, /`App\/Open\.swift` \(an interpolation that opens on line 3 does not close\)/);
+});
