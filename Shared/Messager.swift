@@ -221,6 +221,7 @@ nonisolated final class Messager: NSObject, Sendable {
                            name: Notification.Name(ext ? Self.mainToExtensionNotification : Self.extensionToMainNotification), object: nil)
     }
     deinit { center.removeObserver(self) }
+    var currentSession: String { receiver.currentSession }
     var canUseCachedMenus: Bool { hasReadableKey && !receiver.currentSession.isEmpty }
     var hasReadableKey: Bool { state.withLock { $0.key != nil } }
 
@@ -329,4 +330,18 @@ nonisolated struct IPCFailurePolicy {
     static let shared = IPCRejectionNotice()
     private(set) var wasRejected = false
     func record() { wasRejected = true }
+}
+
+/// Final renderer guard: callback queues can deliver two verified configs out of
+/// order even when verification itself was serialized correctly.
+nonisolated struct MenuConfigDeliveryOrder {
+    private var session: String?
+    private var version: Int?
+    mutating func accepts(session: String, version: Int, currentSession: String) -> Bool {
+        guard !session.isEmpty, session == currentSession else { return false }
+        if self.session == session, let previous = self.version, version < previous { return false }
+        self.session = session
+        self.version = version
+        return true
+    }
 }
