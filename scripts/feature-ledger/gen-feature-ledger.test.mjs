@@ -629,3 +629,19 @@ test("an interpolation that never closes is reported as such", (t) => {
   assert.equal(row(r.text, "open")["Code lines"], "--");
   assert.match(r.text, /`App\/Open\.swift` \(an interpolation that opens on line 3 does not close\)/);
 });
+
+test("@Test counts wherever it stands among a function's attributes", (t) => {
+  const tests = ["import Testing", "struct Tests {",
+    "    @MainActor @Test func first() {}",
+    "    @Test @MainActor func second() {}",
+    "    @MainActor", "    @Test(.tags(.fast)) func third() {}",
+    "    @MainActor func helper() {}", "}", ""].join("\n");
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE, "AppTests/Tests.swift": tests }, [
+    { id: "whole", name: "Whole", area: "Menu", process: ["app"], paths: ["App/Copier.swift"], tests: ["AppTests/Tests.swift"] },
+    { id: "first", name: "First", area: "Menu", process: ["app"], paths: ["App/Copier.swift"], tests: ["AppTests/Tests.swift::first"] },
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "whole")["Test cases"], "3", "first, second and third; not helper");
+  assert.equal(row(r.text, "first")["Test cases"], "1");
+});
