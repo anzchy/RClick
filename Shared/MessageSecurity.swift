@@ -103,6 +103,7 @@ nonisolated struct VerifiedMessage: Sendable {
 nonisolated final class IPCReceiver: Sendable {
     let direction: IPCDirection
     let clock: any IPCClock
+    private let nonces = Mutex<[Data: TimeInterval]>([:])
     init(direction: IPCDirection, clock: any IPCClock = SystemIPCClock()) {
         self.direction = direction
         self.clock = clock
@@ -111,6 +112,12 @@ nonisolated final class IPCReceiver: Sendable {
         let envelope = try IPCEnvelope.parse(wire)
         guard MessageSecurity.verify(envelope, key: key) else { throw IPCSecurityError.unauthenticated }
         guard envelope.direction == direction else { throw IPCSecurityError.direction }
+        try nonces.withLock { cache in
+            let now = clock.monotonicTime
+            cache = cache.filter { now - $0.value < 15 }
+            guard cache[envelope.nonce] == nil else { throw IPCSecurityError.replay }
+            cache[envelope.nonce] = now
+        }
         return VerifiedMessage(envelope: envelope)
     }
 }
