@@ -72,20 +72,27 @@ entry.
 that the table measures that commit, so:
 
 - **Freshness: the line must name an ancestor of HEAD whose tree contains all inputs** (the spine, every measured
-  path, `CHANGELOG.md`). Regenerating changes only this line unless measured paths changed.
+  path, `CHANGELOG.md`), **and the table is that commit's table byte for byte.** Check it at the named commit, never
+  at HEAD: check out the commit the line names in a full clone, regenerate, and compare the whole file, provenance
+  line included (pinned by a test in `gen-feature-ledger.test.mjs`).
+- **The Commits column moves with the anchor commit's date.** The window counts back from the date of the commit the
+  table is generated at, so regenerating at a later commit changes Commits cells even when no measured path changed
+  (one unrelated commit dated months later moves every row). That is why a check at HEAD would fail on unrelated
+  PRs; regenerating the committed table (next point) is a deliberate refresh, and its diff shows the window moving.
 - **Generate from a clean commit of the inputs, and commit the output separately.** Commit the spine, code and
   CHANGELOG changes first; run the generator on that clean tree (it refuses a dirty one and an untracked spine); commit
   `docs/feature-metrics.md` alone in the next commit. The line then names the input commit, the output commit's
   parent. The output file itself is exempt from the dirty check, so a second run before committing is allowed.
-- A freshness check (follow-up below) regenerates at the commit the line names, or at HEAD, and compares everything
-  but that line.
+- A freshness check (follow-up below) regenerates at the commit the line names, never at HEAD, and compares the
+  whole file.
 
 ## Not wired yet (owner follow-ups)
 
 - The generator's tests do not run in CI (`.github/workflows/agent-tooling.yml`) or in `scripts/gates.sh`
   (`skill-tooling` lane). Both need the owner's ask.
-- No freshness check: nothing fails when `docs/feature-metrics.md` is older than the spine or the code. The check
-  would regenerate from a full clone and compare every line but the provenance line.
+- No freshness check: nothing fails when `docs/feature-metrics.md` does not match the commit it names. The check
+  would check out that commit in a full clone, regenerate, and compare the whole file byte for byte. Whether the named
+  commit is recent enough is a separate rule nobody has set.
 - No ownership check: nothing fails when a new source file belongs to no spine entry (vmark's `lint:feature-map`
   and open-pstack's feature registry both do this).
 - Defaults in the spine are text; nothing compares them with `Shared/RCBase.swift` or `RClick/AppState.swift`.
