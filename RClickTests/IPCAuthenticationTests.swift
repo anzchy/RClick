@@ -296,6 +296,20 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(provider.calls.withLock { $0 }, 1)
     }
 
+    func testExtensionRejectsQuitAndAckFromAnotherSessionEvenWithValidMAC() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let receiver = IPCReceiver(direction: .toExtension)
+        func wire(_ action: String, _ session: String, _ nonce: UInt8) throws -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: action, id: "id", inReplyTo: "pending-click", session: session,
+                                              timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: nonce, count: 16),
+                                              payload: action == "running" ? try JSONEncoder().encode(RunningPayload()) : Data()), key: key).wireString()
+        }
+        XCTAssertNoThrow(try receiver.receive(wire("running", "current", 1), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire("quit", "previous", 2), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire("action-ack", "previous", 3), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire("action-ack", "current", 4), key: key))
+    }
+
 }
 
 
