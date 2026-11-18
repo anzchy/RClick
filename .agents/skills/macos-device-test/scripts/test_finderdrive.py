@@ -378,6 +378,40 @@ class AxprobeCache(unittest.TestCase):
         with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
             finderdrive.probe_binary()
 
+    def test_an_ancestor_link_or_writable_ancestor_is_refused_before_anything_is_written(self):
+        # audit r2 gpt M1: ~/Library/Caches linked elsewhere was followed by mkdir(parents=True). Every ancestor the
+        # cache relies on (home, ~/Library, ~/Library/Caches) is lstat-checked; nothing is compiled or created.
+        for ancestor in ('Library', 'Library/Caches'):
+            with self.subTest(link=ancestor):
+                self.reset_home()
+                elsewhere = self.home.parent / 'elsewhere'
+                elsewhere.mkdir(mode=0o700)
+                link = self.home / ancestor
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(elsewhere)
+                with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
+                    finderdrive.probe_binary()
+                self.assertEqual((self.compiles, list(elsewhere.iterdir())), ([], []))
+        for ancestor, mode in (('', 0o770), ('Library', 0o702), ('Library/Caches', 0o720)):
+            with self.subTest(writable=ancestor or 'home', mode=oct(mode)):
+                self.reset_home()
+                (self.home / 'Library' / 'Caches').mkdir(parents=True, mode=0o700)
+                (self.home / ancestor).chmod(mode)
+                with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
+                    finderdrive.probe_binary()
+                self.assertEqual((self.compiles, list((self.home / 'Library' / 'Caches').iterdir())), ([], []))
+
+    def reset_home(self):
+        for path in sorted(self.home.parent.rglob('*'), reverse=True):
+            if path != self.tmpdir:
+                if path.is_dir() and not path.is_symlink():
+                    path.chmod(0o700)
+                    path.rmdir()
+                else:
+                    path.unlink()
+        self.home.mkdir(mode=0o700)
+        self.compiles.clear()
+
 
 @unittest.skipUnless(Path('/usr/bin/xcrun').exists(), 'needs the Xcode toolchain (the Mac gate lane has it)')
 class AxprobeNeedsTheLock(unittest.TestCase):
