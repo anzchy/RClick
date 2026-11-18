@@ -34,6 +34,7 @@ struct RClickApp: App {
     private lazy var runningCycle = IPCRunningCycle(messager: messager)
 
     @StateObject var appState = AppState.shared
+    @StateObject private var cutWarnings = CutWarningState.shared
 
     @StateObject private var updateManager = UpdateManager(
         owner: "wflixu",
@@ -46,6 +47,19 @@ struct RClickApp: App {
             .defaultAppStorage(.group)
             .environmentObject(updateManager)
             .modelContainer(SharedDataManager.sharedModelContainer)
+
+        // A Cut warning must also open when the menu bar icon is hidden.
+        Window(AppLocalization.localized("Cut & Paste"), id: CutWarningView.windowID) {
+            CutWarningView(state: cutWarnings)
+        }
+        .commandsRemoved()
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .onChange(of: cutWarnings.requestID) { _, _ in
+            openWindow(id: CutWarningView.windowID)
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
 
         // showMenuBarExtra 为 true 时显示菜单条。label 必须用自定义视图
         // （MenuBarExtraLabel）：openSettingsRequested 的订阅挂在那里，默认的

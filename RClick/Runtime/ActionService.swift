@@ -22,6 +22,7 @@ final class ActionService {
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
     private let pasteboard: NSPasteboard
+    private let cutWarning: (String) -> Void
     /// System boundary: tests can observe reveal without opening Finder or posting keys.
     private let revealNewFile: ((URL) -> Void)?
     /// 当前时间；只用于自动重命名等待 Finder 的截止时间。
@@ -39,7 +40,8 @@ final class ActionService {
         pasteboard: NSPasteboard = .general,
         now: @escaping @Sendable () -> Date = { Date() },
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
-        revealNewFile: ((URL) -> Void)? = nil
+        revealNewFile: ((URL) -> Void)? = nil,
+        cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) }
     ) {
         self.state = state
         self.permission = permission
@@ -49,6 +51,7 @@ final class ActionService {
         self.now = now
         self.accessLeaser = accessLeaser
         self.revealNewFile = revealNewFile
+        self.cutWarning = cutWarning
     }
 
     struct CutRecord: Sendable {
@@ -194,6 +197,10 @@ final class ActionService {
         let urls = target.map { URL(fileURLWithPath: $0) }
         var seen: Set<String> = []
         let parents = urls.map { $0.deletingLastPathComponent() }.filter { seen.insert($0.path).inserted }
+        if let protected = target.first(where: { Utils.isProtectedFolder($0) }) {
+            cutWarning(String(format: AppLocalization.localized("Protected system folders cannot be cut: %@"), protected))
+            return
+        }
         let lease = accessLeaser.beginAccess(covering: parents)
         defer { lease.end() }
         guard let identities = try? urls.map({ try fileOperations.fileIdentity(of: $0) }),
