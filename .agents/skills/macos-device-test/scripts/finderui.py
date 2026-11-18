@@ -7,6 +7,7 @@ The AX side (axprobe.swift, driven by finderdrive.py) prints one JSON object per
 menu dump). Everything here decides from such dumps, so the unit tests replay recorded or reconstructed dumps
 (fixtures/) and never touch the desktop.
 """
+import argparse
 import json
 import re
 import unicodedata
@@ -369,3 +370,98 @@ def panel_plan(nodes, folder, button='Grant Access'):
     if name in shown:
         return PanelPlan('current', window.index, None, button_path, '')
     raise Refused(f'no row named {name!r} in the panel, and the panel shows {shown[0] if shown else "an unknown folder"!r}')
+
+
+USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: target missing/ambiguous/mismatched, 70 environment)
+  rows                                   rows of the front Finder window in display order: index, name, centre x y
+  select PATH...                         select these items through AppleScript, read the selection back, compare
+  selection                              print Finder's selection (POSIX paths, read back through AppleScript)
+  open-menu NAME [--option]              AXSelected on the one row named NAME, right-click its AX centre; prints
+                                         `menu-point X,Y` (pass it to menu/guard/choose)
+  menu X,Y [--also TITLE]...             list the open menu (element at position): Compress title, RClick group
+  guard X,Y (TARGET... | --background DIR)
+                                         refuse (close the menu, exit 65) unless the menu and the selection are the target's
+  choose X,Y TITLE [--sub ITEM] [--also TITLE]... (--target PATH... | --background DIR)
+                                         guard, then AXPress TITLE (and ITEM in its submenu) inside RClick's group
+  dialog PID                             texts and buttons of every window of PID (alerts, confirmations, panels)
+  press-button PID TITLE [--window-text TEXT]
+                                         AXPress the one button titled TITLE (in the window containing TEXT)
+  grant PID FOLDER [--button TITLE]      in PID's open folder panel select FOLDER's row (or the shown folder) and
+                                         press TITLE (default `Grant Access`); no typing, any input source
+  calibrate RUN_DIR [--dry-run]          the calibration run (calibrate.sh)"""
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Usage(message)
+
+
+def point_arg(text):
+    match = re.fullmatch(r'(-?\d+),(-?\d+)', text)
+    if not match:
+        raise argparse.ArgumentTypeError(f'expected X,Y in whole screen points, got {text!r}')
+    return int(match.group(1)), int(match.group(2))
+
+
+def absolute(text):
+    if not text.startswith('/'):
+        raise argparse.ArgumentTypeError(f'expected an absolute path, got {text!r}')
+    return text
+
+
+def pid_arg(text):
+    if not text.isdigit() or int(text) <= 0:
+        raise argparse.ArgumentTypeError(f'expected a numeric PID, got {text!r}')
+    return int(text)
+
+
+def parse_args(argv):
+    """Parse a ui.sh command line; every error is Usage (exit 64), before any AX or AppleScript call."""
+    parser = ArgumentParser(prog='ui.sh', usage=USAGE_TEXT, add_help=False)
+    commands = parser.add_subparsers(dest='command', parser_class=ArgumentParser)
+    commands.add_parser('rows')
+    commands.add_parser('select').add_argument('paths', nargs='+', type=absolute)
+    commands.add_parser('selection')
+    command = commands.add_parser('open-menu')
+    command.add_argument('name')
+    command.add_argument('--option', action='store_true')
+    command = commands.add_parser('menu')
+    command.add_argument('point', type=point_arg)
+    command.add_argument('--also', action='append', default=[])
+    command = commands.add_parser('guard')
+    command.add_argument('point', type=point_arg)
+    command.add_argument('targets', nargs='*', type=absolute)
+    command.add_argument('--background', type=absolute)
+    command = commands.add_parser('choose')
+    command.add_argument('point', type=point_arg)
+    command.add_argument('title')
+    command.add_argument('--sub')
+    command.add_argument('--also', action='append', default=[])
+    command.add_argument('--target', action='append', default=[], type=absolute)
+    command.add_argument('--background', type=absolute)
+    commands.add_parser('dialog').add_argument('pid', type=pid_arg)
+    command = commands.add_parser('press-button')
+    command.add_argument('pid', type=pid_arg)
+    command.add_argument('title')
+    command.add_argument('--window-text')
+    command = commands.add_parser('grant')
+    command.add_argument('pid', type=pid_arg)
+    command.add_argument('folder', type=absolute)
+    command.add_argument('--button', default='Grant Access')
+    command = commands.add_parser('calibrate')
+    command.add_argument('run_dir', type=absolute)
+    command.add_argument('--dry-run', action='store_true')
+    args = parser.parse_args(argv)
+    if args.command is None:
+        raise Usage('a command is required')
+    if args.command == 'guard' and bool(args.targets) == bool(args.background):
+        raise Usage('guard needs TARGET paths or --background DIR, not both')
+    if args.command == 'choose' and bool(args.target) == bool(args.background):
+        raise Usage('choose needs --target PATH (repeatable) or --background DIR, not both')
+    return args
+
+
+def probe_points(point):
+    """Where to look for the menu a right-click at `point` opened: lower right first, then the flipped corners."""
+    x, y = point
+    return [(x + 40, y + 12), (x + 40, y - 12), (x - 40, y + 12), (x - 40, y - 12)]
