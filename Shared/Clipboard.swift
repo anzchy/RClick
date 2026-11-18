@@ -8,11 +8,14 @@ enum Clipboard {
     /// first item 的字符串；如果每个 item 都带文本，部分应用会把内容重复粘贴。
     nonisolated static func copyPaths(_ paths: [String], to pasteboard: NSPasteboard = .general) {
         guard !paths.isEmpty else { return }
-        let decoded = paths.map { $0.removingPercentEncoding ?? $0 }
-        let text = decoded.joined(separator: "\n")
+        // Finder supplies raw filesystem paths. URL serialization handles escaping below.
+        let text = paths.joined(separator: "\n")
 
-        let items = decoded.enumerated().map { index, path -> NSPasteboardItem in
+        let items = paths.enumerated().map { index, path -> NSPasteboardItem in
             let item = NSPasteboardItem()
+            // Keep the file representation for Finder paste. A sandboxed writer without
+            // access to this path may log a sandbox-extension failure; text remains usable.
+            // Omitting this flavor would remove file-paste support, not grant file access.
             item.setString(URL(fileURLWithPath: path).absoluteString, forType: .fileURL)
             if index == 0 {
                 item.setString(text, forType: .string)
