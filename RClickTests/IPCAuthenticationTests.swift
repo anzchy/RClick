@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import Synchronization
+import Observation
 @testable import RClick
 
 @MainActor
@@ -195,6 +196,37 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.version, 1)
         try post("B", "quit", time: 100.2)
         XCTAssertFalse(delivery.isHostAppRunning)
+    }
+
+    func testReceiveFailurePolicyNoticesOnlyAuthenticationFailures() async throws {
+        let center = NotificationCenter()
+        let key = Data(repeating: 0x42, count: 32)
+        let notice = IPCRejectionNotice()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock, rejectionNotice: notice)
+        func wire(session: String, nonce: UInt8, time: Double = 100) -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "id", session: session,
+                timestamp: time, nonce: Data(repeating: nonce, count: 16)), key: key).wireString()
+        }
+        func post(_ wire: String) { center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire) }
+        let unexpected = expectation(description: "normal relaunch and replay must not ask for Finder relaunch")
+        unexpected.isInverted = true
+        withObservationTracking { _ = notice.wasRejected } onChange: { unexpected.fulfill() }
+        post(wire(session: "previous-launch", nonce: 1))
+        let valid = wire(session: app.currentSession, nonce: 2)
+        post(valid)
+        post(valid)
+        post(wire(session: app.currentSession, nonce: 3, time: 94))
+        post(wire(session: app.currentSession, nonce: 4, time: 102))
+        await fulfillment(of: [unexpected], timeout: 0.05)
+        XCTAssertFalse(notice.wasRejected)
+        let shown = expectation(description: "actual bad MAC reaches the observable notice")
+        withObservationTracking { _ = notice.wasRejected } onChange: { shown.fulfill() }
+        var invalid = try IPCEnvelope.parse(wire(session: app.currentSession, nonce: 5))
+        invalid.mac = Data(repeating: 0, count: 32)
+        post(invalid.wireString())
+        await fulfillment(of: [shown], timeout: 1)
+        XCTAssertTrue(notice.wasRejected)
     }
 
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {

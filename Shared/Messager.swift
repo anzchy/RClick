@@ -203,18 +203,20 @@ nonisolated final class Messager: NSObject, Sendable {
     private let keyProvider: any KeyProvider
     private let clock: any IPCClock
     private let random: any IPCRandom
+    private let rejectionNotice: IPCRejectionNotice?
     private let receiver: IPCReceiver
     private let logger = Logger(subsystem: "cn.anzchy.RClick", category: "Messager")
 
     init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default(),
          keyProvider: any KeyProvider, clock: any IPCClock = SystemIPCClock(),
-         random: any IPCRandom = SystemIPCRandom()) {
+         random: any IPCRandom = SystemIPCRandom(), rejectionNotice: IPCRejectionNotice? = nil) {
         let ext = isExtension ?? (Bundle.main.bundleIdentifier ?? "").hasSuffix(".FinderSyncExt")
         self.isExtension = ext
         self.center = center
         self.keyProvider = keyProvider
         self.clock = clock
         self.random = random
+        self.rejectionNotice = rejectionNotice
         let launchSession = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
         self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock, session: launchSession)
         let initialKey = try? keyProvider.key(createIfMissing: !ext)
@@ -303,11 +305,11 @@ nonisolated final class Messager: NSObject, Sendable {
         } catch {
             if case IPCSecurityError.clockDiscontinuity = error { resynchronize() }
             let report = state.withLock { state in
-                let decision = state.failures.reject(now: clock.monotonicTime)
+                let decision = state.failures.reject(now: clock.monotonicTime, authenticationFailure: (error as? IPCSecurityError)?.warrantsNotice ?? true)
                 return (decision.log, decision.notice, state.failures.rejectedCount)
             }
             if report.0 { logger.error("Rejected IPC messages: \(report.2, privacy: .public)") }
-            if !isExtension, report.1 { Task { @MainActor in IPCRejectionNotice.shared.record() } }
+            if !isExtension, report.1 { Task { @MainActor in (self.rejectionNotice ?? IPCRejectionNotice.shared).record() } }
         }
     }
     private func send<T: Encodable>(_ action: String, direction: IPCDirection, data: T?, id: String, inReplyTo: String = "") {
@@ -372,12 +374,12 @@ nonisolated struct IPCFailurePolicy {
     private(set) var rejectedCount = 0
     private var lastLog: TimeInterval?
     private var noticeShown = false
-    mutating func reject(now: TimeInterval) -> (log: Bool, notice: Bool) {
+    mutating func reject(now: TimeInterval, authenticationFailure: Bool = true) -> (log: Bool, notice: Bool) {
         rejectedCount += 1
         let log = lastLog.map { now - $0 >= 10 } ?? true
         if log { lastLog = now }
-        let notice = !noticeShown
-        noticeShown = true
+        let notice = authenticationFailure && !noticeShown
+        if notice { noticeShown = true }
         return (log, notice)
     }
 }
