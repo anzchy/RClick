@@ -10,6 +10,7 @@ import Foundation
 import OSLog
 import AppKit
 import Synchronization
+import Observation
 
 // MARK: - 消息类型枚举
 
@@ -188,6 +189,7 @@ nonisolated final class Messager: NSObject, Sendable {
         var ext: [ExtensionToMainAction: @Sendable (VerifiedMessage) -> Void] = [:]
         var key: Data?
         var configVersion = 0
+        var failures = IPCFailurePolicy()
     }
     private let state: Mutex<State>
     private let isExtension: Bool
@@ -213,6 +215,8 @@ nonisolated final class Messager: NSObject, Sendable {
         self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock, session: launchSession)
         self.state = Mutex(State(key: try? keyProvider.key(createIfMissing: !ext)))
         super.init()
+        if !hasReadableKey { logger.error("IPC signing and verification unavailable: no readable key") }
+        if !ext && launchSession.isEmpty { logger.error("IPC unavailable: session creation failed") }
         center.addObserver(self, selector: #selector(receiveNotification(_:)),
                            name: Notification.Name(ext ? Self.mainToExtensionNotification : Self.extensionToMainNotification), object: nil)
     }
@@ -233,7 +237,15 @@ nonisolated final class Messager: NSObject, Sendable {
     }
     @objc private func receiveNotification(_ notification: NSNotification) {
         guard let wire = notification.object as? String, let key = key(),
-              let message = try? receiver.receive(wire, key: key) else { return }
+              let message = try? receiver.receive(wire, key: key) else {
+            let report = state.withLock { state in
+                let decision = state.failures.reject(now: clock.monotonicTime)
+                return (decision.log, decision.notice, state.failures.rejectedCount)
+            }
+            if report.0 { logger.error("Rejected IPC messages: \(report.2, privacy: .public)") }
+            if !isExtension, report.1 { Task { @MainActor in IPCRejectionNotice.shared.record() } }
+            return
+        }
         if isExtension, let action = MainToExtensionAction(rawValue: message.action) {
             let handler = state.withLock { $0.main[action] }
             handler?(message)
@@ -296,4 +308,24 @@ nonisolated struct PendingClicks {
     mutating func register(_ id: String) { ids.insert(id) }
     mutating func acknowledge(_ inReplyTo: String) { ids.remove(inReplyTo) }
     mutating func expire(_ id: String) -> Bool { ids.remove(id) != nil }
+}
+
+nonisolated struct IPCFailurePolicy {
+    private(set) var rejectedCount = 0
+    private var lastLog: TimeInterval?
+    private var noticeShown = false
+    mutating func reject(now: TimeInterval) -> (log: Bool, notice: Bool) {
+        rejectedCount += 1
+        let log = lastLog.map { now - $0 >= 10 } ?? true
+        if log { lastLog = now }
+        let notice = !noticeShown
+        noticeShown = true
+        return (log, notice)
+    }
+}
+
+@MainActor @Observable final class IPCRejectionNotice {
+    static let shared = IPCRejectionNotice()
+    private(set) var wasRejected = false
+    func record() { wasRejected = true }
 }

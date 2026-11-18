@@ -42,12 +42,16 @@ struct MenuBarExtraLabel: View {
 }
 
 struct MenuBarView: View {
+    @State private var ipcNotice = IPCRejectionNotice.shared
     @Environment(\.openWindow) var openWindow: OpenWindowAction
 
     let messager = Messager.shared
 
     var body: some View {
         VStack {
+            if ipcNotice.wasRejected {
+                Text(appLocalized: "Unverifiable Finder messages were rejected. If you just updated RClick, relaunch Finder.")
+            }
             Button(action: actionSettings) {
                 Image(systemName: "gearshape")
                 Text(appLocalized: "Settings")
