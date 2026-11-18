@@ -30,6 +30,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 菜单配置缓存（内存缓存，从 Main App 推送）
     private var cachedMenuConfig: MenuConfigPayload?
+    private var cachedMenuSession: String?
+    private let menuDeliveryOrder = Mutex(MenuConfigDeliveryOrder())
 
     /// 图标内存缓存，避免每次构建菜单都重新创建 NSImage
     private var iconCache: [String: NSImage] = [:]
@@ -123,6 +125,10 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             if let config = self.messager.decodeSignedData(data, as: MenuConfigPayload.self) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
+                    let current = self.messager.currentSession
+                    guard self.messager.canUseCachedMenus,
+                          self.menuDeliveryOrder.withLock({ $0.accepts(session: data.session, version: config.version, currentSession: current) }) else { return }
+                    self.cachedMenuSession = data.session
                     _ = self.mainActivity.receive()
                     self.handleMenuConfig(config)
                 }
@@ -383,7 +389,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 构建并返回 Finder 上下文菜单
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
-        if !messager.canUseCachedMenus { cachedMenuConfig = nil }
+        if !messager.canUseCachedMenus || cachedMenuSession != messager.currentSession { cachedMenuConfig = nil }
         let start = DispatchTime.now()
         let menu = buildMenu(for: menuKind)
         let ms = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000

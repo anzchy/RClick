@@ -32,9 +32,15 @@ final class MessagerIsolationTests: XCTestCase {
         }
         ext.onMainMessage(.actionAck) { _ in acknowledgements.withLock { $0 += 1 } }
         let event = ClickEventPayload(itemId: "test-click", itemType: .newFile, trigger: .contextualItems)
-        // Legacy-format objects and names remain isolated in both directions.
-        center.post(name: Notification.Name(legacyExtension), object: "{\"action\":\"click\"}")
-        center.post(name: Notification.Name(legacyMain), object: "{\"action\":\"running\"}")
+        // Fully valid v2 envelopes on legacy names must still stay isolated.
+        let legacyClick = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "legacy-click", session: app.currentSession,
+                                                            timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16),
+                                                            payload: try JSONEncoder().encode(event)), key: Data(repeating: 0x42, count: 32)).wireString()
+        let legacyRunning = MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: "running", id: "legacy-running", session: app.currentSession,
+                                                              timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 2, count: 16),
+                                                              payload: try JSONEncoder().encode(RunningPayload(directories: ["legacy"]))), key: Data(repeating: 0x42, count: 32)).wireString()
+        center.post(name: Notification.Name(legacyExtension), object: legacyClick)
+        center.post(name: Notification.Name(legacyMain), object: legacyRunning)
         XCTAssertEqual(clicks.withLock { $0 }, [])
         XCTAssertEqual(directories.withLock { $0 }, [])
         XCTAssertEqual(acknowledgements.withLock { $0 }, 0)

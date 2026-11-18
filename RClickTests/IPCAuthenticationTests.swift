@@ -278,6 +278,14 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertTrue(provider.contains("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"))
     }
 
+    func testRendererRejectsReorderedVerifiedCallbacksAndRetiredSessions() {
+        var delivery = MenuConfigDeliveryOrder()
+        XCTAssertTrue(delivery.accepts(session: "current", version: 3, currentSession: "current"))
+        XCTAssertFalse(delivery.accepts(session: "current", version: 2, currentSession: "current"))
+        XCTAssertFalse(delivery.accepts(session: "old", version: 100, currentSession: "current"))
+        XCTAssertTrue(delivery.accepts(session: "next", version: 1, currentSession: "next"))
+    }
+
 }
 
 
