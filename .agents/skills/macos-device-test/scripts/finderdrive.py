@@ -77,9 +77,10 @@ def osascript(script, *args, timeout=20):
 
 
 def require_lock():
+    """The GUI lock must be held by THIS run's acquisition (finderui.check_lock)."""
     status = run([HERE / 'gui-lock.sh', 'status'], timeout=10)
-    if not ui.lock_held_by_rclick(status.stdout):
-        raise ui.Environment('the shared GUI lock is not held by an rclick run: gui-lock.sh acquire <run-id> first')
+    ui.check_lock(status.stdout, os.environ.get('RCLICK_GUI_LOCK_BATCH', ''),
+                  os.environ.get('RCLICK_GUI_LOCK_ACQUISITION_ID', ''))
 
 
 def require_trust():
