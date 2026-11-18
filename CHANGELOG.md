@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Direct Delete now always asks for confirmation before permanently removing files. Hold Option while choosing it to skip the prompt
 
 ### Added
+- Opt-in Cut action marks selected Finder files as a pending cut locally without changing files; Finder’s own Paste continues to copy
 - Settings backup: export the full configuration as JSON, import it on the same or another Mac, and export the app's logs
 - Copy File Name action, which puts the selected item's name (without its path) on the clipboard
 - Built-in app presets, per-app toolbar/context-menu visibility, and none/simple/original icon styles

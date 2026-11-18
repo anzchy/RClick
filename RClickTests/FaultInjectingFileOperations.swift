@@ -19,6 +19,7 @@ final class FaultInjectingFileOperations: FileOperations {
 
     private struct Faults {
         var failRemoving: Set<String> = []
+        var unwritable: Set<String> = []
         var removeCalls: [String] = []
         var copyFailsHalfwayTo: Set<String> = []
         var nameExistsAt: Set<String> = []
@@ -74,8 +75,12 @@ final class FaultInjectingFileOperations: FileOperations {
         return FileIdentity(volume: adjustedVolume(identity.volume, for: url), fileNumber: identity.fileNumber)
     }
 
+    func reportUnwritable(_ url: URL) {
+        faults.withLock { _ = $0.unwritable.insert(url.path) }
+    }
+
     func isWritable(_ url: URL) -> Bool {
-        base.isWritable(url)
+        !faults.withLock { $0.unwritable.contains(url.path) } && base.isWritable(url)
     }
 
     func coordinatedTransfer(_ kind: FileTransferKind, from source: URL, to destination: URL) throws {
