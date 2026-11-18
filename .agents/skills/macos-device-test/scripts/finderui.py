@@ -465,3 +465,54 @@ def probe_points(point):
     """Where to look for the menu a right-click at `point` opened: lower right first, then the flipped corners."""
     x, y = point
     return [(x + 40, y + 12), (x + 40, y - 12), (x - 40, y + 12), (x - 40, y - 12)]
+
+
+def lock_held_by_rclick(status_text):
+    """True only when `gui-lock.sh status` reports the shared desktop lock HELD with project=rclick."""
+    lines = [line.strip() for line in status_text.splitlines()]
+    return bool(lines) and lines[0] == 'HELD:' and 'project=rclick' in lines[1:]
+
+
+# Calibration steps in run order, each with the ui.sh command a failure tells the tester to distrust.
+CALIBRATION_STEPS = (
+    ('accessibility', 'every ui.sh command'),
+    ('gui-lock', 'every ui.sh command'),
+    ('axprobe', 'every ui.sh command'),
+    ('row-order', 'ui.sh rows'),
+    ('select-readback', 'ui.sh select'),
+    ('context-menu', 'ui.sh open-menu'),
+    ('menu-read', 'ui.sh menu'),
+    ('rclick-group', "ui.sh menu (RClick's group)"),
+    ('guard', 'ui.sh guard'),
+    ('choose', 'ui.sh choose'),
+    ('dialog-read', 'ui.sh dialog'),
+    ('press-button', 'ui.sh press-button'),
+    ('panel-grant-row', 'ui.sh grant (row mode)'),
+    ('panel-grant-current', 'ui.sh grant (current-folder mode)'),
+)
+ENVIRONMENT_STEPS = ('accessibility', 'gui-lock', 'axprobe')
+
+
+def calibration_report(results):
+    """One `PASS|FAIL|SKIP <step> — <detail>` line per calibration step, in order, then the summary line.
+    A step with no result is a FAIL (`not run`). Exit 0 when every step passed, 70 when an environment step
+    failed (nothing else can be trusted), 65 otherwise; SKIP is not a pass."""
+    by_step = {step: (status, detail) for step, status, detail in results}
+    lines, distrust, environment = [], [], []
+    for step, command in CALIBRATION_STEPS:
+        status, detail = by_step.get(step, ('FAIL', 'not run (the calibration stopped before this step)'))
+        lines.append(f'{status} {step} — {detail}')
+        if status != 'PASS':
+            if command not in distrust:
+                distrust.append(command)
+            if step in ENVIRONMENT_STEPS:
+                environment.append(step)
+    if environment:
+        lines.append(f'CALIBRATION FAIL — environment ({", ".join(environment)}): fix it and rerun; '
+                     f'distrust: {", ".join(distrust)}')
+        return lines, ENVIRONMENT
+    if distrust:
+        lines.append(f'CALIBRATION FAIL — distrust: {", ".join(distrust)}')
+        return lines, REFUSED
+    lines.append(f'CALIBRATION PASS ({len(CALIBRATION_STEPS)} steps)')
+    return lines, OK

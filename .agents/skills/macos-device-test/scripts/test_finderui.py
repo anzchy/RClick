@@ -270,5 +270,50 @@ class Arguments(unittest.TestCase):
         self.assertEqual(finderui.probe_points((620, 225)), [(660, 237), (660, 213), (580, 237), (580, 213)])
 
 
+class Calibration(unittest.TestCase):
+    def all_pass(self):
+        return [(step, 'PASS', 'ok') for step, _ in finderui.CALIBRATION_STEPS]
+
+    def test_every_helper_has_a_calibration_step(self):
+        steps = [step for step, _ in finderui.CALIBRATION_STEPS]
+        for step in ('accessibility', 'gui-lock', 'row-order', 'select-readback', 'context-menu', 'menu-read',
+                     'rclick-group', 'guard', 'choose', 'dialog-read', 'press-button', 'panel-grant-row',
+                     'panel-grant-current'):
+            self.assertIn(step, steps)
+
+    def test_all_pass_prints_one_line_per_helper_and_exits_zero(self):
+        lines, code = finderui.calibration_report(self.all_pass())
+        self.assertEqual(code, 0)
+        self.assertEqual(len(lines), len(finderui.CALIBRATION_STEPS) + 1)
+        self.assertTrue(lines[-1].startswith('CALIBRATION PASS'))
+
+    def test_a_failed_helper_is_named_with_the_command_to_distrust(self):
+        results = self.all_pass()
+        results[[r[0] for r in results].index('context-menu')] = ('context-menu', 'FAIL', 'no menu opened')
+        results[[r[0] for r in results].index('choose')] = ('choose', 'SKIP', 'needs the context menu')
+        lines, code = finderui.calibration_report(results)
+        self.assertEqual(code, 65)
+        self.assertIn('FAIL context-menu — no menu opened', lines)
+        self.assertEqual(lines[-1], 'CALIBRATION FAIL — distrust: ui.sh open-menu, ui.sh choose')
+
+    def test_an_environment_failure_exits_seventy(self):
+        results = [('accessibility', 'FAIL', 'not trusted')] + [
+            (step, 'SKIP', 'environment') for step, _ in finderui.CALIBRATION_STEPS[1:]]
+        lines, code = finderui.calibration_report(results)
+        self.assertEqual(code, 70)
+        self.assertTrue(lines[-1].startswith('CALIBRATION FAIL'))
+
+    def test_a_missing_step_result_is_a_failure_not_a_pass(self):
+        lines, code = finderui.calibration_report(self.all_pass()[:-1])
+        self.assertEqual(code, 65)
+        self.assertIn('not run', lines[-2])
+
+    def test_gui_lock_must_be_held_by_rclick(self):
+        held = 'HELD:\n  project=rclick\n  session=rclick-delegator\n  batch=i32-cal\n'
+        self.assertTrue(finderui.lock_held_by_rclick(held))
+        self.assertFalse(finderui.lock_held_by_rclick('FREE\n'))
+        self.assertFalse(finderui.lock_held_by_rclick(held.replace('project=rclick', 'project=picsee')))
+
+
 if __name__ == '__main__':
     unittest.main()
