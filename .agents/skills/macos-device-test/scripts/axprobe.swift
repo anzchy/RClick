@@ -12,12 +12,15 @@
 //   axprobe act PID PATH select|press ROLE NAME       PATH like 0.3.1; verifies ROLE and NAME first, else exit 65
 //   axprobe menu-session X Y MAXDEPTH                 the menu under the point: prints {"session":{"pid":N}}, its dump
 //                                                     and {"end":true}, then reads ONE JSON line from stdin:
-//                                                     {"abort":true}, or {"press":[i] or [i,0,j],"title":T,"sub":S|null,
+//                                                     {"abort":true} (AXCancel on the held menu, then exit 0), or
+//                                                     {"press":[i] or [i,0,j],"title":T,"sub":S|null,
 //                                                     "titles":[every top-level title],"pid":N}. Before pressing it
 //                                                     re-reads the menu it HOLDS: same owner pid, same top-level titles,
-//                                                     item i titled T (and j titled S), else exit 65 and nothing pressed.
+//                                                     item i titled T (and j titled S), else AXCancel, exit 65 and
+//                                                     nothing pressed.
+//   axprobe menu-cancel X Y PID                       AXCancel on the menu under the point when PID owns it (else 65)
 // exit: 0 ok, 64 usage, 65 no such element or it does not match (nothing done), 70 AX error / not trusted / no lock
-// `act` and `menu-session` first run the driver's GUI-lock check (`python3 finderdrive.py lock-check`, its path is
+// `act`, `menu-session` and `menu-cancel` first run the driver's GUI-lock check (`python3 finderdrive.py lock-check`, its path is
 // compiled in by finderdrive.probe_binary as `driverScript`) and act on nothing unless it exits 0.
 import ApplicationServices
 import Foundation
@@ -142,6 +145,11 @@ func perform(_ target: AXUIElement, _ action: String) {
     print("\(action) ok")
 }
 
+/// Closes a menu through Accessibility (no key event, so nothing can land in another app); false when refused.
+func cancel(_ menu: AXUIElement) -> Bool {
+    AXUIElementPerformAction(menu, "AXCancel" as CFString) == .success
+}
+
 func requireLock() {
     let check = Process()
     check.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
@@ -197,9 +205,10 @@ case "menu-session":
     fflush(stdout)
     guard let line = readLine(), let data = line.data(using: .utf8),
           let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        _ = cancel(root)
         fail(65, "no decision from the driver: nothing pressed")
     }
-    if request["abort"] != nil { print("aborted"); exit(0) }
+    if request["abort"] != nil { print(cancel(root) ? "aborted: menu cancelled" : "aborted: AXCancel refused"); exit(0) }
     guard let steps = request["press"] as? [Int], !steps.isEmpty, steps.allSatisfy({ $0 >= 0 }),
           let title = request["title"] as? String, let titles = request["titles"] as? [String],
           let want = request["pid"] as? Int else { fail(64, "malformed press request") }
@@ -209,10 +218,14 @@ case "menu-session":
     }
     let current = children(root).map { string($0, "AXTitle") }
     guard current.count == titles.count, zip(current, titles).allSatisfy({ same($0.0, $0.1) }) else {
+        _ = cancel(root)
         fail(65, "the menu changed since it was verified: nothing pressed")
     }
     let item = descend(root, steps.prefix(1))
-    guard same(string(item, "AXTitle"), title) else { fail(65, "menu item is \(string(item, "AXTitle")), not \(title): nothing pressed") }
+    guard same(string(item, "AXTitle"), title) else {
+        _ = cancel(root)
+        fail(65, "menu item is \(string(item, "AXTitle")), not \(title): nothing pressed")
+    }
     if steps.count == 1 {
         perform(item, "press")
     } else {
@@ -224,6 +237,15 @@ case "menu-session":
         guard same(string(sub, "AXTitle"), subtitle) else { fail(65, "the submenu changed after it opened: nothing pressed") }
         perform(sub, "press")
     }
+case "menu-cancel":
+    requireLock()
+    let root = menu(at: Float(number(2)), Float(number(3)))
+    var owner: pid_t = 0
+    guard AXUIElementGetPid(root, &owner) == .success, Int(owner) == number(4) else {
+        fail(65, "the menu at the point belongs to pid \(owner), not \(number(4)): nothing cancelled")
+    }
+    guard cancel(root) else { fail(70, "AXCancel on the menu failed") }
+    print("cancelled")
 default:
     fail(64, "unknown command \(argument(1))")
 }

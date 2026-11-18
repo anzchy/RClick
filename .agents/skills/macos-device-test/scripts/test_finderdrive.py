@@ -1,5 +1,6 @@
 """Offline tests of the ui.sh / calibrate.sh command line: exit codes and refusals that happen before any AX,
 AppleScript or desktop call. A fake osascript/xcrun/pgrep on PATH records any call; none may happen here."""
+import collections
 import contextlib
 import io
 import json
@@ -39,20 +40,164 @@ def top_titles(menu_text):
     return [node['title'] for node in sorted(nodes, key=lambda n: n['path']) if len(node['path']) == 1]
 
 
-class FakeDesktop:
-    """The process boundary of finderdrive (`run`, `spawn`) answered offline: gui-lock.sh, pgrep, osascript and
-    axprobe. An axprobe menu session answers a press the way axprobe.swift does: it compares the request's owner pid
-    and full top-level title list with the menu that is open NOW and exits 65 (nothing pressed) on a difference."""
+FOLDER = '/Users/tester/runs/run-1/fixtures/calibration-x1y2z3'  # the folder of fixtures/finder-window-calibration.jsonl
+TIMEOUT = 'osascript timed out after 20 s'
 
-    def __init__(self, menu, selection, front=DIR, menu_pid=FINDER):
-        self.menu, self.selection, self.front, self.menu_pid = menu, list(selection), front, menu_pid
-        self.calls, self.requests, self.pressed = [], [], []
-        self.menu_at_press = None  # the menu open when the press arrives (None: unchanged)
+
+def menu_for(template, selection, folder):
+    """The menu Finder opens for `selection` (fixtures/menu-file-alpha.jsonl with its Compress title rewritten): one
+    item names it, N items count them, an empty selection (window background) has no Compress item."""
+    lines = []
+    for line in template.splitlines():
+        if not line.strip():
+            continue
+        node = json.loads(line)
+        if node.get('title', '').startswith('Compress '):
+            if not selection:
+                continue
+            node['title'] = (f'Compress “{selection[0].rsplit("/", 1)[-1]}”' if len(selection) == 1
+                             else f'Compress {len(selection)} Items')
+        lines.append(json.dumps(node, ensure_ascii=False))
+    return '\n'.join(lines) + '\n'
+
+
+FakeRow = collections.namedtuple('FakeRow', 'url name frame')
+
+
+def inside(frame, point):
+    x, y, width, height = frame
+    return x <= point[0] < x + width and y <= point[1] < y + height
+
+
+class FakeDesktop:
+    """The process boundary of finderdrive (`run`, `spawn`, `executable_of`) answered offline as Finder does on the
+    device (run of 2026-11-18): while a Finder context menu is open, every AppleScript call to Finder times out (the
+    fake raises what finderdrive.run raises on a timeout) and System Events' frontmost check does not see Finder;
+    System Events still answers. A right-click opens the menu of the row under the point (selecting it first when it
+    was not selected) or the window-background menu; the menu stays open until AXCancel (menu-cancel, or a session
+    abort), an Esc to Finder or a press. An axprobe menu session answers a press the way axprobe.swift does: it
+    compares the request's owner pid and full top-level title list with the menu open NOW and exits 65 on a
+    difference. `menu_delay` menu-at polls answer "no menu" before a fresh menu shows (a cold first menu)."""
+
+    def __init__(self, menu=None, selection=(), menu_pid=FINDER, folder=FOLDER, window=None):
+        self.template = menu or fixture('menu-file-alpha.jsonl')
+        self.fixed_menu = None  # a menu text to show whatever the selection (a menu of another row)
+        self.selection, self.menu_pid, self.folder = list(selection), menu_pid, folder
+        self.window = (window or fixture('finder-window-calibration.jsonl')).replace(FOLDER, folder)
+        self.ax_selection = None  # AX rows marked selected, when they differ from the AppleScript selection
+        self.selection_reply = None  # what SELECTION_SCRIPT answers, when it differs from self.selection
+        self.deselect_works = True
+        self.menu = None  # the open menu's dump, or None
+        self.menu_delay, self.polls_left = 0, 0
+        self.cancel_works = self.esc_works = True
+        self.menu_at_press = None
+        self.calls, self.requests, self.pressed, self.clicks, self.timeouts, self.keys = [], [], [], [], [], []
         self.windows, self.acted, self.after_act = fixture('dialog-delete-confirm.jsonl'), [], []
-        self.selection_at_check = None
 
     def completed(self, argv, out='', code=0, err=''):
         return subprocess.CompletedProcess(argv, code, out, err)
+
+    def finder_window(self):
+        chosen = self.selection if self.ax_selection is None else self.ax_selection
+        lines = []
+        for line in self.window.splitlines():
+            if not line.strip():
+                continue
+            node = json.loads(line)
+            if node['role'] == 'AXRow' and node['path'][:4] == [0, 0, 2, 0]:
+                url = next((json.loads(l)['url'] for l in self.window.splitlines() if l.strip()
+                            and json.loads(l)['path'][:len(node['path'])] == node['path'] and json.loads(l)['url']), None)
+                node['selected'] = url is not None and url in chosen
+            lines.append(json.dumps(node, ensure_ascii=False))
+        return '\n'.join(lines) + '\n'
+
+    def rows(self):
+        """The window's file rows as (url, name, frame), read from the dump itself rather than through finderui, so
+        the fake does not depend on the code it tests."""
+        nodes = [json.loads(line) for line in self.window.splitlines() if line.strip()]
+        rows = []
+        for node in nodes:
+            if node['role'] == 'AXRow' and node['path'][:4] == [0, 0, 2, 0]:
+                url = next((n['url'] for n in nodes if n['path'][:len(node['path'])] == node['path'] and n['url']), None)
+                if url:
+                    rows.append(FakeRow(url, url.rsplit('/', 1)[-1], tuple(node['frame'])))
+        return rows
+
+    def right_click(self, x, y, option):
+        self.clicks.append((x, y, option))
+        hit = next((row for row in self.rows() if inside(row.frame, (x, y))), None)
+        if hit is None:
+            self.selection = []
+        elif hit.url not in self.selection:
+            self.selection = [hit.url]
+        menu = self.fixed_menu or menu_for(self.template, sorted(self.selection), self.folder)
+        if option:
+            menu = menu.replace('"Delete Direct"', '"Delete Direct (skip confirmation)"')
+        self.menu, self.polls_left = menu, self.menu_delay
+
+    def menu_shows(self):
+        if self.menu is None:
+            return False
+        if self.polls_left:
+            self.polls_left -= 1
+            return False
+        return True
+
+    def osascript(self, argv):
+        script, args = argv[2], argv[3:]
+        if 'application "Finder"' in script:
+            if self.menu is not None:
+                self.timeouts.append(script)
+                raise finderui.Environment(TIMEOUT)
+            if 'select chosen' in script:
+                self.selection = list(args)
+            elif 'set selection to {}' in script:
+                if self.deselect_works:
+                    self.selection = []
+            elif 'selection as alias list' in script:
+                paths = self.selection if self.selection_reply is None else self.selection_reply
+                return self.completed(argv, f'{len(paths)}\n' + ''.join(p + '\n' for p in paths) + '\n')
+            elif 'front Finder window' in script:
+                return self.completed(argv, self.folder + '/\n')
+            return self.completed(argv, '\n')
+        if 'key code 53' in script:
+            self.keys.append(script)
+            if 'frontmost is true' in script:  # the old frontmost check: System Events did not see Finder in front
+                return self.completed(argv, 'skipped: Finder is not frontmost\n' if self.menu else 'escaped\n')
+            if self.menu is not None and self.esc_works:
+                self.menu = None
+            return self.completed(argv, '\n')
+        return self.completed(argv, '\n')  # System Events: bring Finder to the front
+
+    def axprobe(self, argv):
+        command = argv[1]
+        if command == 'trusted':
+            return self.completed(argv, 'true\n')
+        if command == 'menu-at':
+            if self.menu_shows():
+                return self.completed(argv, self.menu)
+            return self.completed(argv, '', 65, f'axprobe: no menu at {argv[2]},{argv[3]} (found AXTextField)\n')
+        if command == 'menu-cancel':
+            if self.menu is None:
+                return self.completed(argv, '', 65, 'axprobe: no menu\n')
+            if int(argv[4]) != self.menu_pid:
+                return self.completed(argv, '', 65, f'axprobe: the menu belongs to pid {self.menu_pid}\n')
+            if not self.cancel_works:
+                return self.completed(argv, '', 70, 'axprobe: AXCancel on the menu failed\n')
+            self.menu = None
+            return self.completed(argv, 'cancelled\n')
+        if command == 'dump':
+            if argv[2] == str(FINDER) and argv[3] == '0':
+                return self.completed(argv, self.finder_window())
+            return self.completed(argv, self.windows)
+        if command == 'act':
+            self.acted.append(argv[2:])
+            if argv[2] == str(FINDER) and argv[4] == 'select':
+                self.selection = [row.url for row in self.rows() if row.name == argv[6]]
+            elif self.after_act:
+                self.windows = self.after_act.pop(0)
+            return self.completed(argv, f'{argv[4]} ok\n')
+        return self.completed(argv, '', 64, f'fake axprobe: {command} not expected')
 
     def run(self, argv, timeout=20):
         argv = [str(a) for a in argv]
@@ -62,27 +207,13 @@ class FakeDesktop:
             return self.completed(argv, HELD)
         if name == 'pgrep':
             return self.completed(argv, f'{FINDER}\n')
+        if name == 'rightclick.sh':
+            self.right_click(int(argv[1]), int(argv[2]), argv[3:] == ['option'])
+            return self.completed(argv, 'right-clicked\n')
         if name == 'axprobe':
-            if argv[1] == 'trusted':
-                return self.completed(argv, 'true\n')
-            if argv[1] == 'menu-at':
-                return self.completed(argv, self.menu)
-            if argv[1] == 'dump':
-                return self.completed(argv, self.windows)
-            if argv[1] == 'act':
-                self.acted.append(argv[2:])
-                if self.after_act:
-                    self.windows = self.after_act.pop(0)
-                return self.completed(argv, f'{argv[4]} ok\n')
-            return self.completed(argv, '', 64, f'fake axprobe: {argv[1]} not expected')
+            return self.axprobe(argv)
         if name == 'osascript':
-            script = argv[2]
-            if 'selection as alias list' in script:
-                paths = self.selection if self.selection_at_check is None else self.selection_at_check
-                return self.completed(argv, f'{len(paths)}\n' + ''.join(p + '\n' for p in paths) + '\n')
-            if 'front Finder window' in script:
-                return self.completed(argv, self.front + '/\n')
-            return self.completed(argv, '\n')
+            return self.osascript(argv)
         return self.completed(argv, '', 99, f'fake desktop: unexpected {name}')
 
     def executable_of(self, pid):
@@ -101,21 +232,34 @@ class FakeDesktop:
 class FakeSession:
     def __init__(self, desktop, argv):
         self.desktop, self.returncode = desktop, None
+        if not desktop.menu_shows():
+            self.stdout = io.BytesIO(b'')
+            self.ended = (b'', b'axprobe: no menu at the point (found AXTextField)\n', 65)
+            return
+        self.ended = None
         lines = [json.dumps({'session': {'pid': desktop.menu_pid}})] + [
             line for line in desktop.menu.splitlines() if line.strip()] + [json.dumps({'end': True})]
         self.stdout = io.BytesIO(('\n'.join(lines) + '\n').encode())
 
     def communicate(self, input=None, timeout=None):
+        if self.ended:
+            out, err, self.returncode = self.ended
+            return out, err
         request = json.loads(input.decode())
         self.desktop.requests.append(request)
         if 'abort' in request:
             self.returncode = 0
-            return b'aborted\n', b''
+            if self.desktop.cancel_works:
+                self.desktop.menu = None
+            return b'aborted: menu cancelled\n', b''
         now = self.desktop.menu_at_press or self.desktop.menu
         if request.get('pid') != self.desktop.menu_pid or request.get('titles') != top_titles(now):
             self.returncode = 65
+            if self.desktop.cancel_works:
+                self.desktop.menu = None
             return b'', b'axprobe: the menu changed since it was verified: nothing pressed\n'
         self.desktop.pressed.append(request)
+        self.desktop.menu = None  # a pressed menu closes
         self.returncode = 0
         return b'press ok\n', b''
 
@@ -140,50 +284,131 @@ def drive(desktop, *argv):
 
 
 class ChooseAtTheActingBoundary(unittest.TestCase):
-    """`choose` decides and presses inside ONE axprobe menu session: the press request carries the verified owner pid
-    and title list, and the selection is read again inside that session (audit r1 F2)."""
-    ALPHA = DIR + '/alpha.txt'
+    """`choose` is ONE process from selection to press (fix r3 items 1 and 7): it selects the target through
+    AppleScript BEFORE the menu opens, verifies the row's full path and the selected rows through AX, right-clicks,
+    and decides and presses inside one axprobe menu session, with no Finder AppleScript while the menu is open
+    (the device run of 2026-11-18 saw every such call time out). Every refusal closes the menu."""
+    ALPHA = FOLDER + '/alpha.txt'
 
-    def test_a_verified_menu_is_pressed_with_its_identity(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
+    def choose(self, desktop, *extra, title='Copy Path', targets=(ALPHA,)):
+        args = [arg for target in targets for arg in ('--target', target)]
+        return drive(desktop, 'choose', title, *args, *GROUP, *extra)
+
+    def assert_clean_refusal(self, desktop, code, err):
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertIsNone(desktop.menu, 'the menu was left open')
+        self.assertEqual(desktop.timeouts, [])
+
+    def test_a_verified_menu_is_pressed_with_its_identity_and_no_finder_applescript_while_it_is_open(self):
+        desktop = FakeDesktop()
+        code, out, err = self.choose(desktop)
         self.assertEqual(code, 0, err)
+        self.assertEqual(desktop.timeouts, [])
+        self.assertEqual(len(desktop.clicks), 1)
+        self.assertEqual(desktop.clicks[0][:2], (318, 415))  # alpha.txt's name field centre in the recorded dump
         self.assertEqual(len(desktop.pressed), 1)
         request = desktop.pressed[0]
         self.assertEqual((request['press'], request['title'], request['pid']), ([27], 'Copy Path', FINDER))
-        self.assertEqual(request['titles'], top_titles(fixture('menu-file-alpha.jsonl')))
+        self.assertIn('Compress “alpha.txt”', out)
         self.assertIn('chose: Copy Path', out)
 
+    def test_several_targets_need_every_row_and_the_count_title(self):
+        targets = (FOLDER + '/%41.txt', FOLDER + '/%2541.txt')
+        desktop = FakeDesktop()
+        code, out, err = self.choose(desktop, targets=targets)
+        self.assertEqual(code, 0, err)
+        self.assertIn('Compress 2 Items', out)
+        self.assertEqual(desktop.timeouts, [])
+
     def test_a_menu_replaced_by_the_siblings_before_the_press_is_not_pressed(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        desktop = FakeDesktop()
         desktop.menu_at_press = fixture('menu-file-sibling-option.jsonl')  # same Copy Path at the same index
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
-        self.assertEqual(code, 65, err)
-        self.assertEqual(desktop.pressed, [])
+        code, _, err = self.choose(desktop)
+        self.assert_clean_refusal(desktop, code, err)
         self.assertIn('nothing pressed', err)
 
-    def test_a_guard_pass_does_not_carry_over_to_a_later_choose(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        self.assertEqual(drive(desktop, 'guard', '660,237', self.ALPHA)[0], 0)
-        desktop.menu = fixture('menu-file-sibling-option.jsonl')  # another row's menu now at the point
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
-        self.assertEqual(code, 65, err)
-        self.assertEqual(desktop.pressed, [])
+    def test_the_menu_of_another_row_is_refused_and_closed(self):
+        desktop = FakeDesktop()
+        desktop.fixed_menu = fixture('menu-file-sibling-option.jsonl')  # Compress “%41.txt” for the alpha.txt click
+        code, _, err = self.choose(desktop)
+        self.assert_clean_refusal(desktop, code, err)
+        self.assertIn('Compress “%41.txt”', err)
 
-    def test_a_selection_changed_inside_the_session_is_not_pressed(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        desktop.selection_at_check = [DIR + '/%41.txt']
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
+    def test_a_selection_ax_does_not_confirm_is_not_clicked(self):
+        # AppleScript reads back the target, but AX marks another row selected (or none): nothing is clicked.
+        for shown in ([FOLDER + "/%41.txt"], [], [self.ALPHA, FOLDER + '/beta.txt']):
+            with self.subTest(ax=shown):
+                desktop = FakeDesktop()
+                desktop.ax_selection = shown
+                code, _, err = self.choose(desktop)
+                self.assertEqual(code, 65, err)
+                self.assertEqual(desktop.clicks, [])
+                self.assertIn('selection (AX)', err)
+
+    def test_a_row_whose_full_path_is_not_the_target_is_not_clicked(self):
+        # Same name, another folder: the basename alone (all a Compress title carries) would pass.
+        desktop = FakeDesktop()
+        code, _, err = self.choose(desktop, targets=('/tmp/elsewhere/alpha.txt',))
         self.assertEqual(code, 65, err)
-        self.assertEqual(desktop.pressed, [])
-        self.assertIn('selection', err)
+        self.assertEqual(desktop.clicks, [])
+        self.assertIn('not the target', err)
 
     def test_a_menu_owned_by_another_process_is_not_pressed(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA], menu_pid=999)
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        desktop = FakeDesktop(menu_pid=999)
+        code, _, err = self.choose(desktop)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
         self.assertIn('not Finder', err)
+        self.assertEqual(desktop.keys, [], 'an Esc was sent to a menu of another process')
+
+    def test_a_slow_first_menu_is_waited_for(self):
+        desktop = FakeDesktop()
+        desktop.menu_delay = 8  # two full probe rounds answer "no menu" first
+        code, _, err = self.choose(desktop)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(desktop.pressed), 1)
+
+    def test_a_menu_that_never_shows_names_what_axprobe_found(self):
+        desktop = FakeDesktop()
+        desktop.menu_delay = 10 ** 6
+        code, _, err = self.choose(desktop)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertIn('found AXTextField', err)
+
+    def test_a_refusal_closes_the_menu_with_esc_when_axcancel_does_not(self):
+        desktop = FakeDesktop()
+        desktop.fixed_menu = fixture('menu-file-sibling-option.jsonl')
+        desktop.cancel_works = False
+        code, _, err = self.choose(desktop)
+        self.assertEqual(code, 65, err)
+        self.assertIsNone(desktop.menu)
+        self.assertEqual(len(desktop.keys), 1)
+        self.assertNotIn('frontmost', desktop.keys[0])
+
+    def test_a_menu_that_cannot_be_closed_is_reported(self):
+        desktop = FakeDesktop()
+        desktop.fixed_menu = fixture('menu-file-sibling-option.jsonl')
+        desktop.cancel_works = desktop.esc_works = False
+        code, _, err = self.choose(desktop)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertIn('could not be closed', err)
+        self.assertIn('close it by hand', err)
+
+    def test_the_standalone_guard_is_gone(self):
+        desktop = FakeDesktop()
+        code, _, err = drive(desktop, 'guard', '660,237', self.ALPHA)
+        self.assertEqual(code, 64, err)
+        self.assertEqual(desktop.calls, [])
+
+    def test_option_is_held_on_the_click_that_opens_the_menu(self):
+        desktop = FakeDesktop()
+        code, out, err = self.choose(desktop, '--option', title='Delete Direct (skip confirmation)')
+        self.assertEqual(code, 0, err)
+        self.assertTrue(desktop.clicks[0][2])
+        self.assertEqual(desktop.pressed[0]['title'], 'Delete Direct (skip confirmation)')
 
 
 class CommandLine(unittest.TestCase):
@@ -208,7 +433,7 @@ class CommandLine(unittest.TestCase):
     def test_help_lists_every_command_and_the_exit_codes(self):
         result = self.run_script('ui.sh', '--help')
         self.assertEqual(result.returncode, 0, result.stderr)
-        for word in ('rows', 'select PATH', 'open-menu NAME', 'menu X,Y', 'guard X,Y', 'choose X,Y', 'dialog PID',
+        for word in ('rows', 'select PATH', 'open-menu NAME', 'menu X,Y', 'close-menu X,Y', 'choose TITLE', 'dialog PID',
                      'press-button PID', 'grant PID FOLDER', '64 usage', '65 refused', '70 environment'):
             self.assertIn(word, result.stdout)
         self.assert_no_desktop_call()
@@ -225,9 +450,9 @@ class CommandLine(unittest.TestCase):
         self.assert_no_desktop_call()
 
     def test_usage_errors_exit_64_without_touching_the_desktop(self):
-        for args in ((), ('bogus',), ('select', 'relative.txt'), ('choose', '620,225', 'Copy Path'),
-                     ('grant', 'Finder', '/tmp/x'), ('menu', 'x'),
-                     ('choose', '620,225', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path')):
+        for args in ((), ('bogus',), ('select', 'relative.txt'), ('choose', 'Copy Path'),
+                     ('grant', 'Finder', '/tmp/x'), ('menu', 'x'), ('close-menu',), ('guard', '620,225', '/tmp/a'),
+                     ('choose', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path')):
             with self.subTest(args=args):
                 result = self.run_script('ui.sh', *args)
                 self.assertEqual(result.returncode, 64, result.stderr)
@@ -235,10 +460,10 @@ class CommandLine(unittest.TestCase):
         self.assert_no_desktop_call()
 
     def test_acting_without_the_rclick_gui_lock_exits_70_and_acts_on_nothing(self):
-        for args in (('select', '/tmp/a.txt'), ('open-menu', 'alpha.txt'), ('guard', '1,2', '/tmp/a'),
-                     ('choose', '1,2', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path', '--group', 'New File'),
+        for args in (('select', '/tmp/a.txt'), ('open-menu', 'alpha.txt'),
+                     ('choose', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path', '--group', 'New File'),
                      ('press-button', '42', 'OK'),
-                     ('grant', '42', '/tmp/x'), ('close-menu',), ('open-menu', '--background')):
+                     ('grant', '42', '/tmp/x'), ('close-menu', '1,2'), ('open-menu', '--background')):
             with self.subTest(args=args):
                 result = self.run_script('ui.sh', *args)
                 self.assertEqual(result.returncode, 70, result.stderr)
@@ -254,7 +479,7 @@ class CommandLine(unittest.TestCase):
         run = Path(self.temp.name) / 'run'
         result = self.run_script('calibrate.sh', str(run), '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        for step in ('row-order', 'select-readback', 'context-menu', 'menu-read', 'guard', 'choose', 'dialog-read',
+        for step in ('row-order', 'select-readback', 'context-menu', 'menu-read', 'choose-multi', 'choose', 'dialog-read',
                      'press-button', 'panel-grant-row', 'panel-grant-current', 'option-menu', 'background-menu',
                      'background-choose', 'close-menu'):
             self.assertIn(f'step {step}:', result.stdout)
@@ -265,45 +490,48 @@ class CommandLine(unittest.TestCase):
 
 
 class WhitespaceIsIdentity(unittest.TestCase):
-    """`alpha.txt` and `alpha.txt ` are distinct files; neither the guard nor the press may take one for the other
+    """`alpha.txt` and `alpha.txt ` are distinct files; neither the row check nor the press may take one for the other
     (audit r1 F1). Driven through finderdrive.main with the process boundary replaced."""
-    ALPHA, SPACED = DIR + '/alpha.txt', DIR + '/alpha.txt '
+    ALPHA, SPACED = FOLDER + '/alpha.txt', FOLDER + '/alpha.txt '
 
-    def two_items_menu(self):
-        return fixture('menu-file-alpha.jsonl').replace('Compress “alpha.txt”', 'Compress 2 Items')
+    def spaced_window(self, url_only=False):
+        """The recorded window with alpha.txt's AXURL (and, unless url_only, its shown name) ending in a space."""
+        window = fixture('finder-window-calibration.jsonl').replace('/alpha.txt"', '/alpha.txt "')
+        return window if url_only else window.replace('"value":"alpha.txt"', '"value":"alpha.txt "')
 
-    def test_choose_with_the_spaced_target_on_the_unspaced_selection_presses_nothing(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED, *GROUP)
+    def test_choose_with_the_spaced_target_on_the_unspaced_row_presses_nothing(self):
+        desktop = FakeDesktop()
+        code, _, err = drive(desktop, 'choose', 'Delete Direct', '--target', self.SPACED, *GROUP)
         self.assertEqual(code, 65, err)
-        self.assertEqual(desktop.pressed, [])
-        self.assertEqual(desktop.requests, [{'abort': True}])
+        self.assertEqual((desktop.clicks, desktop.pressed), ([], []))
 
     def test_choose_with_n_targets_compares_each_path_exactly(self):
-        desktop = FakeDesktop(self.two_items_menu(), [self.ALPHA, DIR + '/b.txt'])
-        code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED,
-                             '--target', DIR + '/b.txt', *GROUP)
+        desktop = FakeDesktop()
+        code, _, err = drive(desktop, 'choose', 'Delete Direct', '--target', self.SPACED,
+                             '--target', FOLDER + '/beta.txt', *GROUP)
         self.assertEqual(code, 65, err)
-        self.assertEqual(desktop.pressed, [])
+        self.assertEqual((desktop.clicks, desktop.pressed), ([], []))
 
-    def test_guard_refuses_the_spaced_target(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        code, _, err = drive(desktop, 'guard', '660,237', self.SPACED)
+    def test_a_row_showing_the_name_but_holding_the_spaced_path_is_refused(self):
+        desktop = FakeDesktop(window=self.spaced_window(url_only=True))
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.clicks, [])
+        self.assertIn("'" + self.SPACED + "'", err)
 
     def test_a_spaced_name_round_trips_and_is_pressed(self):
-        menu = fixture('menu-file-alpha.jsonl').replace('Compress “alpha.txt”', 'Compress “alpha.txt ”')
-        desktop = FakeDesktop(menu, [self.SPACED])
-        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.SPACED, *GROUP)
+        desktop = FakeDesktop(window=self.spaced_window())
+        code, out, err = drive(desktop, 'choose', 'Copy Path', '--target', self.SPACED, *GROUP)
         self.assertEqual(code, 0, err)
-        self.assertIn("'/tmp/rclick-cal/alpha.txt '", out)
+        self.assertIn("'" + self.SPACED + "'", out)
         self.assertEqual(len(desktop.pressed), 1)
 
     def test_a_selected_path_with_a_line_break_is_refused(self):
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [DIR + '/alpha\n.txt'])
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        desktop = FakeDesktop()
+        desktop.selection_reply = [FOLDER + '/alpha\n.txt']
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
-        self.assertEqual(desktop.pressed, [])
+        self.assertEqual((desktop.clicks, desktop.pressed), ([], []))
 
 
 class AxprobeCache(unittest.TestCase):
@@ -446,7 +674,7 @@ class AxprobeNeedsTheLock(unittest.TestCase):
 
     def acting_calls(self):
         return (('act', str(os.getpid()), '0', 'select', 'AXRow', 'alpha.txt'),
-                ('menu-session', '-10000', '-10000', '3'))
+                ('menu-session', '-10000', '-10000', '3'), ('menu-cancel', '-10000', '-10000', str(os.getpid())))
 
     def test_acting_without_the_lock_is_refused_before_any_ax_call(self):
         for args in self.acting_calls():
@@ -582,10 +810,11 @@ class GrantByFullPath(unittest.TestCase):
 class Source(unittest.TestCase):
     def test_no_personal_path_in_the_skill(self):
         marker = '/' + 'Users' + '/'  # split so this file does not match itself
+        placeholder = marker + 'tester/'  # the one home allowed: real dumps are sanitised to it (fixtures/README.md)
         home = str(Path.home())
         for path in SKILL.rglob('*'):
             if path.is_file() and '__pycache__' not in path.parts:
-                text = path.read_text(encoding='utf-8', errors='replace')
+                text = path.read_text(encoding='utf-8', errors='replace').replace(placeholder, '')
                 with self.subTest(path=path.relative_to(SKILL)):
                     self.assertNotIn(marker, text)
                     if len(home) > 1:
@@ -603,65 +832,99 @@ class Source(unittest.TestCase):
 
 
 class CloseMenuAndBackground(unittest.TestCase):
-    """`ui.sh close-menu` (Esc only while Finder is frontmost, under the lock: audit r1 L4) and `ui.sh open-menu
-    --background` (right-click the empty list below the rows, nothing selected: audit r1 F10)."""
+    """`ui.sh close-menu X,Y` closes Finder's menu through AX (AXCancel), with Esc to Finder only while AX still
+    shows that Finder menu (fix r3 item 5: the old frontmost check through System Events did not see Finder with a
+    menu open, so it sent nothing and left the menu open). `choose --background` reads the front folder through AX
+    before the click (fix r3 item 1)."""
+    BACKGROUND = ('--group', 'Copy Path', '--group', 'Copy File Name', '--group', 'Delete Direct', '--group',
+                  'Terminal', '--group', 'New File')
 
-    def desktop(self, frontmost=True, selection=()):
-        window = fixture('finder-window-display-order.jsonl')
-        hidden = [json.loads(l) for l in window.splitlines() if l.strip()]
-        hidden = next(n['path'] for n in hidden if n['role'] == 'AXRow' and n['frame'][1] == 890)
-        lines = [l for l in window.splitlines() if l.strip() and json.loads(l)['path'][:len(hidden)] != hidden]
-        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), selection)
-        desktop.windows = '\n'.join(lines) + '\n'
-        desktop.frontmost = frontmost
-        desktop.clicks = []
-        original = desktop.run
-
-        def run(argv, timeout=20):
-            argv = [str(a) for a in argv]
-            if Path(argv[0]).name == 'rightclick.sh':
-                desktop.calls.append(argv)
-                desktop.clicks.append(argv[1:])
-                return desktop.completed(argv, 'right-clicked\n')
-            if Path(argv[0]).name == 'osascript' and 'key code 53' in argv[2]:
-                desktop.calls.append(argv)
-                return desktop.completed(argv, 'escaped\n' if desktop.frontmost else 'skipped: Finder is not frontmost\n')
-            return original(argv, timeout)
-        desktop.run = run
-        return desktop
-
-    def escapes(self, desktop):
-        return [c for c in desktop.calls if c[0] == 'osascript' and 'key code 53' in c[2]]
-
-    def test_close_menu_sends_esc_through_the_frontmost_check(self):
-        desktop = self.desktop()
-        code, out, err = drive(desktop, 'close-menu')
+    def opened(self, **state):
+        desktop = FakeDesktop()
+        for key, value in state.items():
+            setattr(desktop, key, value)
+        code, out, err = drive(desktop, 'open-menu', 'alpha.txt')
         self.assertEqual(code, 0, err)
-        self.assertEqual(len(self.escapes(desktop)), 1)
-        self.assertIn('frontmost is true', self.escapes(desktop)[0][2])
-        self.assertIn('escaped', out)
+        self.assertIsNotNone(desktop.menu)
+        self.assertEqual(desktop.timeouts, [])
+        return desktop, out.split('menu-point ')[1].strip()
 
-    def test_close_menu_refuses_when_finder_is_not_frontmost(self):
-        desktop = self.desktop(frontmost=False)
-        code, _, err = drive(desktop, 'close-menu')
+    def test_close_menu_cancels_the_finder_menu_through_ax_and_sends_no_key(self):
+        desktop, point = self.opened()
+        code, out, err = drive(desktop, 'close-menu', point)
+        self.assertEqual(code, 0, err)
+        self.assertIsNone(desktop.menu)
+        self.assertEqual(desktop.keys, [])
+        self.assertIn('AXCancel', out)
+
+    def test_close_menu_falls_back_to_esc_while_ax_shows_the_menu(self):
+        desktop, point = self.opened(cancel_works=False)
+        code, out, err = drive(desktop, 'close-menu', point)
+        self.assertEqual(code, 0, err)
+        self.assertIsNone(desktop.menu)
+        self.assertEqual(len(desktop.keys), 1)
+        self.assertIn('Esc to Finder', out)
+
+    def test_close_menu_reports_a_menu_it_cannot_close(self):
+        desktop, point = self.opened(cancel_works=False, esc_works=False)
+        code, _, err = drive(desktop, 'close-menu', point)
+        self.assertEqual(code, 70, err)
+        self.assertIn('close it by hand', err)
+
+    def test_close_menu_with_no_menu_sends_nothing(self):
+        desktop = FakeDesktop()
+        code, out, err = drive(desktop, 'close-menu', '660,237')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(desktop.keys, [])
+        self.assertIn('nothing sent', out)
+
+    def test_close_menu_never_touches_another_process_menu(self):
+        desktop, point = self.opened(menu_pid=999)
+        code, _, err = drive(desktop, 'close-menu', point)
         self.assertEqual(code, 65, err)
-        self.assertIn('not frontmost', err)
+        self.assertIsNotNone(desktop.menu)
+        self.assertEqual(desktop.keys, [])
 
     def test_open_menu_background_right_clicks_below_the_rows(self):
-        desktop = self.desktop()
+        desktop = FakeDesktop()
         code, out, err = drive(desktop, 'open-menu', '--background')
         self.assertEqual(code, 0, err)
         self.assertEqual(len(desktop.clicks), 1)
-        x, y = map(int, desktop.clicks[0][:2])
-        self.assertGreater(y, 295)  # below the lowest row (275 + 20)
-        self.assertGreater(x, 480)  # right of the sidebar
+        x, y, _ = desktop.clicks[0]
+        self.assertGreater(y, 485)  # below the lowest row (465 + 20)
+        self.assertGreater(x, 243)  # right of the sidebar
         self.assertIn('menu-point ', out)
 
     def test_open_menu_background_with_a_selection_left_clicks_nothing(self):
-        desktop = self.desktop(selection=[DIR + '/alpha.txt'])
+        desktop = FakeDesktop(selection=[FOLDER + '/alpha.txt'])
+        desktop.deselect_works = False
         code, _, err = drive(desktop, 'open-menu', '--background')
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.clicks, [])
+
+    def test_choose_background_presses_the_submenu_item_with_no_applescript_while_the_menu_is_open(self):
+        desktop = FakeDesktop(selection=[FOLDER + '/alpha.txt'])
+        code, out, err = drive(desktop, 'choose', 'New File', '--sub', 'TXT', *self.BACKGROUND, '--background', FOLDER)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(desktop.timeouts, [])
+        self.assertEqual(desktop.pressed[0]['press'], [31, 0, 0])
+        self.assertIn('background menu of ' + FOLDER, out)
+
+    def test_choose_background_of_another_folder_clicks_nothing(self):
+        desktop = FakeDesktop()
+        code, _, err = drive(desktop, 'choose', 'New File', '--sub', 'TXT', *self.BACKGROUND, '--background', '/tmp/x')
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.clicks, [])
+
+    def test_choose_background_of_an_empty_folder_is_refused_not_guessed(self):
+        window = '\n'.join(line for line in fixture('finder-window-calibration.jsonl').splitlines()
+                           if not json.loads(line)['path'][:5] == [0, 0, 2, 0, 0]
+                           or len(json.loads(line)['path']) < 6) + '\n'
+        desktop = FakeDesktop(window=window)
+        code, _, err = drive(desktop, 'choose', 'New File', '--sub', 'TXT', *self.BACKGROUND, '--background', FOLDER)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.clicks, [])
+        self.assertIn('no rows', err)
 
     def test_open_menu_needs_a_name_or_background_not_both(self):
         for argv in (['open-menu'], ['open-menu', 'alpha.txt', '--background']):

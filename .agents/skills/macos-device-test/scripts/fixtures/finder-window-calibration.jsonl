@@ -1,0 +1,184 @@
+{"selected":null,"path":[0],"subrole":"AXStandardWindow","value":null,"enabled":null,"frame":[58,280,920,436],"desc":"","url":null,"role":"AXWindow","title":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3"}
+{"frame":[58,280,920,436],"selected":null,"url":null,"title":"","desc":"","enabled":null,"role":"AXSplitGroup","subrole":"","value":null,"path":[0,0]}
+{"subrole":"","title":"","enabled":null,"desc":"","role":"AXScrollArea","selected":null,"frame":[66,332,177,376],"url":null,"path":[0,0,0],"value":null}
+{"enabled":true,"subrole":"","selected":null,"path":[0,0,0,0],"url":null,"desc":"sidebar","frame":[65,331,179,716],"value":null,"title":"","role":"AXOutline"}
+{"enabled":null,"value":null,"role":"AXRow","title":"","subrole":"AXOutlineRow","selected":false,"frame":[66,332,177,32],"url":null,"path":[0,0,0,0,0],"desc":""}
+{"desc":"","selected":false,"title":"","path":[0,0,0,0,0,0],"enabled":true,"url":null,"role":"AXCell","subrole":"","frame":[76,332,157,32],"value":null}
+{"path":[0,0,0,0,0,0,0],"role":"AXStaticText","title":"","desc":"","value":"Shared","subrole":"","frame":[111,339,115,18],"url":null,"enabled":true,"selected":null}
+{"subrole":"AXOutlineRow","title":"","role":"AXRow","frame":[66,377,177,19],"path":[0,0,0,0,1],"url":null,"desc":"","value":null,"selected":false,"enabled":null}
+{"selected":false,"url":null,"value":null,"enabled":true,"desc":"","subrole":"","path":[0,0,0,0,1,0],"title":"","role":"AXCell","frame":[76,377,157,19]}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,1,0,0],"frame":[81,376,159,21],"value":"Favorites"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,2],"frame":[66,396,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,2,0],"frame":[76,396,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,2,0,0],"frame":[111,403,115,18],"value":"Applications"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,3],"frame":[66,428,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,3,0],"frame":[76,428,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,3,0,0],"frame":[111,435,115,18],"value":"Desktop"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,4],"frame":[66,460,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,4,0],"frame":[76,460,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,4,0,0],"frame":[111,467,115,18],"value":"Documents"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,5],"frame":[66,492,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,5,0],"frame":[76,492,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,5,0,0],"frame":[111,499,115,18],"value":"Downloads"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,6],"frame":[66,537,177,19],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,6,0],"frame":[76,537,157,19],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,6,0,0],"frame":[81,536,159,21],"value":"Locations"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,7],"frame":[66,556,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,7,0],"frame":[76,556,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,7,0,0],"frame":[111,563,115,18],"value":"iCloud Drive"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,8],"frame":[66,588,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,8,0],"frame":[76,588,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,8,0,0],"frame":[111,595,115,18],"value":"tester"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,9],"frame":[66,620,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,9,0],"frame":[76,620,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,9,0,0],"frame":[111,627,115,18],"value":"Macintosh HD"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,10],"frame":[66,652,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,10,0],"frame":[76,652,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,10,0,0],"frame":[111,659,115,18],"value":"AirDrop"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,11],"frame":[66,684,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,11,0],"frame":[76,684,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,11,0,0],"frame":[111,691,115,18],"value":"Network"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,12],"frame":[66,716,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,12,0],"frame":[76,716,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,12,0,0],"frame":[111,723,115,18],"value":"Trash"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,13],"frame":[66,761,177,19],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,13,0],"frame":[76,761,157,19],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,13,0,0],"frame":[81,760,159,21],"value":"Tags"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,14],"frame":[66,780,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,14,0],"frame":[76,780,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,14,0,0],"frame":[111,787,115,18],"value":"Red"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,15],"frame":[66,812,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,15,0],"frame":[76,812,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,15,0,0],"frame":[111,819,115,18],"value":"Orange"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,16],"frame":[66,844,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,16,0],"frame":[76,844,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,16,0,0],"frame":[111,851,115,18],"value":"Yellow"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,17],"frame":[66,876,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,17,0],"frame":[76,876,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,17,0,0],"frame":[111,883,115,18],"value":"Green"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,18],"frame":[66,908,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,18,0],"frame":[76,908,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,18,0,0],"frame":[111,915,115,18],"value":"Blue"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,19],"frame":[66,940,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,19,0],"frame":[76,940,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,19,0,0],"frame":[111,947,115,18],"value":"Purple"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,20],"frame":[66,972,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,20,0],"frame":[76,972,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,20,0,0],"frame":[111,979,115,18],"value":"Gray"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,0,0,21],"frame":[66,1004,177,32],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,0,0,21,0],"frame":[76,1004,157,32],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,0,0,21,0,0],"frame":[111,1011,115,18],"value":"All Tags…"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXColumn","enabled":null,"subrole":"","path":[0,0,0,0,22],"frame":[76,332,157,714],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXScrollBar","enabled":true,"subrole":"","path":[0,0,0,1],"frame":[225,331,19,368.5],"value":0}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXValueIndicator","enabled":null,"subrole":"","path":[0,0,0,1,0],"frame":[234,335,6,199],"value":0}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"AXIncrementArrow","path":[0,0,0,1,1],"frame":[226,332,0,0],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"AXDecrementArrow","path":[0,0,0,1,2],"frame":[226,332,0,0],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"AXIncrementPage","path":[0,0,0,1,3],"frame":[234,535,6,160],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"AXDecrementPage","path":[0,0,0,1,4],"frame":[234,335,6,0],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXSplitter","enabled":false,"subrole":"","path":[0,0,1],"frame":[243,332,0,384],"value":185}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXSplitGroup","enabled":null,"subrole":"","path":[0,0,2],"frame":[58,280,920,436],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXScrollArea","enabled":null,"subrole":"","path":[0,0,2,0],"frame":[243,332,735,384],"value":null}
+{"desc":"list view","selected":null,"url":null,"title":"","role":"AXOutline","enabled":true,"subrole":"","path":[0,0,2,0,0],"frame":[242,331,737,386],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,0],"frame":[243,337,735,28],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,0,0],"frame":[243,337,735,28],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,1],"frame":[243,365,735,20],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,1,0],"frame":[269,365,300,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXImage","enabled":null,"subrole":"","path":[0,0,2,0,0,1,0,0],"frame":[269,367,16,16],"value":null}
+{"desc":"","selected":false,"url":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3/%41.txt","title":"","role":"AXTextField","enabled":true,"subrole":"","path":[0,0,2,0,0,1,0,1],"frame":[289,366,52,18],"value":"%41.txt"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,1,1],"frame":[569,365,181,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,1,1,0],"frame":[575,366,169,18],"value":"Today at 12:35 AM"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,1,2],"frame":[750,365,97,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,1,2,0],"frame":[794,366,47,18],"value":"8 bytes"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,1,3],"frame":[847,365,115,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,1,3,0],"frame":[853,366,103,18],"value":"Plain Text"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,2],"frame":[243,385,735,20],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,2,0],"frame":[269,385,300,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXImage","enabled":null,"subrole":"","path":[0,0,2,0,0,2,0,0],"frame":[269,387,16,16],"value":null}
+{"desc":"","selected":false,"url":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3/%2541.txt","title":"","role":"AXTextField","enabled":true,"subrole":"","path":[0,0,2,0,0,2,0,1],"frame":[289,386,68,18],"value":"%2541.txt"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,2,1],"frame":[569,385,181,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,2,1,0],"frame":[575,386,169,18],"value":"Today at 12:35 AM"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,2,2],"frame":[750,385,97,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,2,2,0],"frame":[785,386,56,18],"value":"10 bytes"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,2,3],"frame":[847,385,115,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,2,3,0],"frame":[853,386,103,18],"value":"Plain Text"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,3],"frame":[243,405,735,20],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,3,0],"frame":[269,405,300,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXImage","enabled":null,"subrole":"","path":[0,0,2,0,0,3,0,0],"frame":[269,407,16,16],"value":null}
+{"desc":"","selected":false,"url":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3/alpha.txt","title":"","role":"AXTextField","enabled":true,"subrole":"","path":[0,0,2,0,0,3,0,1],"frame":[289,406,59,18],"value":"alpha.txt"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,3,1],"frame":[569,405,181,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,3,1,0],"frame":[575,406,169,18],"value":"Today at 12:35 AM"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,3,2],"frame":[750,405,97,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,3,2,0],"frame":[785,406,56,18],"value":"10 bytes"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,3,3],"frame":[847,405,115,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,3,3,0],"frame":[853,406,103,18],"value":"Plain Text"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,4],"frame":[243,425,735,20],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,4,0],"frame":[269,425,300,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXImage","enabled":null,"subrole":"","path":[0,0,2,0,0,4,0,0],"frame":[269,427,16,16],"value":null}
+{"desc":"","selected":false,"url":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3/beta.txt","title":"","role":"AXTextField","enabled":true,"subrole":"","path":[0,0,2,0,0,4,0,1],"frame":[289,426,53,18],"value":"beta.txt"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,4,1],"frame":[569,425,181,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,4,1,0],"frame":[575,426,169,18],"value":"Today at 12:35 AM"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,4,2],"frame":[750,425,97,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,4,2,0],"frame":[794,426,47,18],"value":"9 bytes"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,4,3],"frame":[847,425,115,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,4,3,0],"frame":[853,426,103,18],"value":"Plain Text"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,5],"frame":[243,445,735,20],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,5,0],"frame":[269,445,314,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXImage","enabled":null,"subrole":"","path":[0,0,2,0,0,5,0,0],"frame":[269,447,16,16],"value":null}
+{"desc":"","selected":false,"url":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3/folder a","title":"","role":"AXTextField","enabled":true,"subrole":"","path":[0,0,2,0,0,5,0,1],"frame":[289,446,52,18],"value":"folder a"}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXDisclosureTriangle","enabled":true,"subrole":"","path":[0,0,2,0,0,5,0,2],"frame":[254,444,15,22],"value":0}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,5,1],"frame":[569,445,181,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,5,1,0],"frame":[575,446,169,18],"value":"Today at 12:35 AM"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,5,2],"frame":[750,445,97,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,5,2,0],"frame":[826,446,15,18],"value":"--"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,5,3],"frame":[847,445,115,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,5,3,0],"frame":[853,446,41,18],"value":"Folder"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXRow","enabled":null,"subrole":"AXOutlineRow","path":[0,0,2,0,0,6],"frame":[243,465,735,20],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,6,0],"frame":[269,465,300,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXImage","enabled":null,"subrole":"","path":[0,0,2,0,0,6,0,0],"frame":[269,467,16,16],"value":null}
+{"desc":"","selected":false,"url":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3/中文 名称.txt","title":"","role":"AXTextField","enabled":true,"subrole":"","path":[0,0,2,0,0,6,0,1],"frame":[289,466,81,18],"value":"中文 名称.txt"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,6,1],"frame":[569,465,181,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,6,1,0],"frame":[575,466,169,18],"value":"Today at 12:35 AM"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,6,2],"frame":[750,465,97,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,6,2,0],"frame":[785,466,56,18],"value":"18 bytes"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXCell","enabled":true,"subrole":"","path":[0,0,2,0,0,6,3],"frame":[847,465,115,20],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,0,6,3,0],"frame":[853,466,103,18],"value":"Plain Text"}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXColumn","enabled":null,"subrole":"","path":[0,0,2,0,0,7],"frame":[253,332,316,384],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXColumn","enabled":null,"subrole":"","path":[0,0,2,0,0,8],"frame":[569,332,181,384],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXColumn","enabled":null,"subrole":"","path":[0,0,2,0,0,9],"frame":[750,332,97,384],"value":null}
+{"desc":"","selected":false,"url":null,"title":"","role":"AXColumn","enabled":null,"subrole":"","path":[0,0,2,0,0,10],"frame":[847,332,121,384],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXGroup","enabled":null,"subrole":"","path":[0,0,2,0,0,11],"frame":[243,332,735,0],"value":null}
+{"desc":"","selected":null,"url":null,"title":"Name","role":"AXButton","enabled":true,"subrole":"AXSortButton","path":[0,0,2,0,0,11,0],"frame":[253,332,316,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"Date Modified","role":"AXButton","enabled":true,"subrole":"AXSortButton","path":[0,0,2,0,0,11,1],"frame":[569,332,181,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"Size","role":"AXButton","enabled":true,"subrole":"AXSortButton","path":[0,0,2,0,0,11,2],"frame":[750,332,97,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"Kind","role":"AXButton","enabled":true,"subrole":"AXSortButton","path":[0,0,2,0,0,11,3],"frame":[847,332,121,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"","path":[0,0,2,0,1],"frame":[243,332,326,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,1,0],"frame":[289,337,34,16],"value":"Name"}
+{"desc":"go up","selected":null,"url":null,"title":"","role":"AXImage","enabled":true,"subrole":"","path":[0,0,2,0,1,1],"frame":[550,341,12,10],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"","path":[0,0,2,0,2],"frame":[569,332,181,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,2,0],"frame":[575,337,76,16],"value":"Date Modified"}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"","path":[0,0,2,0,3],"frame":[750,332,97,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,3,0],"frame":[756,337,25,16],"value":"Size"}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":null,"subrole":"","path":[0,0,2,0,4],"frame":[847,332,131,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,0,4,0],"frame":[853,337,26,16],"value":"Kind"}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXUnknown","enabled":null,"subrole":"","path":[0,0,2,1],"frame":[243,716,735,28],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,0,2,1,0],"frame":[531,722,148,16],"value":"6 items, 68.7 GB available"}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXToolbar","enabled":null,"subrole":"","path":[0,1],"frame":[58,280,920,52],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXGroup","enabled":null,"subrole":"","path":[0,1,0],"frame":[247,280,81,52],"value":null}
+{"desc":"Back/Forward","selected":null,"url":null,"title":"","role":"AXGroup","enabled":true,"subrole":"","path":[0,1,0,0],"frame":[250,287,75,38],"value":null}
+{"desc":"back","selected":null,"url":null,"title":"","role":"AXButton","enabled":false,"subrole":"AXSegment","path":[0,1,0,0,0],"frame":[251,288,36,36],"value":null}
+{"desc":"forward","selected":null,"url":null,"title":"","role":"AXButton","enabled":false,"subrole":"AXSegment","path":[0,1,0,0,1],"frame":[288,288,36,36],"value":null}
+{"desc":"Path","selected":null,"url":null,"title":"","role":"AXMenuButton","enabled":true,"subrole":"","path":[0,1,1],"frame":[555,280,61,52],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXGroup","enabled":null,"subrole":"","path":[0,1,2],"frame":[616,280,57,52],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXPopUpButton","enabled":true,"subrole":"","path":[0,1,2,0],"frame":[619,287,51,38],"value":"as List"}
+{"desc":"Group","selected":null,"url":null,"title":"","role":"AXMenuButton","enabled":true,"subrole":"","path":[0,1,3],"frame":[681,280,58,52],"value":null}
+{"desc":"Share","selected":null,"url":null,"title":"","role":"AXButton","enabled":false,"subrole":"","path":[0,1,4],"frame":[747,280,41,52],"value":null}
+{"desc":"Edit Tags","selected":null,"url":null,"title":"","role":"AXButton","enabled":false,"subrole":"","path":[0,1,5],"frame":[788,280,40,52],"value":null}
+{"desc":"Action","selected":null,"url":null,"title":"","role":"AXMenuButton","enabled":true,"subrole":"","path":[0,1,6],"frame":[828,280,41,52],"value":null}
+{"desc":"iRightMouse","selected":null,"url":null,"title":"","role":"AXMenuButton","enabled":true,"subrole":"","path":[0,1,7],"frame":[877,280,52,52],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXGroup","enabled":null,"subrole":"","path":[0,1,8],"frame":[929,280,45,52],"value":null}
+{"desc":"Search","selected":null,"url":null,"title":"","role":"AXButton","enabled":true,"subrole":"AXSearchField","path":[0,1,8,0],"frame":[932,287,39,38],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":true,"subrole":"AXCloseButton","path":[0,2],"frame":[76,298,16,16],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":true,"subrole":"AXFullScreenButton","path":[0,3],"frame":[122,298,16,16],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXGroup","enabled":null,"subrole":"","path":[0,3,0],"frame":[123,299,14,14],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXButton","enabled":true,"subrole":"AXMinimizeButton","path":[0,4],"frame":[99,298,16,16],"value":null}
+{"desc":"","selected":null,"url":null,"title":"","role":"AXStaticText","enabled":true,"subrole":"","path":[0,5],"frame":[328,280,227,52],"value":"/Users/tester/runs/run-1/fixtures/calibration-x1y2z3"}

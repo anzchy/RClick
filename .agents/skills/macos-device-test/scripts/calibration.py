@@ -3,12 +3,14 @@ relies on it. It works on a throwaway folder under $RUN_DIR/fixtures/, and on an
 osascript processes it starts itself (and only those may be terminated). The verdict lines come from
 finderui.calibration_report; the raw AX dumps are saved under $RUN_DIR/calibration/ for the correction loop.
 
-The menu steps run the real `ui.sh` command lines a device run uses (guard, choose, open-menu --option and
---background, close-menu, choose --background --sub), each a subprocess that checks the GUI lock itself.
+The menu steps run the real `ui.sh` command lines a device run uses (close-menu, choose for one and for several
+targets, open-menu --option and --background, choose --background --sub), each a subprocess that checks the GUI lock
+itself. No step calls Finder through AppleScript while a menu it opened may be open (Finder answers none then:
+device run, 2026-11-18); a failed step closes its menus through `close-menu` (AXCancel, Esc fallback).
 
 Side effects on the desktop, all under the GUI lock: opens and closes one Finder window on the fixture folder (list
 view), selects in it, opens context menus there (one with Option held, two on the window background), chooses
-RClick's Copy Path once (the pasteboard is overwritten with a fixture path) and New File → TXT once on the fixture's
+RClick's Copy Path twice (one and two targets; the pasteboard is overwritten with fixture paths) and New File → TXT once on the fixture's
 background (a new file in the fixture, or RClick's folder panel, which is cancelled), shows one alert and two folder
 panels from its own osascript processes.
 
@@ -117,7 +119,8 @@ class Run:
         self.run = device.run_dir(str(run_dir))
         self.fixture = None
         self.folder = None
-        self.point = self.background_point = None
+        self.point = None
+        self.menu_points = []  # every menu point a step opened: closed after a failure and before teardown
         self.evidence = self.run / 'calibration'
         self.results = []
         self.started = []
@@ -156,7 +159,7 @@ class Run:
             detail = action()
         except Exception as error:  # noqa: BLE001 — any helper failure is this step's FAIL, never a crash
             self.record(name, 'FAIL', str(error).replace('\n', ' '))
-            self.attempt(f'could not press Esc after {name} failed', drive.escape)
+            self.close_menus(f'after {name} failed')
             return None
         self.record(name, 'PASS', detail)
         return detail
@@ -196,13 +199,19 @@ class Run:
         drive.osascript('tell application "Finder" to set current view of front Finder window to list view')
         time.sleep(0.5)
 
+    def close_menus(self, when):
+        """Close any menu still open at a point a step opened one (drive.close_menu: AX read, AXCancel, Esc only
+        while AX shows that Finder menu); each failure is a note."""
+        for point in dict.fromkeys(self.menu_points):
+            self.attempt(f'could not close the menu at {point[0]},{point[1]} {when}', lambda: drive.close_menu(point))
+
     def remove_fixture(self):
-        """Esc, close the fixture window, then remove this invocation's own files: the removal runs even when the Esc
-        or the close failed (each failure is a note)."""
+        """Close open menus, close the fixture window, then remove this invocation's own files: the removal runs
+        even when closing failed (each failure is a note)."""
         if self.fixture is None:
             return
         try:
-            self.attempt('could not press Esc before removing the fixture', drive.escape)
+            self.close_menus('before removing the fixture')
             self.attempt('could not close the fixture Finder window; close it by hand', lambda: drive.osascript(
                 'on run argv\ntell application "Finder" to close (every Finder window whose target is '
                 '((POSIX file (item 1 of argv)) as alias))\nend run', str(self.folder)))
@@ -233,9 +242,16 @@ class Run:
     def select_readback(self):
         return 'read back ' + str(drive.select([self.path('beta.txt')]))
 
+    def opened(self, out):
+        """The `menu-point X,Y` an `ui.sh open-menu` printed, remembered so a failure closes it."""
+        point = menu_point_of(out)
+        self.menu_points.append(tuple(int(n) for n in point.split(',')))
+        return point
+
     def context_menu(self):
         row, point = drive.open_menu('%2541.txt')
         self.point = point
+        self.menu_points.append(point)
         return f'row {row.index} at {row.point}, menu at {point}'
 
     def menu_read(self):
@@ -264,34 +280,43 @@ class Run:
             raise ui.Environment(f'ui.sh {args[0]} exited {result.returncode}: {result.stderr.strip()}')
         return result.stdout
 
-    def guard(self):
-        point = '{},{}'.format(*self.point)
-        accepted = self.cli('guard', point, self.path('%2541.txt')).strip()
-        sibling = self.ui('guard', point, self.path('%41.txt'))
-        if sibling.returncode != ui.REFUSED:
-            raise ui.Refused(f'ui.sh guard exited {sibling.returncode} for the sibling %41.txt, not 65')
-        return f'ui.sh guard: {accepted}; the sibling refused (65): {sibling.stderr.strip()}'
+    def close_menu(self):
+        """`ui.sh close-menu X,Y` on the context menu the context-menu step left open; AX must then show none."""
+        self.cli('close-menu', '{},{}'.format(*self.point))
+        if drive.menu_open(self.point):
+            raise ui.Refused(f'a menu is still open at {self.point} after ui.sh close-menu')
+        return 'ui.sh close-menu: the menu closed through AX; no menu left at the menu point'
+
+    def pasted(self, wanted):
+        time.sleep(0.8)
+        pasted = drive.run(['pbpaste'], timeout=5).stdout
+        if sorted(pasted.split('\n')) != sorted(wanted):
+            raise ui.Refused(f'pasteboard holds {pasted!r} after Copy Path, not {wanted}')
 
     def choose(self):
         if 'Copy Path' not in self.group:
             raise ui.Refused("the --group has no Copy Path: calibration chooses Copy Path")
-        point = menu_point_of(self.cli('open-menu', 'alpha.txt'))
-        self.cli('choose', point, 'Copy Path', *group_args(self.group), '--target', self.path('alpha.txt'))
-        time.sleep(0.8)
-        pasted = drive.run(['pbpaste'], timeout=5).stdout.strip()
-        if pasted != self.path('alpha.txt'):
-            raise ui.Refused(f'pasteboard holds {pasted!r} after Copy Path, not the fixture path')
-        return 'ui.sh choose Copy Path; pbpaste equals the fixture path (pasteboard overwritten)'
+        out = self.cli('choose', 'Copy Path', *group_args(self.group), '--target', self.path('alpha.txt'))
+        self.pasted([self.path('alpha.txt')])
+        return 'ui.sh choose Copy Path: ' + ui.one_line(out.split('\n', 1)[0] + '\n') + '; pbpaste equals the path'
+
+    def choose_multi(self):
+        targets = [self.path('%41.txt'), self.path('%2541.txt')]
+        out = self.cli('choose', 'Copy Path', *group_args(self.group), *[a for t in targets for a in ('--target', t)])
+        if 'Compress 2 Items' not in out:
+            raise ui.Refused(f'ui.sh choose did not verify `Compress 2 Items`: {out!r}')
+        self.pasted(targets)
+        return 'ui.sh choose with two targets: Compress 2 Items; pbpaste holds both paths, one per line'
 
     def option_menu(self):
         wanted = 'Delete Direct' + ui.SKIP_SUFFIX
         if 'Delete Direct' not in self.group:
             raise ui.Refused('the --group has no Delete Direct: the Option step reads its skip-confirmation title')
-        point = menu_point_of(self.cli('open-menu', '%2541.txt', '--option'))
+        point = self.opened(self.cli('open-menu', '%2541.txt', '--option'))
         try:
             titles = ui.menu_listing_titles(self.cli('menu', point, *group_args(self.group)))
         finally:
-            self.ui('close-menu')
+            self.cli('close-menu', point)
         if wanted not in titles:
             raise ui.Refused(f'the Option menu has no {wanted!r} (Option not seen when the menu was built?)')
         return f'ui.sh open-menu --option: the menu shows {wanted!r}'
@@ -299,22 +324,12 @@ class Run:
     def background_menu(self):
         if not self.background_group:
             raise ui.Refused('no --background-group: the background steps need RClick\'s background-menu items')
-        point = menu_point_of(self.cli('open-menu', '--background'))
-        self.background_point = tuple(int(n) for n in point.split(','))
-        accepted = self.cli('guard', point, '--background', str(self.folder)).strip()
-        self.cli('menu', point, *group_args(self.background_group))
-        return f'background menu at {point}; ui.sh guard --background: {accepted}; RClick\'s background group found'
-
-    def close_menu(self):
-        self.cli('close-menu')
-        time.sleep(0.4)
+        point = self.opened(self.cli('open-menu', '--background'))
         try:
-            items = drive.read_menu(self.background_point)
-        except ui.Refused:
-            items = []
-        if items:
-            raise ui.Refused(f'a menu is still open at {self.background_point} after ui.sh close-menu')
-        return 'ui.sh close-menu: Esc sent with Finder frontmost; no menu left at the background point'
+            self.cli('menu', point, *group_args(self.background_group))
+        finally:
+            self.cli('close-menu', point)
+        return f'background menu at {point}; RClick\'s background group found; closed'
 
     def rclick_pid(self):
         try:
@@ -326,8 +341,7 @@ class Run:
         if 'New File' not in self.background_group:
             raise ui.Refused('the --background-group has no New File: calibration chooses New File → TXT')
         before = set(os.listdir(self.folder))
-        point = menu_point_of(self.cli('open-menu', '--background'))
-        self.cli('choose', point, 'New File', '--sub', 'TXT', *group_args(self.background_group),
+        self.cli('choose', 'New File', '--sub', 'TXT', *group_args(self.background_group),
                  '--background', str(self.folder))
         pid = self.rclick_pid()
         for _ in range(16):
@@ -434,11 +448,11 @@ def calibrate(run_dir, dry_run=False, group=(), background_group=()):
                     run.step('context-menu', run.context_menu)
                     run.step('menu-read', run.menu_read, needs=('context-menu',))
                     run.step('rclick-group', run.rclick_group, needs=('menu-read',))
-                    run.step('guard', run.guard, needs=('menu-read',))
-                    run.step('choose', run.choose, needs=('rclick-group', 'guard'))
+                    run.step('close-menu', run.close_menu, needs=('context-menu',))
+                    run.step('choose', run.choose, needs=('rclick-group',))
+                    run.step('choose-multi', run.choose_multi, needs=('choose',))
                     run.step('option-menu', run.option_menu, needs=('rclick-group',))
                     run.step('background-menu', run.background_menu)
-                    run.step('close-menu', run.close_menu, needs=('background-menu',))
                     run.step('background-choose', run.background_choose, needs=('background-menu',))
                     run.step('dialog-read', run.dialog_read)
                     run.step('press-button', run.press_button, needs=('dialog-read',))

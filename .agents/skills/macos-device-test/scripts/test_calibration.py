@@ -114,8 +114,9 @@ class FakeCli:
 
 
 class StepsDriveTheRealCli(unittest.TestCase):
-    """The calibration proves the ui.sh command lines a device run uses (audit r1 F10): the guard step runs
-    `ui.sh guard`, not the pure function; the Option, background, submenu and close-menu paths each have a step."""
+    """The calibration proves the ui.sh command lines a device run uses (audit r1 F10): `ui.sh choose` for one and for
+    several targets, the Option, background, submenu and close-menu paths each have a step; every menu a step opens
+    is closed with `ui.sh close-menu X,Y` (fix r3 items 5 and 7)."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='rclick-cal-run-')
@@ -134,73 +135,78 @@ class StepsDriveTheRealCli(unittest.TestCase):
         with mock.patch.object(finderdrive, 'run', cli.run):
             return action()
 
-    def test_the_guard_step_runs_ui_sh_guard_for_the_target_and_the_sibling(self):
-        def guard(args):
-            return (0, 'GUARD PASS \u2014 ok\n', '') if args[1].endswith('/%2541.txt') else (65, '', 'REFUSED: sibling\n')
-        cli = FakeCli({'guard': guard})
-        detail = self.step(cli, self.run.guard)
-        self.assertEqual(cli.ui('guard'), [['700,300', self.run.path('%2541.txt')], ['700,300', self.run.path('%41.txt')]])
-        self.assertIn('REFUSED: sibling', detail)
+    def test_the_close_menu_step_runs_ui_sh_close_menu_on_the_menu_point_and_reads_no_menu(self):
+        cli = FakeCli({'close-menu': (0, 'closed (AXCancel)\n', '')})
+        with mock.patch.object(finderdrive, 'menu_open', return_value=False):
+            self.step(cli, self.run.close_menu)
+        self.assertEqual(cli.ui('close-menu'), [['700,300']])
+        with mock.patch.object(finderdrive, 'menu_open', return_value=True), self.assertRaises(finderui.Refused):
+            self.step(cli, self.run.close_menu)
 
-    def test_a_guard_cli_that_accepts_the_sibling_fails_the_step(self):
-        cli = FakeCli({'guard': (0, 'GUARD PASS \u2014 ok\n', '')})
-        with self.assertRaises(finderui.Refused):
-            self.step(cli, self.run.guard)
-
-    def test_the_choose_step_runs_ui_sh_choose_and_reads_the_pasteboard(self):
+    def test_the_choose_step_runs_one_ui_sh_choose_and_reads_the_pasteboard(self):
         alpha = self.run.path('alpha.txt')
-        cli = FakeCli({'open-menu': (0, 'row: 3 alpha.txt 600,215\nmenu-point 640,227\n', ''),
-                       'choose': (0, 'GUARD PASS \u2014 ok\nchose: Copy Path\n', '')},
-                      other={'pbpaste': (0, alpha)})
+        cli = FakeCli({'choose': (0, 'GUARD PASS — ok\nchose: Copy Path\n', '')}, other={'pbpaste': (0, alpha)})
         self.step(cli, self.run.choose)
-        self.assertEqual(cli.ui('open-menu'), [['alpha.txt']])
-        self.assertEqual(cli.ui('choose'), [['640,227', 'Copy Path', *sum((['--group', t] for t in GROUP), []),
-                                             '--target', alpha]])
+        self.assertEqual(cli.ui('choose'), [['Copy Path', *sum((['--group', t] for t in GROUP), []), '--target', alpha]])
+        self.assertEqual(cli.ui('open-menu'), [])
 
-    def test_the_option_step_reads_the_skip_confirmation_title(self):
+    def test_the_multi_step_needs_the_count_title_and_both_paths(self):
+        paths = [self.run.path('%41.txt'), self.run.path('%2541.txt')]
+        cli = FakeCli({'choose': (0, 'GUARD PASS — Compress 2 Items and selection\nchose: Copy Path\n', '')},
+                      other={'pbpaste': (0, '\n'.join(reversed(paths)))})
+        self.step(cli, self.run.choose_multi)
+        self.assertEqual(cli.ui('choose')[0][-4:], ['--target', paths[0], '--target', paths[1]])
+        cli = FakeCli({'choose': (0, 'GUARD PASS — ok\n', '')}, other={'pbpaste': (0, '\n'.join(paths))})
+        with self.assertRaises(finderui.Refused):
+            self.step(cli, self.run.choose_multi)
+        cli = FakeCli({'choose': (0, 'GUARD PASS — Compress 2 Items\n', '')}, other={'pbpaste': (0, paths[0])})
+        with self.assertRaises(finderui.Refused):
+            self.step(cli, self.run.choose_multi)
+
+    def test_the_option_step_reads_the_skip_confirmation_title_and_closes_the_menu(self):
         cli = FakeCli({'open-menu': (0, 'menu-point 700,300\n', ''),
-                       'menu': (0, LISTING.format(suffix=' (skip confirmation)'), ''), 'close-menu': (0, 'escaped\n', '')})
+                       'menu': (0, LISTING.format(suffix=' (skip confirmation)'), ''), 'close-menu': (0, 'closed\n', '')})
         detail = self.step(cli, self.run.option_menu)
         self.assertEqual(cli.ui('open-menu'), [['%2541.txt', '--option']])
         self.assertEqual(cli.ui('menu'), [['700,300', *sum((['--group', t] for t in GROUP), [])]])
-        self.assertEqual(len(cli.ui('close-menu')), 1)
+        self.assertEqual(cli.ui('close-menu'), [['700,300']])
         self.assertIn('Delete Direct (skip confirmation)', detail)
 
     def test_an_option_menu_without_the_changed_title_fails(self):
         cli = FakeCli({'open-menu': (0, 'menu-point 700,300\n', ''), 'menu': (0, LISTING.format(suffix=''), ''),
-                       'close-menu': (0, 'escaped\n', '')})
+                       'close-menu': (0, 'closed\n', '')})
         with self.assertRaises(finderui.Refused):
             self.step(cli, self.run.option_menu)
 
-    def test_the_background_step_guards_the_fixture_folder(self):
-        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'guard': (0, 'GUARD PASS \u2014 bg\n', ''),
+    def test_the_background_step_reads_the_group_and_closes_the_menu(self):
+        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'close-menu': (0, 'closed\n', ''),
                        'menu': (0, 'rclick-group (expected): found once at items 20..22\n', '')})
         self.step(cli, self.run.background_menu)
         self.assertEqual(cli.ui('open-menu'), [['--background']])
-        self.assertEqual(cli.ui('guard'), [['800,500', '--background', str(self.run.folder)]])
         self.assertEqual(cli.ui('menu'), [['800,500', *sum((['--group', t] for t in BACKGROUND), [])]])
+        self.assertEqual(cli.ui('close-menu'), [['800,500']])
 
-    def test_a_refused_background_guard_fails_the_step(self):
-        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'guard': (65, '', 'REFUSED: selection\n'),
-                       'menu': (0, '', '')})
+    def test_a_background_menu_without_rclicks_group_fails_and_is_still_closed(self):
+        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'menu': (65, '', 'REFUSED: group\n'),
+                       'close-menu': (0, 'closed\n', '')})
         with self.assertRaises(finderui.Refused):
             self.step(cli, self.run.background_menu)
+        self.assertEqual(cli.ui('close-menu'), [['800,500']])
 
     def test_background_choose_presses_new_file_txt_and_adopts_the_new_file(self):
         def choose(args):
             (self.run.folder / 'untitled.txt').write_text('')
-            return 0, 'GUARD PASS \u2014 bg\nchose: New File \u2192 TXT\n', ''
-        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'choose': choose})
+            return 0, 'GUARD PASS — bg\nchose: New File → TXT\n', ''
+        cli = FakeCli({'choose': choose})
         detail = self.step(cli, self.run.background_choose)
-        self.assertEqual(cli.ui('choose'), [['800,500', 'New File', '--sub', 'TXT',
-                                             *sum((['--group', t] for t in BACKGROUND), []),
+        self.assertEqual(cli.ui('choose'), [['New File', '--sub', 'TXT', *sum((['--group', t] for t in BACKGROUND), []),
                                              '--background', str(self.run.folder)]])
         self.assertIn('untitled.txt', detail)
         self.assertEqual(self.run.fixture.remove(), [])
         self.assertFalse(self.run.folder.exists())
 
     def test_background_choose_with_no_new_file_and_no_rclick_panel_fails(self):
-        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'choose': (0, 'chose: New File\n', '')})
+        cli = FakeCli({'choose': (0, 'chose: New File\n', '')})
         with mock.patch.object(finderdrive, 'app_nodes', side_effect=finderui.Environment('no RClick')), \
                 self.assertRaises(finderui.Refused):
             self.step(cli, self.run.background_choose)
@@ -208,7 +214,7 @@ class StepsDriveTheRealCli(unittest.TestCase):
     def test_background_choose_that_raises_rclicks_folder_panel_cancels_it(self):
         (self.run.run / 'rclick.pid').write_text('4242\n')
         panel = finderui.parse_dump((HERE / 'fixtures' / 'panel-grant.jsonl').read_text(encoding='utf-8'))
-        cli = FakeCli({'open-menu': (0, 'menu-point 800,500\n', ''), 'choose': (0, 'chose: New File\n', '')})
+        cli = FakeCli({'choose': (0, 'chose: New File\n', '')})
         with mock.patch.object(finderdrive, 'app_nodes', return_value=panel) as nodes, \
                 mock.patch.object(finderdrive, 'app_dump', return_value=''), \
                 mock.patch.object(finderdrive, 'press_button') as press:
@@ -217,25 +223,15 @@ class StepsDriveTheRealCli(unittest.TestCase):
         press.assert_called_once_with(4242, 'Cancel', window_text=None)
         self.assertIn('Cancel', detail)
 
-    def test_the_close_menu_step_runs_ui_sh_close_menu_and_reads_no_menu(self):
-        self.run.background_point = (800, 500)
-        cli = FakeCli({'close-menu': (0, 'escaped\n', '')})
-        with mock.patch.object(finderdrive, 'read_menu', side_effect=finderui.Refused('no menu')):
-            self.step(cli, self.run.close_menu)
-        self.assertEqual(cli.ui('close-menu'), [[]])
-        with mock.patch.object(finderdrive, 'read_menu', return_value=['still open']), \
-                self.assertRaises(finderui.Refused):
-            self.step(cli, self.run.close_menu)
 
-
-STEP_METHODS = ('row_order', 'select_readback', 'context_menu', 'menu_read', 'rclick_group', 'guard', 'choose',
-                'option_menu', 'background_menu', 'close_menu', 'background_choose', 'dialog_read', 'press_button')
+STEP_METHODS = ('row_order', 'select_readback', 'context_menu', 'menu_read', 'rclick_group', 'close_menu', 'choose',
+                'choose_multi', 'option_menu', 'background_menu', 'background_choose', 'dialog_read', 'press_button')
 
 
 class TeardownAlwaysCleans(unittest.TestCase):
     """calibrate() removes its own fixture and prints the report on every failure path (audit r2 gpt M2 / opus L2): a
-    transport error (osascript timed out or missing: finderui.Environment) while pressing Esc, closing the fixture
-    window, stopping the calibration's osascript or removing the fixture is kept as a note, and never skips the other
+    transport error (osascript timed out or missing: finderui.Environment) while closing an open menu, closing the
+    fixture window, stopping the calibration's osascript or removing the fixture is kept as a note, and never skips the other
     teardown calls or the report. The steps themselves are stubbed; no desktop call is made."""
 
     def setUp(self):
@@ -251,7 +247,7 @@ class TeardownAlwaysCleans(unittest.TestCase):
                    mock.patch.object(finderdrive, 'require_trust', lambda: None),
                    mock.patch.object(finderdrive, 'run', self.fake_run),
                    mock.patch.object(finderdrive, 'osascript', self.fake_osascript),
-                   mock.patch.object(finderdrive, 'escape', self.fake_escape),
+                   mock.patch.object(finderdrive, 'close_menu', self.fake_close_menu),
                    mock.patch.object(calibration.Run, 'panel', lambda run, target, mode: 'stub')]
         patches += [mock.patch.object(calibration.Run, name, lambda run: 'stub') for name in STEP_METHODS]
         for patch in patches:
@@ -274,9 +270,9 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.transport('close-window' if 'close' in script else 'osascript')
         return ''
 
-    def fake_escape(self):
-        self.transport('escape')
-        return 'escaped'
+    def fake_close_menu(self, point):
+        self.transport('close-menu')
+        return 'closed'
 
     def fixture_folders(self):
         return sorted((self.run_dir / 'fixtures').glob('calibration-*'))
@@ -304,10 +300,14 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.assertEqual(self.fixture_folders(), [])
         self.assertNotIn('note:', out)
 
-    def test_an_esc_error_in_teardown_still_closes_the_window_and_removes_the_fixture(self):
-        self.fail_on = {'escape'}
-        code, out = self.calibrate()
-        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(escape\)')
+    def test_a_close_menu_error_in_teardown_still_closes_the_window_and_removes_the_fixture(self):
+        def opened(run):
+            run.menu_points.append((700, 300))
+            return 'stub'
+        self.fail_on = {'close-menu'}
+        with mock.patch.object(calibration.Run, 'context_menu', opened):
+            code, out = self.calibrate()
+        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(close-menu\)')
         self.assertEqual(code, finderui.OK, out)
         self.assertIn('close-window', self.calls)
 
@@ -337,13 +337,14 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.assertRegex(out, r'(?m)^note: .*timed out after 10 s \(remove\)')
         self.assertRegex(out, r'(?m)^CALIBRATION PASS')
 
-    def test_esc_failing_after_a_failed_step_keeps_the_later_steps_and_the_report(self):
+    def test_close_menu_failing_after_a_failed_step_keeps_the_later_steps_and_the_report(self):
         def broken(run):
+            run.menu_points.append((700, 300))
             raise finderui.Refused('the menu did not open')
-        self.fail_on = {'escape'}
+        self.fail_on = {'close-menu'}
         with mock.patch.object(calibration.Run, 'context_menu', broken):
             code, out = self.calibrate()
-        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(escape\)')
+        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(close-menu\)')
         self.assertEqual(code, finderui.REFUSED, out)
         self.assertRegex(out, r'(?m)^FAIL context-menu — the menu did not open$')
         self.assertRegex(out, r'(?m)^PASS dialog-read — stub$')

@@ -24,8 +24,8 @@ Right-click a folder, a file or the window background → **New File** → a typ
 Preconditions: baseline; fixture folder granted. Record whether RClick has Accessibility (System Settings shows it;
 the run never toggles it). Note which apps RClick lists.
 
-1. `NEW-01`: right-click the background → New File → TXT (`ui.sh open-menu --background`, then `ui.sh choose X,Y
-   "New File" --sub TXT --group … --background "$RUN_DIR/fixtures"`). Result: `ls` shows the new file in `$RUN_DIR/fixtures`;
+1. `NEW-01`: right-click the background → New File → TXT (`ui.sh choose "New File" --sub TXT --group …
+   --background "$RUN_DIR/fixtures"`, which opens the background menu itself). Result: `ls` shows the new file in `$RUN_DIR/fixtures`;
    `shasum` matches the template from the built bundle's resources (or is empty for txt). Repeat once to check the
    unique name. Right-click `alpha.txt` → New File → Markdown: the file lands next to it.
 2. `NEW-02`: with Accessibility granted to RClick, the new file is selected and its name field is editable

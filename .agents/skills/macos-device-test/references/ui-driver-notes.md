@@ -10,7 +10,7 @@ the run the delegator collects those rows into this ledger and fixes the scripts
 failing offline test first where the logic is testable; a calibration dump in `$RUN_DIR/calibration/` can become a
 fixture in `scripts/fixtures/` once personal paths are removed).
 
-Helpers: `scripts/ui.sh` (rows, select, selection, open-menu, close-menu, menu, guard, choose, dialog, press-button,
+Helpers: `scripts/ui.sh` (rows, select, selection, open-menu, close-menu, menu, choose, dialog, press-button,
 grant, lock-check), `scripts/calibrate.sh`. The checks each acting command makes: [ui-driver-safety.md](ui-driver-safety.md). Logic in `finderui.py` (unit-tested with `fixtures/`), AX calls in `axprobe.swift`, side
 effects in `finderdrive.py` and `calibration.py`.
 
@@ -24,8 +24,8 @@ effects in `finderdrive.py` and `calibration.py`.
 - Cause: Finder's list view sorts with its own collation; `items of folder` comes in another order. Finder's own
   `Compress “%41.txt”` title at that click showed the menu belonged to the sibling.
 - Fix: `ui.sh rows` and `ui.sh open-menu` order rows by their AX frames (on-screen y), never by AppleScript order.
-  The guard (`ui.sh guard`, built into `ui.sh choose`) compares the Compress title and the selection with the
-  target before any RClick item is chosen. Test: `test_finderui.Rows`, `test_finderui.Guard`.
+  The guard inside `ui.sh choose` (there is no standalone `ui.sh guard` since #32 fix round 3) compares the Compress
+  title and the selection with the target before any RClick item is chosen. Test: `test_finderui.Rows`, `test_finderui.Guard`.
 - Evidence: i5-device-20261117b (the FAIL), i5-device-20261117c ("Key harness finding", the AX row order).
 
 ### 2026-11-17 — `AXShowMenu` is unsupported on Finder rows
