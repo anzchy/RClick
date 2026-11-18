@@ -645,3 +645,22 @@ test("@Test counts wherever it stands among a function's attributes", (t) => {
   assert.equal(row(r.text, "whole")["Test cases"], "3", "first, second and third; not helper");
   assert.equal(row(r.text, "first")["Test cases"], "1");
 });
+
+test("a brace inside a string or a comment does not end or extend a filtered case's Test lines", (t) => {
+  const tests = ["import Testing", "struct Tests {",
+    "    @Test func picked() {",       // 1
+    '        let open = "{"',          // 2
+    '        let close = "}"',         // 3
+    "        // } a closing brace in a comment",
+    "        /* { */",
+    "        #expect(open != close)",  // 4
+    "    }",                           // 5
+    "    @Test func other() {", "        #expect(true)", "    }", "}", ""].join("\n");
+  const root = fixture(t, { "App/Copier.swift": SWIFT_SOURCE, "AppTests/Tests.swift": tests }, [
+    { id: "picked", name: "Picked", area: "Menu", process: ["app"], paths: ["App/Copier.swift"], tests: ["AppTests/Tests.swift::picked"] },
+  ]);
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(row(r.text, "picked")["Test cases"], "1");
+  assert.equal(row(r.text, "picked")["Test lines"], "5", "declaration through its own closing brace, comments not counted");
+});
