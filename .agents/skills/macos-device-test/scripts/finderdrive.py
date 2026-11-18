@@ -60,35 +60,53 @@ def spawn(argv):
         raise ui.Environment(f'{argv[0]} not found') from error
 
 
+def checked_dir(path, others_mask, create=True):
+    """`path` (created 0700 when missing and `create`) refused unless lstat shows a real directory (not a symlink)
+    owned by this user with none of the `others_mask` permission bits. Nothing below a refused directory is read."""
+    if create:
+        try:
+            os.mkdir(path, 0o700)
+        except FileExistsError:
+            pass
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError as error:
+        raise ui.Environment(f'axprobe cache ancestor {path} does not exist') from error
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() \
+            or info.st_mode & others_mask:
+        raise ui.Environment(f'axprobe cache path {path} is not a directory of this user that only it can '
+                             f'{"use" if others_mask == 0o077 else "write"} (a symlink, another owner, or '
+                             'group/other permissions): fix or remove it by hand and rerun')
+    return path
+
+
 def private_dir(path):
     """`path` created 0700 when missing; refused unless it is a real directory (not a symlink) owned by this user that
-    no one else can write."""
-    try:
-        os.mkdir(path, 0o700)
-    except FileExistsError:
-        pass
-    info = os.lstat(path)
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() \
-            or info.st_mode & 0o077:
-        raise ui.Environment(f'axprobe cache {path} is not a private directory of this user (a symlink, another '
-                             'owner, or group/other permissions): remove it by hand and rerun')
-    return path
+    no one else can read, write or enter."""
+    return checked_dir(path, 0o077)
+
+
+def cache_root():
+    """~/Library/Caches, reached one lstat-checked level at a time from the home directory: each of home, Library and
+    Caches must be a real directory (no symlink is followed) owned by this user that group and other cannot write.
+    Library and Caches are created 0700 when missing (only in a fresh temporary HOME; every Mac has them)."""
+    home = checked_dir(Path.home(), 0o022, create=False)
+    return checked_dir(checked_dir(home / 'Library', 0o022) / 'Caches', 0o022)
 
 
 def probe_binary():
     """axprobe compiled once per source hash into ~/Library/Caches/rclick-axprobe/<hash>/ (never into the repo, never
     into a shared temporary directory). It runs with the host terminal's Accessibility trust, so before every reuse
-    the directories and the executable must be this user's and writable by no one else; a build is compiled to a
-    temporary name in the private directory and renamed into place."""
+    every path from the home directory down (cache_root, then the two private directories, then the executable) is
+    lstat-checked: no symlink, this user's, writable by no one else. A build is compiled to a temporary name in the
+    private directory and renamed into place."""
     source = (HERE / 'axprobe.swift').read_bytes()
     # axprobe's acting commands run THIS driver's lock check (`finderdrive.py lock-check`); its path is compiled in as
     # UTF-8 bytes (no string escaping), so the cache key covers it too.
     driver = ('let driverScript = String(decoding: [UInt8]([' + ', '.join(str(b) for b in str(HERE / 'finderdrive.py')
               .encode('utf-8')) + ']), as: UTF8.self)\n').encode('utf-8')
     digest = hashlib.sha256(source + b'\0' + driver).hexdigest()[:16]
-    caches = Path.home() / 'Library' / 'Caches'
-    caches.mkdir(parents=True, exist_ok=True)  # exists on every Mac; the tests use a temporary HOME
-    folder = private_dir(private_dir(caches / 'rclick-axprobe') / digest)
+    folder = private_dir(private_dir(cache_root() / 'rclick-axprobe') / digest)
     binary = folder / 'axprobe'
     try:
         info = os.lstat(binary)
