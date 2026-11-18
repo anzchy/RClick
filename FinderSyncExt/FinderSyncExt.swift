@@ -29,7 +29,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 菜单配置缓存（内存缓存，从 Main App 推送）
     private let delivery = IPCExtensionDelivery(messager: .shared)
-    private var cachedMenuConfig: MenuConfigPayload? { delivery.menuConfig(as: MenuConfigPayload.self) }
+    private var decodedMenu: (id: String, value: MenuConfigPayload)?
+    private var cachedMenuConfig: MenuConfigPayload? { delivery.menuConfig(as: MenuConfigPayload.self, cached: &decodedMenu) }
 
     /// 图标内存缓存，避免每次构建菜单都重新创建 NSImage
     private var iconCache: [String: NSImage] = [:]
@@ -109,7 +110,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     private func setupMessageHandlers() {
         delivery.onConfigChanged { [weak self] in
             DispatchQueue.main.async { [weak self] in
-                guard let self, let config = self.delivery.menuConfig(as: MenuConfigPayload.self) else { return }
+                guard let self, let config = self.cachedMenuConfig else { return }
                 self.handleMenuConfig(config)
             }
         }
