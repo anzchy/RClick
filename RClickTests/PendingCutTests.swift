@@ -47,4 +47,15 @@ struct PendingCutTests {
         #expect(!helper.isStillPending(next))
     }
 
+    @Test func emptyCutLeavesExistingClipboardAndCounterUntouched() {
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("keep", forType: .string)
+        let before = board.changeCount
+        #expect(PendingCut(pasteboard: board).writeCut([]) == nil)
+        #expect(board.changeCount == before)
+        #expect(board.string(forType: .string) == "keep")
+    }
+
 }
