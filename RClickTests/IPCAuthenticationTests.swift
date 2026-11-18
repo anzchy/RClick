@@ -63,4 +63,18 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(accepted.withLock { $0 }, 1)
     }
 
+    func testFullNonceCacheRejectsWithoutEvictingOldest() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let receiver = IPCReceiver(direction: .toMain, capacity: 2)
+        func wire(_ n: UInt8) -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "id", session: "",
+                                              timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: n, count: 16)), key: key).wireString()
+        }
+        let oldest = wire(1)
+        XCTAssertNoThrow(try receiver.receive(oldest, key: key))
+        XCTAssertNoThrow(try receiver.receive(wire(2), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire(3), key: key))
+        XCTAssertThrowsError(try receiver.receive(oldest, key: key))
+    }
+
 }
