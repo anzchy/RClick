@@ -291,6 +291,18 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(acks.withLock { $0 }, 1)
     }
 
+    func testClockStepBetweenObservationsCannotReopenExpiredNonce() throws {
+        let clock = IPCStepAfterSampleClock()
+        let receiver = IPCReceiver(direction: .toMain, clock: clock, session: "session")
+        let key = Data(repeating: 0x42, count: 32)
+        let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "captured", session: "session",
+            timestamp: 100, nonce: Data(repeating: 1, count: 16), payload: Data("{}".utf8)), key: key).wireString()
+        XCTAssertNoThrow(try receiver.receive(wire, key: key))
+        clock.prepareRollbackAfterNextSample()
+        XCTAssertThrowsError(try receiver.receive(wire, key: key), "freshness and retention must use the SAME clock observation as the barrier")
+        XCTAssertThrowsError(try receiver.receive(wire, key: key))
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
@@ -627,5 +639,21 @@ nonisolated final class MutableIPCKeyProvider: KeyProvider {
         flags.withLock { $0.append(createIfMissing) }
         guard let key = data.withLock({ $0 }) else { throw IPCSecurityError.noKey }
         return key
+    }
+}
+
+nonisolated final class IPCStepAfterSampleClock: IPCClock {
+    private struct State { var wall = 100.0; var monotonic = 200.0; var rollbackAfterSample = false }
+    private let state = Mutex(State())
+    var wallTime: TimeInterval { state.withLock { $0.wall } }
+    var monotonicTime: TimeInterval {
+        state.withLock { state in
+            let sampled = state.monotonic
+            if state.rollbackAfterSample { state.wall -= 16; state.rollbackAfterSample = false }
+            return sampled
+        }
+    }
+    func prepareRollbackAfterNextSample() {
+        state.withLock { $0.wall += 16; $0.monotonic += 16; $0.rollbackAfterSample = true }
     }
 }
