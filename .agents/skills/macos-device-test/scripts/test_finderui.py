@@ -108,10 +108,37 @@ class Guard(unittest.TestCase):
     def items(self, name):
         return finderui.menu_items(dump(name))
 
-    def test_selection_readback_drops_the_folder_slash_and_blank_lines(self):
-        self.assertEqual(finderui.parse_selection('/tmp/rclick-cal/%2544ocuments/\n/tmp/rclick-cal/a b.txt\n\n'),
-                         ['/tmp/rclick-cal/%2544ocuments', '/tmp/rclick-cal/a b.txt'])
-        self.assertEqual(finderui.parse_selection(''), [])
+    def test_selection_readback_drops_only_the_folder_slash_and_the_line_terminators(self):
+        self.assertEqual(finderui.parse_selection('3\n/tmp/rclick-cal/%2544ocuments/\n/tmp/rclick-cal/a b.txt\n'
+                                                  '/tmp/rclick-cal/alpha.txt \n\n'),
+                         ['/tmp/rclick-cal/%2544ocuments', '/tmp/rclick-cal/a b.txt', '/tmp/rclick-cal/alpha.txt '])
+        self.assertEqual(finderui.parse_selection('0\n\n'), [])
+        with self.assertRaisesRegex(finderui.Refused, 'line break'):
+            finderui.parse_selection('1\n/tmp/rclick-cal/a\nb.txt\n\n')
+        with self.assertRaises(finderui.Environment):
+            finderui.parse_selection('')
+
+    def test_whitespace_in_a_path_is_significant(self):
+        # `alpha.txt` and `alpha.txt ` are two valid, distinct files (audit r1 F1).
+        alpha, spaced = self.DIR + '/alpha.txt', self.DIR + '/alpha.txt '
+        with self.assertRaisesRegex(finderui.Refused, 'selection'):
+            finderui.check_guard([spaced], [alpha], self.items('menu-file-alpha.jsonl'))
+        with self.assertRaisesRegex(finderui.Refused, 'selection'):
+            finderui.check_guard([alpha], [' ' + alpha[1:]], self.items('menu-file-alpha.jsonl'))
+        nodes = dump('menu-file-alpha.jsonl')
+        for node in nodes:
+            if node.get('title') == 'Compress “alpha.txt”':
+                node['title'] = 'Compress 2 Items'
+        two = finderui.menu_items(nodes)
+        with self.assertRaisesRegex(finderui.Refused, 'selection'):
+            finderui.check_guard([spaced, self.DIR + '/b.txt'], [alpha, self.DIR + '/b.txt'], two)
+        with self.assertRaisesRegex(finderui.Refused, 'front Finder window'):
+            finderui.check_guard([], [], [i for i in two if not i.title.startswith('Compress')],
+                                 background=self.DIR + ' ', front=self.DIR)
+
+    def test_a_path_that_cannot_be_read_back_exactly_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, 'line break'):
+            finderui.check_guard([self.DIR + '/a\nb.txt'], [self.DIR + '/a\nb.txt'], self.items('menu-file-alpha.jsonl'))
 
     def test_matching_title_and_selection_pass(self):
         target = self.DIR + '/alpha.txt'

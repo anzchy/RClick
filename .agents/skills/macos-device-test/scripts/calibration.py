@@ -88,9 +88,9 @@ class Run:
         for _ in range(20):
             time.sleep(0.25)
             try:
-                if ui.clean_path(drive.osascript(drive.FRONT_SCRIPT).strip()) == str(self.folder):
+                if ui.clean_path(ui.one_line(drive.osascript(drive.FRONT_SCRIPT))) == str(self.folder):
                     break
-            except ui.Environment:
+            except (ui.Environment, ui.Refused):
                 continue
         else:
             raise ui.Environment('the fixture window did not come to the front')
@@ -214,7 +214,7 @@ class Run:
         self.save(f'panel-{mode}.jsonl', drive.app_dump(process.pid, 20))
         plan = drive.grant(process.pid, target, button='Choose')
         out, _ = process.communicate(timeout=10)
-        chosen = ui.clean_path(out.strip())
+        chosen = ui.clean_path(ui.one_line(out))
         if plan.mode != mode or chosen != ui.clean_path(target):
             raise ui.Refused(f'{plan.mode} mode chose {chosen!r}; expected {mode} mode and {target!r}')
         return f'{mode} mode chose {chosen}' + (f' ({plan.note})' if plan.note else '')

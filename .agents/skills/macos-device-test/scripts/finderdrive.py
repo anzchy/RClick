@@ -27,7 +27,7 @@ SELECT_SCRIPT = '''on run argv
   tell application "Finder" to select chosen
 end run'''
 SELECTION_SCRIPT = '''tell application "Finder" to set chosen to selection as alias list
-set out to ""
+set out to ((count of chosen) as text) & linefeed
 repeat with a in chosen
   set out to out & POSIX path of a & linefeed
 end repeat
@@ -36,8 +36,13 @@ FRONT_SCRIPT = 'tell application "Finder" to return POSIX path of (target of fro
 
 
 def run(argv, timeout=20):
+    """Run to completion; stdout is decoded as UTF-8 WITHOUT newline translation (a `\\r` in a name stays)."""
     try:
-        return subprocess.run([str(a) for a in argv], capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run([str(a) for a in argv], capture_output=True, timeout=timeout)
+        return subprocess.CompletedProcess(result.args, result.returncode, result.stdout.decode('utf-8'),
+                                           result.stderr.decode('utf-8', 'replace'))
+    except UnicodeDecodeError as error:
+        raise ui.Environment(f'{Path(str(argv[0])).name} printed bytes that are not UTF-8') from error
     except FileNotFoundError as error:
         raise ui.Environment(f'{argv[0]} not found') from error
     except subprocess.TimeoutExpired as error:
@@ -203,7 +208,7 @@ def open_menu(name, option=False):
 def guard(point, targets, background=None):
     try:
         items = read_menu(point)
-        front = osascript(FRONT_SCRIPT).strip() if background else None
+        front = ui.one_line(osascript(FRONT_SCRIPT)) if background else None
         return items, ui.check_guard(targets, selection(), items, background=background, front=front)
     except ui.Refused:
         escape()
@@ -276,7 +281,7 @@ def choose(point, title, sub=None, targets=(), background=None, also=()):
         if session.pid != owner:
             raise ui.Refused(f'the menu at {point[0]},{point[1]} belongs to pid {session.pid}, not Finder ({owner})')
         items = ui.menu_items(session.nodes)
-        front = osascript(FRONT_SCRIPT).strip() if background else None
+        front = ui.one_line(osascript(FRONT_SCRIPT)) if background else None
         reason = ui.check_guard(targets, selection(), items, background=background, front=front)
         item, sub_path = ui.find_group_item(items, title, sub, also)
     except (ui.Refused, ui.Environment):

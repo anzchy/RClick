@@ -67,7 +67,7 @@ class FakeDesktop:
             script = argv[2]
             if 'selection as alias list' in script:
                 paths = self.selection if self.selection_at_check is None else self.selection_at_check
-                return self.completed(argv, ''.join(p + '\n' for p in paths) + '\n')
+                return self.completed(argv, f'{len(paths)}\n' + ''.join(p + '\n' for p in paths) + '\n')
             if 'front Finder window' in script:
                 return self.completed(argv, self.front + '/\n')
             return self.completed(argv, '\n')
@@ -226,6 +226,48 @@ class CommandLine(unittest.TestCase):
         self.assertFalse(run.exists())
         self.assertEqual(self.run_script('calibrate.sh', 'relative-run', '--dry-run').returncode, 64)
         self.assert_no_desktop_call()
+
+
+class WhitespaceIsIdentity(unittest.TestCase):
+    """`alpha.txt` and `alpha.txt ` are distinct files; neither the guard nor the press may take one for the other
+    (audit r1 F1). Driven through finderdrive.main with the process boundary replaced."""
+    ALPHA, SPACED = DIR + '/alpha.txt', DIR + '/alpha.txt '
+
+    def two_items_menu(self):
+        return fixture('menu-file-alpha.jsonl').replace('Compress “alpha.txt”', 'Compress 2 Items')
+
+    def test_choose_with_the_spaced_target_on_the_unspaced_selection_presses_nothing(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertEqual(desktop.requests, [{'abort': True}])
+
+    def test_choose_with_n_targets_compares_each_path_exactly(self):
+        desktop = FakeDesktop(self.two_items_menu(), [self.ALPHA, DIR + '/b.txt'])
+        code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED,
+                             '--target', DIR + '/b.txt')
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+
+    def test_guard_refuses_the_spaced_target(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        code, _, err = drive(desktop, 'guard', '660,237', self.SPACED)
+        self.assertEqual(code, 65, err)
+
+    def test_a_spaced_name_round_trips_and_is_pressed(self):
+        menu = fixture('menu-file-alpha.jsonl').replace('Compress “alpha.txt”', 'Compress “alpha.txt ”')
+        desktop = FakeDesktop(menu, [self.SPACED])
+        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.SPACED)
+        self.assertEqual(code, 0, err)
+        self.assertIn("'/tmp/rclick-cal/alpha.txt '", out)
+        self.assertEqual(len(desktop.pressed), 1)
+
+    def test_a_selected_path_with_a_line_break_is_refused(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [DIR + '/alpha\n.txt'])
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
 
 
 class Source(unittest.TestCase):
