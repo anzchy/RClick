@@ -475,9 +475,9 @@ def lock_held_by_rclick(status_text):
 
 # Calibration steps in run order, each with the ui.sh command a failure tells the tester to distrust.
 CALIBRATION_STEPS = (
-    ('accessibility', 'every ui.sh command'),
     ('gui-lock', 'every ui.sh command'),
     ('axprobe', 'every ui.sh command'),
+    ('accessibility', 'every ui.sh command'),
     ('row-order', 'ui.sh rows'),
     ('select-readback', 'ui.sh select'),
     ('context-menu', 'ui.sh open-menu'),
@@ -490,7 +490,7 @@ CALIBRATION_STEPS = (
     ('panel-grant-row', 'ui.sh grant (row mode)'),
     ('panel-grant-current', 'ui.sh grant (current-folder mode)'),
 )
-ENVIRONMENT_STEPS = ('accessibility', 'gui-lock', 'axprobe')
+ENVIRONMENT_STEPS = ('gui-lock', 'axprobe', 'accessibility')
 
 
 def calibration_report(results):
@@ -505,11 +505,11 @@ def calibration_report(results):
         if status != 'PASS':
             if command not in distrust:
                 distrust.append(command)
-            if step in ENVIRONMENT_STEPS:
+            if step in ENVIRONMENT_STEPS and status == 'FAIL':
                 environment.append(step)
     if environment:
         lines.append(f'CALIBRATION FAIL — environment ({", ".join(environment)}): fix it and rerun; '
-                     f'distrust: {", ".join(distrust)}')
+                     'distrust: every ui.sh command')
         return lines, ENVIRONMENT
     if distrust:
         lines.append(f'CALIBRATION FAIL — distrust: {", ".join(distrust)}')
