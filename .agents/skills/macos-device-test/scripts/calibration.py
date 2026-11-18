@@ -3,10 +3,19 @@ relies on it. It works on a throwaway folder under $RUN_DIR/fixtures/, and on an
 osascript processes it starts itself (and only those may be terminated). The verdict lines come from
 finderui.calibration_report; the raw AX dumps are saved under $RUN_DIR/calibration/ for the correction loop.
 
+The menu steps run the real `ui.sh` command lines a device run uses (guard, choose, open-menu --option and
+--background, close-menu, choose --background --sub), each a subprocess that checks the GUI lock itself.
+
 Side effects on the desktop, all under the GUI lock: opens and closes one Finder window on the fixture folder (list
-view), selects in it, opens context menus there, chooses RClick's Copy Path once (the pasteboard is overwritten with a
-fixture path), shows one alert and two folder panels from its own osascript processes.
+view), selects in it, opens context menus there (one with Option held, two on the window background), chooses
+RClick's Copy Path once (the pasteboard is overwritten with a fixture path) and New File → TXT once on the fixture's
+background (a new file in the fixture, or RClick's folder panel, which is cancelled), shows one alert and two folder
+panels from its own osascript processes.
+
+NOT covered: RClick's own sandboxed folder panel as the grant target (the grant steps use an osascript panel).
+PERM-01 on the device proves it.
 """
+import re
 import os
 import stat
 import subprocess
@@ -87,15 +96,28 @@ def plan_lines(run_dir):
     lines = [f'calibration plan (dry run, nothing touched); fixture folder {run_dir}/fixtures/calibration-<random>/',
              '  files: ' + ', '.join(repr(name) for name in FILES)]
     lines += [f'  step {step}: proves {command}' for step, command in ui.CALIBRATION_STEPS]
-    return lines
+    return lines + ['  ' + ui.NOT_COVERED]
+
+
+def group_args(titles):
+    return [arg for title in titles for arg in ('--group', title)]
+
+
+def menu_point_of(out):
+    match = re.search(r'^menu-point (\d+),(\d+)$', out, re.M)
+    if not match:
+        raise ui.Environment(f'ui.sh open-menu printed no menu-point: {out[:120]!r}')
+    return f'{match.group(1)},{match.group(2)}'
 
 
 class Run:
-    def __init__(self, run_dir, group):
+    def __init__(self, run_dir, group, background_group=()):
         self.group = group
+        self.background_group = list(background_group)
         self.run = device.run_dir(str(run_dir))
         self.fixture = None
         self.folder = None
+        self.point = self.background_point = None
         self.evidence = self.run / 'calibration'
         self.results = []
         self.started = []
@@ -206,27 +228,106 @@ class Run:
         group = ui.rclick_group(self.items, expected=self.group)
         return f'found once at items {group[0].index}..{group[-1].index}: ' + ', '.join(item.title for item in group)
 
+    def ui(self, *args):
+        """Run `ui.sh ARGS` (the command line a device run uses) and return the finished process."""
+        return drive.run([drive.HERE / 'ui.sh', *map(str, args)], timeout=120)
+
+    def cli(self, *args):
+        """`ui.sh ARGS` that must succeed: its stdout; exit 65 is Refused, any other failure Environment."""
+        result = self.ui(*args)
+        if result.returncode == ui.REFUSED:
+            raise ui.Refused(f'ui.sh {args[0]}: {result.stderr.strip()}')
+        if result.returncode != ui.OK:
+            raise ui.Environment(f'ui.sh {args[0]} exited {result.returncode}: {result.stderr.strip()}')
+        return result.stdout
+
     def guard(self):
-        reason = ui.check_guard([self.path('%2541.txt')], drive.selection(), self.items)
-        try:
-            ui.check_guard([self.path('%41.txt')], drive.selection(), self.items)
-        except ui.Refused as refusal:
-            refused = str(refusal)
-        else:
-            raise ui.Refused('the guard accepted the sibling %41.txt')
-        drive.escape()
-        return f'accepted {reason}; refused the sibling: {refused}'
+        point = '{},{}'.format(*self.point)
+        accepted = self.cli('guard', point, self.path('%2541.txt')).strip()
+        sibling = self.ui('guard', point, self.path('%41.txt'))
+        if sibling.returncode != ui.REFUSED:
+            raise ui.Refused(f'ui.sh guard exited {sibling.returncode} for the sibling %41.txt, not 65')
+        return f'ui.sh guard: {accepted}; the sibling refused (65): {sibling.stderr.strip()}'
 
     def choose(self):
         if 'Copy Path' not in self.group:
             raise ui.Refused("the --group has no Copy Path: calibration chooses Copy Path")
-        _, point = drive.open_menu('alpha.txt')
-        drive.choose(point, 'Copy Path', self.group, targets=[self.path('alpha.txt')])
+        point = menu_point_of(self.cli('open-menu', 'alpha.txt'))
+        self.cli('choose', point, 'Copy Path', *group_args(self.group), '--target', self.path('alpha.txt'))
         time.sleep(0.8)
         pasted = drive.run(['pbpaste'], timeout=5).stdout.strip()
         if pasted != self.path('alpha.txt'):
             raise ui.Refused(f'pasteboard holds {pasted!r} after Copy Path, not the fixture path')
-        return 'Copy Path chose through the guard; pbpaste equals the fixture path (pasteboard overwritten)'
+        return 'ui.sh choose Copy Path; pbpaste equals the fixture path (pasteboard overwritten)'
+
+    def option_menu(self):
+        wanted = 'Delete Direct' + ui.SKIP_SUFFIX
+        if 'Delete Direct' not in self.group:
+            raise ui.Refused('the --group has no Delete Direct: the Option step reads its skip-confirmation title')
+        point = menu_point_of(self.cli('open-menu', '%2541.txt', '--option'))
+        try:
+            titles = ui.menu_listing_titles(self.cli('menu', point, *group_args(self.group)))
+        finally:
+            self.ui('close-menu')
+        if wanted not in titles:
+            raise ui.Refused(f'the Option menu has no {wanted!r} (Option not seen when the menu was built?)')
+        return f'ui.sh open-menu --option: the menu shows {wanted!r}'
+
+    def background_menu(self):
+        if not self.background_group:
+            raise ui.Refused('no --background-group: the background steps need RClick\'s background-menu items')
+        point = menu_point_of(self.cli('open-menu', '--background'))
+        self.background_point = tuple(int(n) for n in point.split(','))
+        accepted = self.cli('guard', point, '--background', str(self.folder)).strip()
+        self.cli('menu', point, *group_args(self.background_group))
+        return f'background menu at {point}; ui.sh guard --background: {accepted}; RClick\'s background group found'
+
+    def close_menu(self):
+        self.cli('close-menu')
+        time.sleep(0.4)
+        try:
+            items = drive.read_menu(self.background_point)
+        except ui.Refused:
+            items = []
+        if items:
+            raise ui.Refused(f'a menu is still open at {self.background_point} after ui.sh close-menu')
+        return 'ui.sh close-menu: Esc sent with Finder frontmost; no menu left at the background point'
+
+    def rclick_pid(self):
+        try:
+            return int((self.run / 'rclick.pid').read_text().strip())
+        except (OSError, ValueError):
+            return None
+
+    def background_choose(self):
+        if 'New File' not in self.background_group:
+            raise ui.Refused('the --background-group has no New File: calibration chooses New File → TXT')
+        before = set(os.listdir(self.folder))
+        point = menu_point_of(self.cli('open-menu', '--background'))
+        self.cli('choose', point, 'New File', '--sub', 'TXT', *group_args(self.background_group),
+                 '--background', str(self.folder))
+        pid = self.rclick_pid()
+        for _ in range(16):
+            time.sleep(0.25)
+            new = sorted(set(os.listdir(self.folder)) - before)
+            if len(new) > 1:
+                raise ui.Refused(f'{len(new)} new entries in the fixture after New File → TXT: {new}')
+            if new:
+                self.fixture.adopt(self.folder / new[0])
+                return f'ui.sh choose --background --sub: New File → TXT created {new[0]!r} in the fixture'
+            if pid is not None and self.rclick_panel(pid):
+                self.save('rclick-panel.jsonl', drive.app_dump(pid, 20))
+                drive.press_button(pid, 'Cancel', window_text=None)
+                return ('ui.sh choose --background --sub: New File → TXT reached RClick, which opened its folder '
+                        'panel (sandboxed build; saved rclick-panel.jsonl); Cancel pressed, no file created')
+        raise ui.Refused('New File → TXT was chosen but no file appeared in the fixture and RClick showed no panel')
+
+    def rclick_panel(self, pid):
+        try:
+            nodes = drive.app_nodes(pid, 20)
+        except (ui.Environment, ui.Refused):
+            return False
+        return any(title == 'Grant Access' for w in ui.dialog_windows(nodes) for title, _ in w.buttons)
 
     def start(self, script, *args):
         process = subprocess.Popen(['osascript', '-e', script, *args], stdout=subprocess.PIPE,
@@ -289,11 +390,14 @@ class Run:
                     print(f'note: calibration osascript {process.pid} did not exit')
 
 
-def calibrate(run_dir, dry_run=False, group=()):
+def calibrate(run_dir, dry_run=False, group=(), background_group=()):
     if dry_run:
         print('\n'.join(plan_lines(run_dir)))
         return ui.OK
-    run = Run(run_dir, list(group))
+    run = Run(run_dir, list(group), background_group)
+    # press-button and grant (also inside the ui.sh subprocesses) read RClick's pid from $RUN_DIR/rclick.pid
+    if Path(os.environ.setdefault('RUN_DIR', str(run.run))).resolve() != run.run:
+        raise ui.Usage(f'RUN_DIR is {os.environ["RUN_DIR"]}, not the calibration run {run.run}')
     if run.environment():
         try:
             try:
@@ -308,6 +412,10 @@ def calibrate(run_dir, dry_run=False, group=()):
                 run.step('rclick-group', run.rclick_group, needs=('menu-read',))
                 run.step('guard', run.guard, needs=('menu-read',))
                 run.step('choose', run.choose, needs=('rclick-group', 'guard'))
+                run.step('option-menu', run.option_menu, needs=('rclick-group',))
+                run.step('background-menu', run.background_menu)
+                run.step('close-menu', run.close_menu, needs=('background-menu',))
+                run.step('background-choose', run.background_choose, needs=('background-menu',))
                 run.step('dialog-read', run.dialog_read)
                 run.step('press-button', run.press_button, needs=('dialog-read',))
                 run.step('panel-grant-row', lambda: run.panel(run.path('folder a'), 'row'))

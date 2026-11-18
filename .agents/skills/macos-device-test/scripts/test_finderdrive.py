@@ -16,6 +16,7 @@ SKILL = HERE.parent
 TRAP = '#!/bin/sh\necho "$0 $*" >> "$TRAP_LOG"\nexit 99\n'
 sys.path.insert(0, str(HERE))
 import finderdrive  # noqa: E402
+import finderui  # noqa: E402
 
 FIXTURES = HERE / 'fixtures'
 DIR = '/tmp/rclick-cal'
@@ -207,6 +208,17 @@ class CommandLine(unittest.TestCase):
             self.assertIn(word, result.stdout)
         self.assert_no_desktop_call()
 
+    def test_help_after_a_command_prints_the_usage_once_and_exits_zero(self):
+        for script, args in (('calibrate.sh', ('--help',)), ('ui.sh', ('choose', '--help')),
+                             ('ui.sh', ('close-menu', '-h'))):
+            with self.subTest(script=script, args=args):
+                result = self.run_script(script, *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(result.stdout.startswith('usage: ui.sh COMMAND'), result.stdout[:80])
+                self.assertEqual(result.stdout.count('usage:'), 1, result.stdout)
+                self.assertIn('calibrate RUN_DIR', result.stdout)
+        self.assert_no_desktop_call()
+
     def test_usage_errors_exit_64_without_touching_the_desktop(self):
         for args in ((), ('bogus',), ('select', 'relative.txt'), ('choose', '620,225', 'Copy Path'),
                      ('grant', 'Finder', '/tmp/x'), ('menu', 'x')):
@@ -219,13 +231,13 @@ class CommandLine(unittest.TestCase):
     def test_acting_without_the_rclick_gui_lock_exits_70_and_acts_on_nothing(self):
         for args in (('select', '/tmp/a.txt'), ('open-menu', 'alpha.txt'), ('guard', '1,2', '/tmp/a'),
                      ('choose', '1,2', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path'), ('press-button', '42', 'OK'),
-                     ('grant', '42', '/tmp/x')):
+                     ('grant', '42', '/tmp/x'), ('close-menu',), ('open-menu', '--background')):
             with self.subTest(args=args):
                 result = self.run_script('ui.sh', *args)
                 self.assertEqual(result.returncode, 70, result.stderr)
                 self.assertIn('GUI lock', result.stderr)
         run = Path(self.temp.name) / 'run'
-        result = self.run_script('calibrate.sh', str(run), '--group', 'Copy Path')
+        result = self.run_script('calibrate.sh', str(run), '--group', 'Copy Path', '--background-group', 'New File')
         self.assertEqual(result.returncode, 70, result.stderr)
         self.assertFalse(run.exists())
         self.assert_no_desktop_call()
@@ -235,8 +247,10 @@ class CommandLine(unittest.TestCase):
         result = self.run_script('calibrate.sh', str(run), '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         for step in ('row-order', 'select-readback', 'context-menu', 'menu-read', 'guard', 'choose', 'dialog-read',
-                     'press-button', 'panel-grant-row', 'panel-grant-current'):
+                     'press-button', 'panel-grant-row', 'panel-grant-current', 'option-menu', 'background-menu',
+                     'background-choose', 'close-menu'):
             self.assertIn(f'step {step}:', result.stdout)
+        self.assertIn("NOT covered: RClick's own sandboxed folder panel", result.stdout)
         self.assertFalse(run.exists())
         self.assertEqual(self.run_script('calibrate.sh', 'relative-run', '--dry-run').returncode, 64)
         self.assert_no_desktop_call()
@@ -498,3 +512,70 @@ class Source(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CloseMenuAndBackground(unittest.TestCase):
+    """`ui.sh close-menu` (Esc only while Finder is frontmost, under the lock: audit r1 L4) and `ui.sh open-menu
+    --background` (right-click the empty list below the rows, nothing selected: audit r1 F10)."""
+
+    def desktop(self, frontmost=True, selection=()):
+        window = fixture('finder-window-display-order.jsonl')
+        hidden = [json.loads(l) for l in window.splitlines() if l.strip()]
+        hidden = next(n['path'] for n in hidden if n['role'] == 'AXRow' and n['frame'][1] == 890)
+        lines = [l for l in window.splitlines() if l.strip() and json.loads(l)['path'][:len(hidden)] != hidden]
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), selection)
+        desktop.windows = '\n'.join(lines) + '\n'
+        desktop.frontmost = frontmost
+        desktop.clicks = []
+        original = desktop.run
+
+        def run(argv, timeout=20):
+            argv = [str(a) for a in argv]
+            if Path(argv[0]).name == 'rightclick.sh':
+                desktop.calls.append(argv)
+                desktop.clicks.append(argv[1:])
+                return desktop.completed(argv, 'right-clicked\n')
+            if Path(argv[0]).name == 'osascript' and 'key code 53' in argv[2]:
+                desktop.calls.append(argv)
+                return desktop.completed(argv, 'escaped\n' if desktop.frontmost else 'skipped: Finder is not frontmost\n')
+            return original(argv, timeout)
+        desktop.run = run
+        return desktop
+
+    def escapes(self, desktop):
+        return [c for c in desktop.calls if c[0] == 'osascript' and 'key code 53' in c[2]]
+
+    def test_close_menu_sends_esc_through_the_frontmost_check(self):
+        desktop = self.desktop()
+        code, out, err = drive(desktop, 'close-menu')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(self.escapes(desktop)), 1)
+        self.assertIn('frontmost is true', self.escapes(desktop)[0][2])
+        self.assertIn('escaped', out)
+
+    def test_close_menu_refuses_when_finder_is_not_frontmost(self):
+        desktop = self.desktop(frontmost=False)
+        code, _, err = drive(desktop, 'close-menu')
+        self.assertEqual(code, 65, err)
+        self.assertIn('not frontmost', err)
+
+    def test_open_menu_background_right_clicks_below_the_rows(self):
+        desktop = self.desktop()
+        code, out, err = drive(desktop, 'open-menu', '--background')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(desktop.clicks), 1)
+        x, y = map(int, desktop.clicks[0][:2])
+        self.assertGreater(y, 295)  # below the lowest row (275 + 20)
+        self.assertGreater(x, 480)  # right of the sidebar
+        self.assertIn('menu-point ', out)
+
+    def test_open_menu_background_with_a_selection_left_clicks_nothing(self):
+        desktop = self.desktop(selection=[DIR + '/alpha.txt'])
+        code, _, err = drive(desktop, 'open-menu', '--background')
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.clicks, [])
+
+    def test_open_menu_needs_a_name_or_background_not_both(self):
+        for argv in (['open-menu'], ['open-menu', 'alpha.txt', '--background']):
+            with self.subTest(argv=argv), self.assertRaises(finderui.Usage):
+                finderui.parse_args(argv)
