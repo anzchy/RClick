@@ -374,10 +374,14 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             return menu
         }
 
+        let shouldReadCutSelection = menuKind == .contextualMenuForItems
+            && config.actions.contains { $0.id == "cut" }
+        let cutSelection = shouldReadCutSelection
+            ? (FIFinderSyncController.default().selectedItemURLs() ?? []).map(\.path) : []
+        let cutChangeCount = shouldReadCutSelection ? NSPasteboard.general.changeCount : 0
         let cutVisibility = PendingCut.menuVisibility(
             config: config, menuKind: menuKind == .contextualMenuForItems ? .contextualItems : nil,
-            selection: (FIFinderSyncController.default().selectedItemURLs() ?? []).map(\.path),
-            currentChangeCount: NSPasteboard.general.changeCount, hostOnline: !offline
+            selection: cutSelection, currentChangeCount: cutChangeCount, hostOnline: !offline
         )
         let visibleActions = config.actions.filter { $0.id != "cut" || cutVisibility.cut }
         // 构建动作菜单
