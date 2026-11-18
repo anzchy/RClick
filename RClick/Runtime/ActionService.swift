@@ -61,6 +61,7 @@ final class ActionService {
     }
 
     private var cutRecord: CutRecord?
+    private var preparingCut = false
     var pendingCut: CutRecord? {
         guard let cutRecord, PendingCut(pasteboard: pasteboard).isStillPending(cutRecord.changeCount) else { return nil }
         return cutRecord
@@ -175,7 +176,7 @@ final class ActionService {
         switch rcitem.id {
         case "cut":
             guard rcitem.enabled, trigger == MenuTrigger.contextualItems.rawValue, !target.isEmpty else { return }
-            prepareCut(target)
+            await prepareCut(target)
         case "copy-path":
             copyPath(target)
         case "copy-file-name":
@@ -193,10 +194,21 @@ final class ActionService {
         }
     }
 
-    private func prepareCut(_ target: [String]) {
+    private func prepareCut(_ target: [String]) async {
+        guard !preparingCut else { return }
+        preparingCut = true
+        defer { preparingCut = false }
         let urls = target.map { URL(fileURLWithPath: $0) }
         var seen: Set<String> = []
         let parents = urls.map { $0.deletingLastPathComponent() }.filter { seen.insert($0.path).inserted }
+        for parent in parents where !permission.hasAccess(to: parent) {
+            guard await permission.promptForPermission(for: parent) != nil,
+                  permission.hasAccess(to: parent) else { return }
+        }
+        // An earlier grant may have been revoked while a later panel was open.
+        guard parents.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        // Check after authorization: sandbox-denied traversal is deliberately
+        // fail-closed in isProtectedFolder, but must not suppress the access panel.
         if let protected = target.first(where: { Utils.isProtectedFolder($0) }) {
             cutWarning(String(format: AppLocalization.localized("Protected system folders cannot be cut: %@"), protected))
             return

@@ -93,6 +93,7 @@ struct CutActionServiceTests {
         board.setString("keep", forType: .string)
         let before = board.changeCount
         let permission = MockPermission()
+        permission.authorized = [root.path, "/"]
         let lease = TrackingLease()
         var warnings: [String] = []
         let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
@@ -106,6 +107,33 @@ struct CutActionServiceTests {
         #expect(permission.prompts.isEmpty)
         #expect(lease.parents.isEmpty)
         #expect(try Data(contentsOf: files[0]) == Data("unchanged".utf8))
+    }
+
+    @Test func cancelledParentPermissionPreservesPreviousCutAndAllFiles() async throws {
+        let (oldRoot, oldFiles) = try makeFiles()
+        let (firstRoot, firstFiles) = try makeFiles()
+        let (secondRoot, secondFiles) = try makeFiles()
+        defer { for root in [oldRoot, firstRoot, secondRoot] { try? FileManager.default.removeItem(at: root) } }
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        let permission = MockPermission()
+        permission.authorized = [oldRoot.path]
+        let lease = TrackingLease()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
+                                    pasteboard: board, accessLeaser: lease)
+        await service.actionHandler(rid: "cut", target: [oldFiles[0].path], trigger: "ctx-items")
+        let old = try #require(service.pendingCut)
+        permission.replies = [true, false]
+        await service.actionHandler(rid: "cut", target: (firstFiles + [secondFiles[0]]).map(\.path), trigger: "ctx-items")
+        #expect(permission.prompts == [firstRoot, secondRoot])
+        #expect(service.pendingCut?.paths == old.paths)
+        #expect(service.pendingCut?.changeCount == old.changeCount)
+        #expect(board.changeCount == old.changeCount)
+        #expect(lease.parents == [[oldRoot]])
+        #expect(lease.ended == 1)
+        for file in oldFiles + firstFiles + secondFiles {
+            #expect(try Data(contentsOf: file) == Data("unchanged".utf8))
+        }
     }
 
 }
