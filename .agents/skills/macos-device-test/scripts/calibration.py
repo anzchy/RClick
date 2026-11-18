@@ -121,10 +121,24 @@ class Run:
         self.evidence = self.run / 'calibration'
         self.results = []
         self.started = []
+        self.notes = []
 
     def record(self, step, status, detail):
         self.results.append((step, status, detail))
         print(f'{status} {step} — {detail}', flush=True)
+
+    def note(self, text):
+        self.notes.append(text)
+        print('note: ' + text, flush=True)
+
+    def attempt(self, what, action):
+        """A dismiss or teardown call whose failure (osascript timed out or missing: finderui.Environment, or anything
+        else) must not stop the rest of the teardown or the report: it becomes a note naming the error."""
+        try:
+            return action()
+        except Exception as error:  # noqa: BLE001 — cleanup goes on; the error is kept in the note
+            self.note(f'{what}: {error}'.replace('\n', ' '))
+            return None
 
     def save(self, name, text):
         self.evidence.mkdir(parents=True, exist_ok=True)
@@ -142,7 +156,7 @@ class Run:
             detail = action()
         except Exception as error:  # noqa: BLE001 — any helper failure is this step's FAIL, never a crash
             self.record(name, 'FAIL', str(error).replace('\n', ' '))
-            drive.escape()
+            self.attempt(f'could not press Esc after {name} failed', drive.escape)
             return None
         self.record(name, 'PASS', detail)
         return detail
@@ -183,16 +197,25 @@ class Run:
         time.sleep(0.5)
 
     def remove_fixture(self):
+        """Esc, close the fixture window, then remove this invocation's own files: the removal runs even when the Esc
+        or the close failed (each failure is a note)."""
         if self.fixture is None:
             return
-        drive.escape()
         try:
-            drive.osascript('on run argv\ntell application "Finder" to close (every Finder window whose target is '
-                            '((POSIX file (item 1 of argv)) as alias))\nend run', str(self.folder))
-        except (ui.Environment, ui.Refused):
-            print('note: could not close the fixture Finder window; close it by hand')
-        for note in self.fixture.remove():
-            print('note: ' + note)
+            self.attempt('could not press Esc before removing the fixture', drive.escape)
+            self.attempt('could not close the fixture Finder window; close it by hand', lambda: drive.osascript(
+                'on run argv\ntell application "Finder" to close (every Finder window whose target is '
+                '((POSIX file (item 1 of argv)) as alias))\nend run', str(self.folder)))
+        finally:
+            for note in self.attempt(f'could not remove the fixture {self.folder}', self.fixture.remove) or []:
+                self.note(note)
+
+    def teardown(self):
+        """Stop the calibration's own osascript processes, then remove the fixture; neither failure skips the other."""
+        try:
+            self.attempt('could not stop the calibration osascript', self.stop_started)
+        finally:
+            self.remove_fixture()
 
     # steps ---------------------------------------------------------------------------------------------------
     def row_order(self):
@@ -398,33 +421,36 @@ def calibrate(run_dir, dry_run=False, group=(), background_group=()):
     # press-button and grant (also inside the ui.sh subprocesses) read RClick's pid from $RUN_DIR/rclick.pid
     if Path(os.environ.setdefault('RUN_DIR', str(run.run))).resolve() != run.run:
         raise ui.Usage(f'RUN_DIR is {os.environ["RUN_DIR"]}, not the calibration run {run.run}')
-    if run.environment():
-        try:
+    try:
+        if run.environment():
             try:
-                run.make_fixture()
-            except Exception as error:  # noqa: BLE001
-                run.record('row-order', 'FAIL', f'fixture window: {error}')
-            else:
-                run.step('row-order', run.row_order)
-                run.step('select-readback', run.select_readback)
-                run.step('context-menu', run.context_menu)
-                run.step('menu-read', run.menu_read, needs=('context-menu',))
-                run.step('rclick-group', run.rclick_group, needs=('menu-read',))
-                run.step('guard', run.guard, needs=('menu-read',))
-                run.step('choose', run.choose, needs=('rclick-group', 'guard'))
-                run.step('option-menu', run.option_menu, needs=('rclick-group',))
-                run.step('background-menu', run.background_menu)
-                run.step('close-menu', run.close_menu, needs=('background-menu',))
-                run.step('background-choose', run.background_choose, needs=('background-menu',))
-                run.step('dialog-read', run.dialog_read)
-                run.step('press-button', run.press_button, needs=('dialog-read',))
-                run.step('panel-grant-row', lambda: run.panel(run.path('folder a'), 'row'))
-                run.step('panel-grant-current', lambda: run.panel(str(run.folder), 'current'))
-        finally:
-            run.stop_started()
-            run.remove_fixture()
-    lines, code = ui.calibration_report(run.results)
-    print('---')
-    print('\n'.join(lines))
-    run.save('calibration.txt', '\n'.join(lines) + '\n')
+                try:
+                    run.make_fixture()
+                except Exception as error:  # noqa: BLE001
+                    run.record('row-order', 'FAIL', f'fixture window: {error}')
+                else:
+                    run.step('row-order', run.row_order)
+                    run.step('select-readback', run.select_readback)
+                    run.step('context-menu', run.context_menu)
+                    run.step('menu-read', run.menu_read, needs=('context-menu',))
+                    run.step('rclick-group', run.rclick_group, needs=('menu-read',))
+                    run.step('guard', run.guard, needs=('menu-read',))
+                    run.step('choose', run.choose, needs=('rclick-group', 'guard'))
+                    run.step('option-menu', run.option_menu, needs=('rclick-group',))
+                    run.step('background-menu', run.background_menu)
+                    run.step('close-menu', run.close_menu, needs=('background-menu',))
+                    run.step('background-choose', run.background_choose, needs=('background-menu',))
+                    run.step('dialog-read', run.dialog_read)
+                    run.step('press-button', run.press_button, needs=('dialog-read',))
+                    run.step('panel-grant-row', lambda: run.panel(run.path('folder a'), 'row'))
+                    run.step('panel-grant-current', lambda: run.panel(str(run.folder), 'current'))
+            finally:
+                run.teardown()
+    finally:
+        # printed on every path, also when something escaped the steps (it propagates after the report)
+        lines, code = ui.calibration_report(run.results)
+        report = '\n'.join(lines + ['note: ' + note for note in run.notes])
+        print('---')
+        print(report, flush=True)
+        run.attempt('could not save calibration.txt', lambda: run.save('calibration.txt', report + '\n'))
     return code

@@ -1,5 +1,7 @@
 """Offline tests of the calibration's fixture folder (calibration.Fixture): exclusive allocation under
 $RUN_DIR/fixtures/, and a cleanup that removes only what this invocation created (audit r1 M2). No desktop call."""
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -224,6 +226,137 @@ class StepsDriveTheRealCli(unittest.TestCase):
         with mock.patch.object(finderdrive, 'read_menu', return_value=['still open']), \
                 self.assertRaises(finderui.Refused):
             self.step(cli, self.run.close_menu)
+
+
+STEP_METHODS = ('row_order', 'select_readback', 'context_menu', 'menu_read', 'rclick_group', 'guard', 'choose',
+                'option_menu', 'background_menu', 'close_menu', 'background_choose', 'dialog_read', 'press_button')
+
+
+class TeardownAlwaysCleans(unittest.TestCase):
+    """calibrate() removes its own fixture and prints the report on every failure path (audit r2 gpt M2 / opus L2): a
+    transport error (osascript timed out or missing: finderui.Environment) while pressing Esc, closing the fixture
+    window, stopping the calibration's osascript or removing the fixture is kept as a note, and never skips the other
+    teardown calls or the report. The steps themselves are stubbed; no desktop call is made."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='rclick-cal-run-')
+        self.addCleanup(temp.cleanup)
+        self.run_dir = Path(temp.name).resolve()  # device.run_dir resolves /var → /private/var
+        self.fail_on = set()
+        self.calls = []
+        patches = [mock.patch.dict(os.environ, {}, clear=False),
+                   mock.patch.object(calibration.time, 'sleep', lambda seconds: None),
+                   mock.patch.object(finderdrive, 'require_lock', lambda: None),
+                   mock.patch.object(finderdrive, 'probe_binary', lambda: Path('/usr/bin/true')),
+                   mock.patch.object(finderdrive, 'require_trust', lambda: None),
+                   mock.patch.object(finderdrive, 'run', self.fake_run),
+                   mock.patch.object(finderdrive, 'osascript', self.fake_osascript),
+                   mock.patch.object(finderdrive, 'escape', self.fake_escape),
+                   mock.patch.object(calibration.Run, 'panel', lambda run, target, mode: 'stub')]
+        patches += [mock.patch.object(calibration.Run, name, lambda run: 'stub') for name in STEP_METHODS]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        os.environ.pop('RUN_DIR', None)
+
+    def transport(self, what):
+        self.calls.append(what)
+        if what in self.fail_on:
+            raise finderui.Environment(f'osascript timed out after 10 s ({what})')
+
+    def fake_run(self, argv, timeout=20):
+        self.transport(Path(str(argv[0])).name)
+        return subprocess.CompletedProcess([str(a) for a in argv], 0, '', '')
+
+    def fake_osascript(self, script, *args, timeout=20):
+        if script == finderdrive.FRONT_SCRIPT:
+            return str(self.fixture_folders()[0]) + '\n'
+        self.transport('close-window' if 'close' in script else 'osascript')
+        return ''
+
+    def fake_escape(self):
+        self.transport('escape')
+        return 'escaped'
+
+    def fixture_folders(self):
+        return sorted((self.run_dir / 'fixtures').glob('calibration-*'))
+
+    def calibrate(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                code = calibration.calibrate(self.run_dir, group=GROUP, background_group=BACKGROUND)
+            except Exception as error:  # noqa: BLE001 — an escaped transport error is what the assertions catch
+                code = f'raised {type(error).__name__}: {error}'
+        return code, out.getvalue()
+
+    def assert_cleaned_and_reported(self, code, out, note):
+        self.assertEqual(self.fixture_folders(), [])
+        self.assertIn('\n---\n', out)
+        self.assertRegex(out, r'(?m)^CALIBRATION (PASS|FAIL)')
+        self.assertTrue((self.run_dir / 'calibration' / 'calibration.txt').is_file())
+        self.assertRegex(out, r'(?m)^note: .*' + note)
+        self.assertIn(code, (finderui.OK, finderui.REFUSED, finderui.ENVIRONMENT))
+
+    def test_without_a_failure_the_fixture_is_removed_and_the_report_passes(self):
+        code, out = self.calibrate()
+        self.assertEqual(code, finderui.OK, out)
+        self.assertEqual(self.fixture_folders(), [])
+        self.assertNotIn('note:', out)
+
+    def test_an_esc_error_in_teardown_still_closes_the_window_and_removes_the_fixture(self):
+        self.fail_on = {'escape'}
+        code, out = self.calibrate()
+        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(escape\)')
+        self.assertEqual(code, finderui.OK, out)
+        self.assertIn('close-window', self.calls)
+
+    def test_a_close_window_error_in_teardown_still_removes_the_fixture(self):
+        self.fail_on = {'close-window'}
+        code, out = self.calibrate()
+        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(close-window\)')
+        self.assertEqual(code, finderui.OK, out)
+
+    def test_a_failing_stop_still_removes_the_fixture(self):
+        def stop(run):
+            raise finderui.Environment('osascript timed out after 10 s (stop)')
+        with mock.patch.object(calibration.Run, 'stop_started', stop):
+            code, out = self.calibrate()
+        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(stop\)')
+
+    def test_a_failing_fixture_removal_still_stops_and_prints_the_report(self):
+        stopped = []
+
+        def remove(fixture):
+            raise finderui.Environment('osascript timed out after 10 s (remove)')
+        with mock.patch.object(calibration.Fixture, 'remove', remove), \
+                mock.patch.object(calibration.Run, 'stop_started', lambda run: stopped.append(True)):
+            code, out = self.calibrate()
+        self.assertEqual(stopped, [True])
+        self.assertIn('\n---\n', out)
+        self.assertRegex(out, r'(?m)^note: .*timed out after 10 s \(remove\)')
+        self.assertRegex(out, r'(?m)^CALIBRATION PASS')
+
+    def test_esc_failing_after_a_failed_step_keeps_the_later_steps_and_the_report(self):
+        def broken(run):
+            raise finderui.Refused('the menu did not open')
+        self.fail_on = {'escape'}
+        with mock.patch.object(calibration.Run, 'context_menu', broken):
+            code, out = self.calibrate()
+        self.assert_cleaned_and_reported(code, out, r'timed out after 10 s \(escape\)')
+        self.assertEqual(code, finderui.REFUSED, out)
+        self.assertRegex(out, r'(?m)^FAIL context-menu — the menu did not open$')
+        self.assertRegex(out, r'(?m)^PASS dialog-read — stub$')
+
+    def test_an_interrupt_during_a_step_still_cleans_prints_the_report_and_propagates(self):
+        def interrupted(run):
+            raise KeyboardInterrupt
+        out = io.StringIO()
+        with mock.patch.object(calibration.Run, 'context_menu', interrupted), contextlib.redirect_stdout(out), \
+                self.assertRaises(KeyboardInterrupt):
+            calibration.calibrate(self.run_dir, group=GROUP, background_group=BACKGROUND)
+        self.assertEqual(self.fixture_folders(), [])
+        self.assertRegex(out.getvalue(), r'(?m)^---\n(.*\n)*FAIL context-menu — not run')
 
 
 if __name__ == '__main__':
