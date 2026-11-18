@@ -115,6 +115,11 @@ function expand(files, rel) {
 // introducer is `\` plus N `#` (so `\#"` in `#"…"#` is an escaped quote, and a plain `\` is a letter),
 // and `\(` (`\#(` with one `#`) opens an interpolation, which is code: it is scanned like any code,
 // with its own strings, comments and nested interpolations, up to the `)` that balances it.
+// FAILS CLOSED: a file that ends inside a string, an interpolation or a block comment is not valid
+// source, and nothing read from its mask can be trusted (one stray quote hides or invents every
+// declaration after it). Such a file is UNSCANNABLE: its Code lines, Test cases and Test lines print
+// `--`, a `file::name` filter on it exits 65, and the legend names it with the reason. A Swift
+// single-line string that reaches the end of its line is the same error.
 // Limits (stated, not hidden): JavaScript `${…}` and Python f-string braces are read as string
 // contents, a non-Swift single-line string ends at its line, and regular-expression literals (JavaScript
 // `/…/`, Swift `/…/` and `#/…/#`) are read as code.
@@ -149,11 +154,18 @@ function stringOpener(text, i, lx) {
   return null;
 }
 
-/** The text with comments blanked to spaces and string contents filled with `_`; same length, same line breaks. */
-function mask(text, ext) {
+/**
+ * The text with comments blanked to spaces and string contents filled with `_` (same length, same line
+ * breaks), and `problem`: null, or why the file is unscannable (the first construct found unclosed).
+ */
+function scan(text, ext) {
   const lx = lexerOf(ext);
   const out = text.split("");
   const n = text.length;
+  let problem = null;
+  const unclosed = (at, what) => {
+    problem ??= `${what} that opens on line ${text.slice(0, at).split("\n").length} does not close`;
+  };
   const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== "\n") out[k] = " "; };
   const fill = (a, b) => { for (let k = a; k < b; k++) if (!/\s/.test(out[k])) out[k] = "_"; };
 
@@ -170,6 +182,7 @@ function mask(text, ext) {
       else if (text.startsWith("*/", k)) { depth--; k += 2; if (depth === 0) break; }
       else k++;
     }
+    if (depth > 0) unclosed(i, "a block comment");
     blank(i, Math.min(k, n));
     return Math.min(k, n);
   }
@@ -180,12 +193,15 @@ function mask(text, ext) {
     let from = k; // start of the contents not filled yet
     while (k < n) {
       if (text.startsWith(open.close, k)) { fill(from, k); return k + open.close.length; }
-      if (text[k] === "\n" && !open.multiline) break;
+      if (text[k] === "\n" && !open.multiline) {
+        if (lx.swift) unclosed(i, "a string"); // elsewhere a single-line string ending at its line is a stated limit
+        break;
+      }
       if (open.escape !== null && text.startsWith(open.escape, k)) {
         const after = k + open.escape.length;
         if (open.interpolates && text[after] === "(") {
           fill(from, after + 1);
-          k = code(after + 1, true);
+          k = code(after + 1, k);
           fill(k - 1, k); // the closing parenthesis
           from = k;
           continue;
@@ -195,13 +211,15 @@ function mask(text, ext) {
       }
       k++;
     }
+    if (k >= n) unclosed(i, "a string");
     const end = Math.min(k, n);
     fill(from, end);
     return end;
   }
 
-  /** Scans code from `i`; inside an interpolation, up to and including the `)` that balances it. */
-  function code(i, interpolation) {
+  /** Scans code from `i`; inside an interpolation (opened at `opener`), up to and including the `)` that balances it. */
+  function code(i, opener = null) {
+    const interpolation = opener !== null;
     let depth = 0;
     let k = i;
     while (k < n) {
@@ -221,19 +239,22 @@ function mask(text, ext) {
       }
       k++;
     }
+    if (interpolation) unclosed(opener, "an interpolation");
     return n;
   }
 
-  code(0, false);
-  return out.join("");
+  code(0);
+  return { masked: out.join(""), problem };
 }
 
-/** Per line: does it hold code (anything that is neither blank nor comment)? */
-const codeFlags = (text, ext) => mask(text, ext).split("\n").map((l) => l.trim() !== "");
-
-/** Lines that are neither blank nor only a comment. */
-function codeLines(text, ext) {
-  return codeFlags(text, ext).filter(Boolean).length;
+/**
+ * One file read through the scanner: per line, whether it holds code (anything neither blank nor
+ * comment); its test cases; and `problem`, null or why the file is unscannable.
+ */
+function analyse(text, ext) {
+  const { masked, problem } = scan(text, ext);
+  const lines = masked.split("\n");
+  return { problem, flags: lines.map((l) => l.trim() !== ""), cases: testCases(text.split("\n"), lines, ext) };
 }
 
 /** Last line of the block that opens at or after `start` (masked lines): braces for Swift and JS, indentation for Python. */
@@ -264,9 +285,7 @@ function blockEnd(lines, start, python) {
  * XCTest `func test…`, Python `def test_…`, node:test `test(…)`. Declarations are read from the
  * scanner's mask, so a commented-out test or a declaration inside a string does not count.
  */
-function testCases(text, ext) {
-  const lines = text.split("\n");
-  const masked = mask(text, ext).split("\n");
+function testCases(lines, masked, ext) {
   const python = ext === ".py";
   const cases = [];
   let attribute = null; // line of a pending Swift `@Test` attribute
@@ -362,7 +381,7 @@ function changelogMentions(changelog, terms) {
 }
 
 /** Test files, cases and lines of a feature's test entries; a file named whole and by filter counts once. */
-function measureTests(entries, files, read) {
+function measureTests(entries, files, look) {
   const perFile = new Map();
   for (const e of entries) {
     const { path: p, filter } = splitTestEntry(e);
@@ -374,16 +393,14 @@ function measureTests(entries, files, read) {
     }
   }
   // A file with no case parser (a Markdown plan, a JSON fixture) leaves cases and lines unmeasured, not 0.
-  if ([...perFile.keys()].some((f) => !CASE_EXTENSIONS.has(path.extname(f)))) {
+  // So does a file the scanner cannot read to the end: its declarations cannot be trusted.
+  if ([...perFile.keys()].some((f) => !CASE_EXTENSIONS.has(path.extname(f)) || look(f).problem !== null)) {
     return { files: perFile.size, cases: UNMEASURED, lines: UNMEASURED };
   }
   let cases = 0;
   let lines = 0;
   for (const [f, slot] of perFile) {
-    const text = read(f);
-    const ext = path.extname(f);
-    const all = testCases(text, ext);
-    const flags = codeFlags(text, ext);
+    const { cases: all, flags } = look(f);
     if (slot.whole) {
       cases += all.length;
       lines += flags.filter(Boolean).length;
@@ -396,17 +413,18 @@ function measureTests(entries, files, read) {
   return { files: perFile.size, cases, lines };
 }
 
-function measure(root, files, feature, changelog, ctx) {
-  const read = (f) => readFileSync(path.join(root, f), "utf8");
+function measure(files, feature, changelog, ctx) {
+  const look = ctx.look;
   const code = [...new Set(feature.paths.flatMap((p) => expand(files, p)))]
     .filter((f) => CODE_EXTENSIONS.has(path.extname(f)));
   const owned = [...new Set(feature.paths.flatMap((p) => expand(files, p)))];
   const dirs = feature.paths.map((p) => p.replace(/\/+$/, "")).filter((p) => !files.includes(p));
   const hits = touchingCommits(ctx.history, owned, dirs);
-  const tests = Array.isArray(feature.tests) ? measureTests(feature.tests, files, read) : UNMEASURED;
+  const tests = Array.isArray(feature.tests) ? measureTests(feature.tests, files, look) : UNMEASURED;
+  const scanned = code.map(look);
   return {
     codeFiles: code.length,
-    codeLines: code.reduce((s, f) => s + codeLines(read(f), path.extname(f)), 0),
+    codeLines: scanned.some((a) => a.problem !== null) ? UNMEASURED : scanned.reduce((s, a) => s + a.flags.filter(Boolean).length, 0),
     testFiles: tests === UNMEASURED ? UNMEASURED : tests.files,
     testCases: tests === UNMEASURED ? UNMEASURED : tests.cases,
     testLines: tests === UNMEASURED ? UNMEASURED : tests.lines,
@@ -434,6 +452,9 @@ function render(spine, rows, opts) {
     "",
     "**`--` means not measured; `0` means measured and none.** A spine entry with no `tests`, `specs` or `changelog` list was never linked by anyone, so those cells print `--`. An empty list is a deliberate \"looked, found none\" and prints `0`. Without a `CHANGELOG.md` every CHANGELOG cell is `--`.",
     "",
+    ...(opts.unscannable.size ? ["**These files cannot be scanned, so every Code lines, Test cases and Test lines cell that includes them prints `--`:** " +
+      [...opts.unscannable].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([f, why]) => `\`${f}\` (${why})`).join("; ") +
+      ". Each ends inside a string, an interpolation or a comment, so nothing read from its text can be trusted.", ""] : []),
     ...(opts.shallow ? ["**This repository is a shallow clone, so every Last touch and Commits cell prints `--`.** Its oldest commit is a grafted boundary that shows every file as added, so history read from it would be wrong, not partial. Regenerate from a full clone.", ""] : []),
     "## Columns",
     "",
@@ -509,7 +530,7 @@ function shapeErrors(spine) {
 }
 
 /** Stale-spine errors: a path, test or spec entry that matches no tracked file. */
-function staleErrors(spine, files, read) {
+function staleErrors(spine, files, look) {
   const errors = [];
   for (const f of spine.features) {
     for (const k of ["paths", "tests", "specs"]) {
@@ -517,8 +538,13 @@ function staleErrors(spine, files, read) {
         const { path: p, filter } = k === "tests" ? splitTestEntry(entry) : { path: entry, filter: null };
         const hits = expand(files, p);
         if (hits.length === 0) errors.push(`${f.id}: ${k} entry "${entry}" matches no tracked file`);
-        else if (filter !== null && !hits.some((h) => testCases(read(h), path.extname(h)).some((c) => c.name.toLowerCase().includes(filter.toLowerCase())))) {
-          errors.push(`${f.id}: ${k} entry "${entry}" matches no test case`);
+        else if (filter !== null) {
+          // A filter on an unscannable file cannot be checked either way: refuse rather than guess.
+          const unscannable = hits.filter((h) => look(h).problem !== null);
+          for (const h of unscannable) errors.push(`${f.id}: ${k} entry "${entry}": ${h} cannot be scanned (${look(h).problem})`);
+          if (!unscannable.length && !hits.some((h) => look(h).cases.some((c) => c.name.toLowerCase().includes(filter.toLowerCase())))) {
+            errors.push(`${f.id}: ${k} entry "${entry}" matches no test case`);
+          }
         }
       }
     }
@@ -547,7 +573,18 @@ function main() {
   const shape = shapeErrors(spine);
   if (shape.length) refuse(65, `${opts.spine} is malformed; nothing was written:`, shape);
   const files = attempt(66, "git cannot list the tracked files:", () => trackedFiles(opts.root));
-  const stale = staleErrors(spine, files, (f) => readFileSync(path.join(opts.root, f), "utf8"));
+  // Every file is scanned once; an unscannable one is remembered for the legend.
+  const analysed = new Map();
+  opts.unscannable = new Map();
+  const look = (f) => {
+    if (!analysed.has(f)) {
+      const a = analyse(readFileSync(path.join(opts.root, f), "utf8"), path.extname(f));
+      if (a.problem !== null) opts.unscannable.set(f, a.problem);
+      analysed.set(f, a);
+    }
+    return analysed.get(f);
+  };
+  const stale = staleErrors(spine, files, look);
   if (stale.length) {
     refuse(65, `${opts.spine} is stale; nothing was written. Fix the entry, do not delete the feature:`, stale);
   }
@@ -567,8 +604,8 @@ function main() {
   const shallow = attempt(66, "git cannot tell whether the repository is shallow:",
     () => git(opts.root, ["rev-parse", "--is-shallow-repository"]).trim() === "true");
   opts.shallow = shallow;
-  const ctx = { history, shallow, headTime: head ? Number(head[1]) : null, windowDays: opts.windowDays };
-  const rows = spine.features.map((f) => measure(opts.root, files, f, changelog, ctx));
+  const ctx = { look, history, shallow, headTime: head ? Number(head[1]) : null, windowDays: opts.windowDays };
+  const rows = spine.features.map((f) => measure(files, f, changelog, ctx));
   mkdirSync(path.dirname(opts.out), { recursive: true });
   const tmp = `${opts.out}.tmp-${process.pid}`;
   writeFileSync(tmp, render(spine, rows, opts));
