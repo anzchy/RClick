@@ -331,6 +331,53 @@ class AxprobeCache(unittest.TestCase):
             finderdrive.probe_binary()
 
 
+@unittest.skipUnless(Path('/usr/bin/xcrun').exists(), 'needs the Xcode toolchain (the Mac gate lane has it)')
+class AxprobeNeedsTheLock(unittest.TestCase):
+    """axprobe's acting commands check the GUI lock themselves (the driver's strict check), so calling the compiled
+    helper directly cannot bypass it; the refusal comes before any AX call (audit r1 F4). Compiles the real axprobe
+    into a temporary HOME; no AX action is reached."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory(prefix='rclick-axlock-')
+        cls.home = Path(cls.temp.name)
+        with mock.patch.dict(os.environ, HOME=str(cls.home)):
+            cls.binary = finderdrive.probe_binary()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def axprobe(self, *args, **env):
+        environment = dict(os.environ, HOME=str(self.home), **env)
+        for key in LOCK_ENV:
+            environment.pop(key, None)
+        environment.update(env)
+        return subprocess.run([str(self.binary), *args], capture_output=True, text=True, env=environment, timeout=60)
+
+    def acting_calls(self):
+        return (('act', str(os.getpid()), '0', 'select', 'AXRow', 'alpha.txt'),
+                ('menu-session', '-10000', '-10000', '3'))
+
+    def test_acting_without_the_lock_is_refused_before_any_ax_call(self):
+        for args in self.acting_calls():
+            with self.subTest(command=args[0]):
+                result = self.axprobe(*args)
+                self.assertEqual(result.returncode, 70, result.stderr)
+                self.assertIn('GUI lock', result.stderr)
+
+    def test_another_projects_lock_is_refused(self):
+        lock = self.home / '.cache' / 'desktop-gui.lock'
+        lock.mkdir(parents=True)
+        self.addCleanup(lambda: (lock / 'owner').unlink() or lock.rmdir())
+        (lock / 'owner').write_text(HELD.split('\n', 1)[1].replace('  ', '').replace('project=rclick', 'project=picsee'))
+        for args in self.acting_calls():
+            with self.subTest(command=args[0]):
+                result = self.axprobe(*args, **LOCK_ENV)
+                self.assertEqual(result.returncode, 70, result.stderr)
+                self.assertIn("project 'picsee'", result.stderr)
+
+
 class Source(unittest.TestCase):
     def test_no_personal_path_in_the_skill(self):
         marker = '/' + 'Users' + '/'  # split so this file does not match itself
@@ -345,8 +392,12 @@ class Source(unittest.TestCase):
 
     @unittest.skipUnless(Path('/usr/bin/xcrun').exists(), 'needs the Xcode toolchain (the Mac gate lane has it)')
     def test_axprobe_type_checks(self):
-        result = subprocess.run(['/usr/bin/xcrun', 'swiftc', '-typecheck', str(HERE / 'axprobe.swift')],
-                                capture_output=True, text=True, timeout=300)
+        # axprobe.swift is compiled as main.swift with the generated driver.swift (finderdrive.probe_binary).
+        with tempfile.TemporaryDirectory(prefix='rclick-axcheck-') as build:
+            (Path(build) / 'main.swift').write_bytes((HERE / 'axprobe.swift').read_bytes())
+            (Path(build) / 'driver.swift').write_text('let driverScript = "finderdrive.py"\n')
+            result = subprocess.run(['/usr/bin/xcrun', 'swiftc', '-typecheck', str(Path(build) / 'main.swift'),
+                                     str(Path(build) / 'driver.swift')], capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, result.stderr)
 
 

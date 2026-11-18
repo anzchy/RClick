@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import finderui as ui  # noqa: E402
 
-ACTING = ('select', 'open-menu', 'guard', 'choose', 'press-button', 'grant', 'calibrate')
+ACTING = ('select', 'open-menu', 'guard', 'choose', 'press-button', 'grant', 'calibrate', 'lock-check')
 SELECT_SCRIPT = '''on run argv
   set chosen to {}
   repeat with p in argv
@@ -80,8 +80,12 @@ def probe_binary():
     into a shared temporary directory). It runs with the host terminal's Accessibility trust, so before every reuse
     the directories and the executable must be this user's and writable by no one else; a build is compiled to a
     temporary name in the private directory and renamed into place."""
-    source = HERE / 'axprobe.swift'
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
+    source = (HERE / 'axprobe.swift').read_bytes()
+    # axprobe's acting commands run THIS driver's lock check (`finderdrive.py lock-check`); its path is compiled in as
+    # UTF-8 bytes (no string escaping), so the cache key covers it too.
+    driver = ('let driverScript = String(decoding: [UInt8]([' + ', '.join(str(b) for b in str(HERE / 'finderdrive.py')
+              .encode('utf-8')) + ']), as: UTF8.self)\n').encode('utf-8')
+    digest = hashlib.sha256(source + b'\0' + driver).hexdigest()[:16]
     caches = Path.home() / 'Library' / 'Caches'
     caches.mkdir(parents=True, exist_ok=True)  # exists on every Mac; the tests use a temporary HOME
     folder = private_dir(private_dir(caches / 'rclick-axprobe') / digest)
@@ -95,17 +99,20 @@ def probe_binary():
             raise ui.Environment(f'axprobe cache {binary} is not a regular file of this user writable only by it: '
                                  'remove it by hand and rerun')
         return binary
-    handle, partial = tempfile.mkstemp(prefix='axprobe.', dir=folder)
-    os.close(handle)
+    build = Path(tempfile.mkdtemp(prefix='build.', dir=folder))
     try:
-        result = run(['xcrun', 'swiftc', '-O', '-o', partial, source], timeout=300)
+        (build / 'main.swift').write_bytes(source)
+        (build / 'driver.swift').write_bytes(driver)
+        partial = build / 'axprobe'
+        result = run(['xcrun', 'swiftc', '-O', '-o', partial, build / 'main.swift', build / 'driver.swift'], timeout=300)
         if result.returncode != 0:
             raise ui.Environment('cannot compile axprobe.swift: ' + (result.stderr.strip().splitlines() or ['?'])[-1])
         os.chmod(partial, 0o700)
         os.rename(partial, binary)
     finally:
-        if os.path.lexists(partial):
-            os.unlink(partial)
+        for leftover in sorted(build.iterdir(), reverse=True):
+            leftover.unlink()
+        build.rmdir()
     return binary
 
 
@@ -376,6 +383,8 @@ def grant(pid, folder, button='Grant Access'):
 def command(args):
     if args.command in ACTING and not (args.command == 'calibrate' and args.dry_run):
         require_lock()
+    if args.command == 'lock-check':
+        return ui.OK  # require_lock above passed
     if args.command == 'calibrate':
         import calibration
         return calibration.calibrate(Path(args.run_dir), args.dry_run, args.group)
