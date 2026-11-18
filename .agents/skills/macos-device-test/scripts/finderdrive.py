@@ -9,8 +9,10 @@ is held by an rclick run (gui-lock.sh).
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -58,19 +60,52 @@ def spawn(argv):
         raise ui.Environment(f'{argv[0]} not found') from error
 
 
+def private_dir(path):
+    """`path` created 0700 when missing; refused unless it is a real directory (not a symlink) owned by this user that
+    no one else can write."""
+    try:
+        os.mkdir(path, 0o700)
+    except FileExistsError:
+        pass
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() \
+            or info.st_mode & 0o077:
+        raise ui.Environment(f'axprobe cache {path} is not a private directory of this user (a symlink, another '
+                             'owner, or group/other permissions): remove it by hand and rerun')
+    return path
+
+
 def probe_binary():
-    """axprobe compiled once per source hash into $TMPDIR (never into the repo)."""
+    """axprobe compiled once per source hash into ~/Library/Caches/rclick-axprobe/<hash>/ (never into the repo, never
+    into a shared temporary directory). It runs with the host terminal's Accessibility trust, so before every reuse
+    the directories and the executable must be this user's and writable by no one else; a build is compiled to a
+    temporary name in the private directory and renamed into place."""
     source = HERE / 'axprobe.swift'
     digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
-    binary = Path(os.environ.get('TMPDIR') or '/tmp') / f'rclick-axprobe-{digest}' / 'axprobe'
-    if binary.is_file():
+    caches = Path.home() / 'Library' / 'Caches'
+    caches.mkdir(parents=True, exist_ok=True)  # exists on every Mac; the tests use a temporary HOME
+    folder = private_dir(private_dir(caches / 'rclick-axprobe') / digest)
+    binary = folder / 'axprobe'
+    try:
+        info = os.lstat(binary)
+    except FileNotFoundError:
+        info = None
+    if info is not None:
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+            raise ui.Environment(f'axprobe cache {binary} is not a regular file of this user writable only by it: '
+                                 'remove it by hand and rerun')
         return binary
-    binary.parent.mkdir(parents=True, exist_ok=True)
-    partial = binary.with_name(f'axprobe.{os.getpid()}')
-    result = run(['xcrun', 'swiftc', '-O', '-o', partial, source], timeout=300)
-    if result.returncode != 0:
-        raise ui.Environment('cannot compile axprobe.swift: ' + (result.stderr.strip().splitlines() or ['?'])[-1])
-    partial.replace(binary)
+    handle, partial = tempfile.mkstemp(prefix='axprobe.', dir=folder)
+    os.close(handle)
+    try:
+        result = run(['xcrun', 'swiftc', '-O', '-o', partial, source], timeout=300)
+        if result.returncode != 0:
+            raise ui.Environment('cannot compile axprobe.swift: ' + (result.stderr.strip().splitlines() or ['?'])[-1])
+        os.chmod(partial, 0o700)
+        os.rename(partial, binary)
+    finally:
+        if os.path.lexists(partial):
+            os.unlink(partial)
     return binary
 
 

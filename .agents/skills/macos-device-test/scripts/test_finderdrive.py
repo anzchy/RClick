@@ -272,6 +272,65 @@ class WhitespaceIsIdentity(unittest.TestCase):
         self.assertEqual(desktop.pressed, [])
 
 
+class AxprobeCache(unittest.TestCase):
+    """axprobe runs with the host terminal's Accessibility trust, so its cached executable must be one only this user
+    could have written: a 0700 directory under ~/Library/Caches, lstat-checked before every reuse (audit r1 M1/M6)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='rclick-axcache-')
+        self.addCleanup(temp.cleanup)
+        self.home, self.tmpdir = Path(temp.name) / 'home', Path(temp.name) / 'tmp'
+        self.home.mkdir()
+        self.tmpdir.mkdir()
+        self.compiles = []
+        for patch in (mock.patch.dict(os.environ, HOME=str(self.home), TMPDIR=str(self.tmpdir)),
+                      mock.patch.object(finderdrive, 'run', self.fake_run)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def fake_run(self, argv, timeout=20):
+        argv = [str(a) for a in argv]
+        out = Path(argv[argv.index('-o') + 1])
+        out.write_text('#!/bin/sh\n')
+        self.compiles.append(argv)
+        return subprocess.CompletedProcess(argv, 0, '', '')
+
+    def test_compiles_once_into_a_private_cache_under_library_caches(self):
+        binary = finderdrive.probe_binary()
+        cache = self.home / 'Library' / 'Caches' / 'rclick-axprobe'
+        self.assertTrue(binary.is_relative_to(cache), binary)
+        self.assertEqual(cache.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(binary.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(finderdrive.probe_binary(), binary)
+        self.assertEqual(len(self.compiles), 1)
+        self.assertEqual(list(self.tmpdir.iterdir()), [])  # $TMPDIR is never used
+
+    def test_a_planted_symlink_is_refused(self):
+        binary = finderdrive.probe_binary()
+        binary.unlink()
+        binary.symlink_to('/bin/sh')
+        with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
+            finderdrive.probe_binary()
+
+    def test_a_cache_others_can_write_is_refused(self):
+        binary = finderdrive.probe_binary()
+        for target, mode in ((binary, 0o775), (binary.parent, 0o777), (binary.parent.parent, 0o757)):
+            with self.subTest(target=target.name, mode=oct(mode)):
+                target.chmod(mode)
+                with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
+                    finderdrive.probe_binary()
+                target.chmod(0o700)
+
+    def test_a_symlinked_cache_directory_is_refused(self):
+        caches = self.home / 'Library' / 'Caches'
+        caches.mkdir(parents=True)
+        elsewhere = self.home / 'elsewhere'
+        elsewhere.mkdir(mode=0o700)
+        (caches / 'rclick-axprobe').symlink_to(elsewhere)
+        with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
+            finderdrive.probe_binary()
+
+
 class Source(unittest.TestCase):
     def test_no_personal_path_in_the_skill(self):
         marker = '/' + 'Users' + '/'  # split so this file does not match itself

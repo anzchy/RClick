@@ -65,7 +65,7 @@ class Run:
     # environment ---------------------------------------------------------------------------------------------
     def environment(self):
         checks = (('gui-lock', drive.require_lock, 'held by an rclick run'),
-                  ('axprobe', lambda: drive.probe_binary(), 'compiled into $TMPDIR'),
+                  ('axprobe', lambda: drive.probe_binary(), 'compiled into its private cache'),
                   ('accessibility', drive.require_trust, 'host terminal is AX-trusted'))
         for name, check, detail in checks:
             try:
