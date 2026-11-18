@@ -14,7 +14,16 @@ nonisolated struct InMemoryKeyProvider: KeyProvider {
     }
 }
 
-nonisolated struct KeychainKeyProvider: KeyProvider {
+/// Injectable system boundary: tests supply statuses without touching Keychain.
+nonisolated struct IPCKeychainRead {
+    let status: OSStatus
+    let data: Data?
+}
+nonisolated protocol IPCKeychain: Sendable {
+    func read() -> IPCKeychainRead
+    func add(_ data: Data) -> OSStatus
+}
+nonisolated struct DataProtectionIPCKeychain: IPCKeychain {
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: "cn.anzchy.RClick.ipc.v2",
@@ -22,24 +31,38 @@ nonisolated struct KeychainKeyProvider: KeyProvider {
          kSecUseDataProtectionKeychain as String: true,
          kSecAttrAccessGroup as String: SharedAppGroup.identifier]
     }
-
-    func key(createIfMissing: Bool) throws -> Data {
+    func read() -> IPCKeychainRead {
         var read = query
         read[kSecReturnData as String] = true
         read[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(read as CFDictionary, &result)
-        if status == errSecSuccess {
-            guard let data = result as? Data, data.count == 32 else { throw IPCSecurityError.noKey }
-            return data
-        }
-        // Never replace a key on a locked Keychain, denied access or any transient failure.
-        guard status == errSecItemNotFound, createIfMissing else { throw IPCSecurityError.keychain(status) }
-        let generated = try SystemIPCRandom().bytes(count: 32)
+        return IPCKeychainRead(status: status, data: result as? Data)
+    }
+    func add(_ data: Data) -> OSStatus {
         var add = query
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        add[kSecValueData as String] = generated
-        let added = SecItemAdd(add as CFDictionary, nil)
+        add[kSecValueData as String] = data
+        return SecItemAdd(add as CFDictionary, nil)
+    }
+}
+nonisolated struct KeychainKeyProvider: KeyProvider {
+    let keychain: any IPCKeychain
+    let random: any IPCRandom
+    init(keychain: any IPCKeychain = DataProtectionIPCKeychain(), random: any IPCRandom = SystemIPCRandom()) {
+        self.keychain = keychain
+        self.random = random
+    }
+    func key(createIfMissing: Bool) throws -> Data {
+        let result = keychain.read()
+        if result.status == errSecSuccess {
+            guard let data = result.data, data.count == 32 else { throw IPCSecurityError.noKey }
+            return data
+        }
+        // Never replace a key on a locked Keychain, denied access or transient failure.
+        guard result.status == errSecItemNotFound, createIfMissing else { throw IPCSecurityError.keychain(result.status) }
+        let generated = try random.bytes(count: 32)
+        let added = keychain.add(generated)
         if added == errSecDuplicateItem { return try key(createIfMissing: false) }
         guard added == errSecSuccess else { throw IPCSecurityError.keychain(added) }
         return generated
