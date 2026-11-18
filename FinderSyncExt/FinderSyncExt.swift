@@ -59,7 +59,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 是否认为主程序可通信（连续 3 次心跳未收到即判离线）
     private var isHostAppRunning: Bool {
-        mainActivity.isActive()
+        messager.canUseCachedMenus && mainActivity.isActive()
     }
 
     /// 待确认的点击事件 ack 计时器
@@ -383,6 +383,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 构建并返回 Finder 上下文菜单
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
+        if !messager.canUseCachedMenus { cachedMenuConfig = nil }
         let start = DispatchTime.now()
         let menu = buildMenu(for: menuKind)
         let ms = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000

@@ -172,6 +172,18 @@ final class IPCAuthenticationTests: XCTestCase {
         }
     }
 
+    func testNoReadableKeyKeepsExtensionOfflineAndDropsMessages() throws {
+        let center = NotificationCenter()
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: nil))
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32)))
+        let received = Mutex(0)
+        ext.onMainMessage(.running) { _ in received.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        XCTAssertFalse(ext.hasReadableKey)
+        XCTAssertFalse(ext.canUseCachedMenus)
+        XCTAssertEqual(received.withLock { $0 }, 0)
+    }
+
 }
 
 

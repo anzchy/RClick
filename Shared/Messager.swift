@@ -221,6 +221,7 @@ nonisolated final class Messager: NSObject, Sendable {
                            name: Notification.Name(ext ? Self.mainToExtensionNotification : Self.extensionToMainNotification), object: nil)
     }
     deinit { center.removeObserver(self) }
+    var canUseCachedMenus: Bool { hasReadableKey && !receiver.currentSession.isEmpty }
     var hasReadableKey: Bool { state.withLock { $0.key != nil } }
 
     private func key() -> Data? {
