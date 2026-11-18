@@ -25,6 +25,7 @@ struct PendingCut {
     func isStillPending(_ changeCount: Int) -> Bool { pasteboard.changeCount == changeCount }
 
     func writeCut(_ paths: [String]) -> Int? {
+        guard !paths.isEmpty else { return nil }
         let items = paths.enumerated().map { index, path in
             let item = NSPasteboardItem()
             item.setString(URL(fileURLWithPath: path).absoluteString, forType: .fileURL)
