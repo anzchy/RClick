@@ -12,7 +12,7 @@ final class IPCAuthenticationTests: XCTestCase {
                                    nonce: Data(repeating: 1, count: 16), payload: try JSONEncoder().encode(original))
         var captured = MessageSecurity.sign(envelope, key: key)
         captured.payload = try JSONEncoder().encode(ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/other"], trigger: .contextualItems, optionKeyPressed: true))
-        XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(captured.wireString(), key: key))
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain, session: "session").receive(captured.wireString(), key: key))
     }
     func testPayloadFreeMessagesRequireAuthentication() throws {
         let center = NotificationCenter()
@@ -22,12 +22,13 @@ final class IPCAuthenticationTests: XCTestCase {
         let dispatches = Mutex(0)
         for action in [MainToExtensionAction.quit, .actionAck] { ext.onMainMessage(action) { _ in dispatches.withLock { $0 += 1 } } }
         for action in [ExtensionToMainAction.heartbeat, .requestConfig] { app.onExtensionMessage(action) { _ in dispatches.withLock { $0 += 1 } } }
-        for action in ["quit", "action-ack", "heartbeat", "request-config"] {
+        app.sendRunningNotification()
+        for (index, action) in ["quit", "action-ack", "heartbeat", "request-config"].enumerated() {
             let name = ["quit", "action-ack"].contains(action) ? Messager.mainToExtensionNotification : Messager.extensionToMainNotification
             center.post(name: Notification.Name(name), object: "{\"id\":\"legacy\",\"action\":\"\(action)\"}")
             let envelope = IPCEnvelope(direction: name == Messager.mainToExtensionNotification ? .toExtension : .toMain,
-                                       action: action, id: UUID().uuidString, session: "session", timestamp: Date().timeIntervalSince1970,
-                                       nonce: Data(repeating: 1, count: 16), mac: Data(repeating: 0, count: 32))
+                                       action: action, id: UUID().uuidString, inReplyTo: "pending-click", session: app.currentSession, timestamp: Date().timeIntervalSince1970,
+                                       nonce: Data(repeating: UInt8(index + 1), count: 16), mac: Data(repeating: 0, count: 32))
             center.post(name: Notification.Name(name), object: envelope.wireString())
         }
         XCTAssertEqual(dispatches.withLock { $0 }, 0)
