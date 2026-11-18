@@ -277,3 +277,54 @@ def find_group_item(items, title, sub=None, also=()):
         raise Refused(f'no submenu item {sub!r} under {title!r} (has: {", ".join(name for name, _ in item.sub)})'
                       if not paths else f'{len(paths)} submenu items {sub!r} under {title!r}')
     return item, paths[0]
+
+
+class Window:
+    def __init__(self, index, title, kind, texts, buttons):
+        self.index, self.title, self.kind, self.texts, self.buttons = index, title, kind, texts, buttons
+
+
+def dialog_windows(nodes):
+    """Every window of an app dump with its static texts and its buttons ((title, path)), in AX order. An NSAlert
+    is a window of the process that raised it: the RClick app for Delete Direct and the folder panel,
+    FinderSyncExt for "RClick is not running" / "RClick did not respond"."""
+    windows = []
+    for node in nodes:
+        if len(node['path']) != 1 or node['role'] != 'AXWindow':
+            continue
+        inside = descendants(node, nodes)
+        texts = [nfc(label(d)) for d in inside if d['role'] == 'AXStaticText' and label(d)]
+        buttons = [(nfc(label(d)), d['path']) for d in inside if d['role'] == 'AXButton' and label(d)]
+        kind = node.get('subrole') or node.get('desc') or ''
+        windows.append(Window(node['path'][0], nfc(node.get('title')), kind, texts, buttons))
+    return windows
+
+
+def format_dialogs(windows):
+    lines = []
+    for window in windows:
+        lines.append(f'window {window.index} title={window.title!r} kind={window.kind}')
+        lines += [f'  text: {text}' for text in window.texts]
+        lines += [f'  button: {title}' for title, _ in window.buttons]
+    return '\n'.join(lines)
+
+
+def find_button(nodes, title, window_text=None):
+    """Path of the one button titled exactly `title`, in the one window that has it (and whose texts contain
+    `window_text`, when given). Ambiguity is refused, never resolved by order."""
+    wanted = nfc(title)
+    candidates = []
+    for window in dialog_windows(nodes):
+        if window_text is not None and not any(nfc(window_text) in text for text in window.texts):
+            continue
+        paths = [path for name, path in window.buttons if name == wanted]
+        if len(paths) > 1:
+            raise Refused(f'window {window.index} has {len(paths)} buttons titled {title!r}')
+        if paths:
+            candidates.append(paths[0])
+    if not candidates:
+        where = f' (among windows with text {window_text!r})' if window_text is not None else ''
+        raise Refused(f'no window has a button titled {title!r}{where}')
+    if len(candidates) > 1:
+        raise Refused(f'{len(candidates)} windows have a button titled {title!r}; pass --window-text')
+    return candidates[0]

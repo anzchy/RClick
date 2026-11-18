@@ -188,5 +188,33 @@ class Choose(unittest.TestCase):
             finderui.find_group_item(finderui.menu_items(nodes), 'Copy File Name')
 
 
+class Dialogs(unittest.TestCase):
+    def setUp(self):
+        self.nodes = dump('dialog-delete-confirm.jsonl')
+
+    def test_reader_returns_each_windows_texts_and_buttons(self):
+        alert, settings = finderui.dialog_windows(self.nodes)
+        self.assertEqual(alert.texts[0], 'Permanently delete “%2544ocuments”?')
+        self.assertIn('Tip: hold Option while choosing this action to skip the confirmation.', alert.texts[1])
+        self.assertEqual([title for title, _ in alert.buttons], ['Cancel', 'Delete'])
+        self.assertEqual(settings.title, 'General')
+
+    def test_button_is_found_by_exact_title(self):
+        self.assertEqual(finderui.find_button(self.nodes, 'Delete'), (0, 4))
+        with self.assertRaisesRegex(finderui.Refused, 'no window has a button'):
+            finderui.find_button(self.nodes, 'delete')
+
+    def test_a_button_in_two_windows_needs_the_window_text(self):
+        self.nodes.append(dict(path=(1, 9), role='AXButton', title='Cancel', value=None, desc='', subrole='',
+                               enabled=True, selected=None, frame=[0, 0, 10, 10]))
+        with self.assertRaisesRegex(finderui.Refused, '2 windows'):
+            finderui.find_button(self.nodes, 'Cancel')
+        self.assertEqual(finderui.find_button(self.nodes, 'Cancel', window_text='Permanently delete'), (0, 3))
+
+    def test_window_text_that_does_not_match_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, 'no window has a button'):
+            finderui.find_button(self.nodes, 'Manage…', window_text='Permanently delete')
+
+
 if __name__ == '__main__':
     unittest.main()
