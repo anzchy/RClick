@@ -287,8 +287,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 实时按键状态，避免与扩展显示的菜单标题不一致。旧版扩展未携带该字段
         // 时按 false 处理，即弹出确认框——这是安全方向。
         let optionKeyPressed = event.optionKeyPressed ?? false
-        logger.info("Click option: payload=\(String(describing: event.optionKeyPressed)) resolved=\(optionKeyPressed)")
-        logger.debug("Handling click event: \(event.itemId) type=\(event.itemType.rawValue) trigger=\(event.trigger.rawValue) target=\(event.target)")
 
         let actionService = RCRuntime.shared.actionService
 

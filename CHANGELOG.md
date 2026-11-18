@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Built-in new-file format and Apple product names now resolve in every supported language without missing-localization warnings
 - Copy Path and Copy File Name preserve literal percent sequences in selected paths, names and file URLs instead of decoding them into different names
+- Authenticate every Finder message with a per-install key, launch session and replay protection; reject tampered clicks and unrelated acknowledgements. A non-modal menu-bar notice offers Finder relaunch guidance after unverifiable messages are rejected
 - Delete Direct, Hide and AirDrop now refuse protected folders: the check previously failed to match Finder paths. The home folder, ~/Documents, ~/Library and / are now protected too; file actions also preserve literal percent sequences in Finder paths so they act on the selected item
 - Updates no longer report success when the install failed. Installation errors are surfaced, the staged bundle's version is checked before it replaces the old app, and a failed relaunch keeps the current app running instead of quitting
 - Updating from outside /Applications installs the new version and moves the old copy to the Trash, and an older RClick instance now quits itself as soon as a newer one starts. Two copies used to stay on disk and handle every Finder click twice

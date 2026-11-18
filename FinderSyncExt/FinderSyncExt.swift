@@ -77,7 +77,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     override init() {
         super.init()
 
-        logger.info("FinderSyncExt launched from \(Bundle.main.bundlePath)")
 
         // 设置监听目录（全盘监听）
         setupObservingDirectories()
@@ -135,9 +134,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         // 处理主程序发送的 running 通知
         messager.onMainMessage(.running) { [weak self] data in
             guard let self = self else { return }
-            if let payload = self.messager.decodeSignedData(data, as: RunningPayload.self) {
+            if self.messager.decodeSignedData(data, as: RunningPayload.self) != nil {
                 self.markMainActivity()
-                logger.debug("Received running notification: \(payload.directories)")
                 // 可以根据 payload 更新监听目录
             }
         }
@@ -284,11 +282,9 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     // MARK: - Primary Finder Sync protocol methods
 
     override func beginObservingDirectory(at url: URL) {
-        logger.debug("beginObservingDirectoryAtURL: \(url.path)")
     }
 
     override func endObservingDirectory(at url: URL) {
-        logger.debug("endObservingDirectoryAtURL: \(url.path)")
     }
 
     /// Finder 会为观察范围内的每个项目回调这里，问它该显示什么徽章。
@@ -401,7 +397,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         // 也无法在菜单展开后更新已显示的标题。因此这里只读取一次 Option：
         // 标题上的「（跳过确认）」标记和点击后的行为都以这次读取为准。
         menuOptionPressed = isOptionKeyPressed()
-        logger.info("菜单打开时 Option 状态: \(self.menuOptionPressed) [\(self.optionKeySnapshot(), privacy: .public)]")
         let menuKindLabel: String = {
             switch menuKind {
             case .contextualMenuForItems: return "右键菜单(选中项)"
@@ -564,9 +559,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         config.environment = ["RC_QUIET_LAUNCH": "1"]
         HintClickLaunch.mark()
         NSWorkspace.shared.openApplication(at: hostURL, configuration: config) { _, error in
-            if let error {
-                logger.warning("Launch host app failed: \(error.localizedDescription, privacy: .public)")
-            }
+            if error != nil { logger.warning("Launch host app failed") }
         }
     }
 
@@ -658,12 +651,10 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             return
         }
 
-        logger.debug("Action clicked: \(action.name) (id: \(action.id))")
 
         // 获取选中的文件/目录
         let selectedItems = FIFinderSyncController.default().selectedItemURLs() ?? []
         let itemPaths = selectedItems.map { $0.path }
-        logger.info("[Action] selectedItemURLs 返回 \(selectedItems.count) 个文件: \(itemPaths)")
 
         // 快链路：复制路径是纯剪贴板操作，扩展内直接完成（零 IPC）
         if action.id == Self.copyPathActionId {
@@ -675,7 +666,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         // 是否跳过确认以菜单构建时的标记为准——标题上写了「（跳过确认）」才跳过，
         // 不在点击瞬间重新检测按键，避免标题与实际行为分叉。
         let optionPressed = menuOptionPressed
-        logger.info("Action click option pressed: \(optionPressed) [\(self.optionKeySnapshot(), privacy: .public)]")
         let event = ClickEventPayload(
             itemId: action.id,
             itemType: .action,
@@ -693,7 +683,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     }
 
     @objc private func handleAppClick(_ sender: NSMenuItem) {
-        logger.debug("handleAppClick called with sender: \(sender.title), tag: \(sender.tag)")
 
         guard let config = cachedMenuConfig,
               let app = config.apps.first(where: { hashForApp($0) == sender.tag }) else {
@@ -701,11 +690,9 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             return
         }
 
-        logger.debug("App clicked: \(app.name) (id: \(app.id))")
 
         let selectedItems = FIFinderSyncController.default().selectedItemURLs() ?? []
         var itemPaths = selectedItems.map { $0.path }
-        logger.info("[App] selectedItemURLs 返回 \(selectedItems.count) 个文件: \(itemPaths)")
 
         // 工具栏触发没有选中项：用当前 Finder 窗口目录作为打开目标
         if itemPaths.isEmpty, let targetURL = FIFinderSyncController.default().targetedURL() {
@@ -730,7 +717,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             return
         }
         let itemId = newFile.id
-        logger.debug("NewFile clicked: \(newFile.name) (id: \(newFile.id))")
 
         let event = ClickEventPayload(
             itemId: itemId,
@@ -748,7 +734,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             return
         }
 
-        logger.debug("CommonDir clicked: \(commonDir.name) (id: \(commonDir.id))")
 
         // 打开目录统一交给主程序，由 ActionService 检查 bookmark 权限，
         // 必要时请求用户授权；扩展只转发目标路径。

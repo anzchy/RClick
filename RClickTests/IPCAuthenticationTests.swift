@@ -145,6 +145,33 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertFalse(pending.expire("first"))
     }
 
+    func testFailurePolicyLimitsLogsAndShowsOnlyOneNotice() {
+        var policy = IPCFailurePolicy()
+        var logs = 0, notices = 0
+        for _ in 0..<1000 {
+            let decision = policy.reject(now: 0)
+            if decision.log { logs += 1 }
+            if decision.notice { notices += 1 }
+        }
+        XCTAssertEqual(logs, 1)
+        XCTAssertEqual(notices, 1)
+        XCTAssertEqual(policy.rejectedCount, 1000)
+        XCTAssertFalse(policy.reject(now: 9).log)
+        XCTAssertTrue(policy.reject(now: 10).log)
+        XCTAssertFalse(policy.reject(now: 20).notice)
+    }
+
+    func testIPCLogsNeverContainBodiesPathsSignaturesOrHashes() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for file in ["Shared/MessageSecurity.swift", "Shared/Messager.swift", "FinderSyncExt/FinderSyncExt.swift", "RClick/RClickApp.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+            let markers = ["event.", "itemPaths", "url.path", "bundlePath", "payload.", "signature", "hash(", "sender.title", "action.name", "app.name", "newFile.name", "commonDir.name", "optionPressed", "menuOptionPressed", "optionKeySnapshot", "localizedDescription"]
+            for line in source.split(separator: "\n") where line.contains("logger.") {
+                XCTAssertFalse(markers.contains { line.contains($0) }, "Sensitive IPC log in \(file): \(line)")
+            }
+        }
+    }
+
 }
 
 
