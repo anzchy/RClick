@@ -2,7 +2,8 @@
 
 The AX side (axprobe.swift, driven by finderdrive.py) prints one JSON object per accessibility element:
     {"path": [i, j, ...], "role": "AXRow", "subrole": "", "title": "", "value": "alpha.txt" | null,
-     "desc": "", "enabled": true | null, "selected": false | null, "frame": [x, y, w, h] | null}
+     "desc": "", "enabled": true | null, "selected": false | null, "frame": [x, y, w, h] | null,
+     "url": "/full/path" | null}   (url: the element's AXURL, when it has one)
 `path` is the child-index path from the dump root (a window index first for app dumps, [] for the menu root of a
 menu dump). Everything here decides from such dumps, so the unit tests replay recorded or reconstructed dumps
 (fixtures/) and never touch the desktop.
@@ -373,44 +374,79 @@ def find_button(nodes, title, window_text=None):
 
 
 class PanelPlan:
-    def __init__(self, mode, window, row_path, button_path, note):
-        self.mode, self.window, self.row_path, self.button_path, self.note = mode, window, row_path, button_path, note
+    def __init__(self, mode, window, row_path, button_path, location, note):
+        self.mode, self.window, self.row_path, self.button_path = mode, window, row_path, button_path
+        self.location, self.note = location, note
+
+
+def element_url(node, nodes):
+    """The AXURL path (axprobe `url`) of a row: the row's own, else its first descendant's."""
+    if node.get('url'):
+        return node['url']
+    return next((d['url'] for d in sorted(descendants(node, nodes), key=lambda d: d['path']) if d.get('url')), None)
 
 
 def panel_plan(nodes, folder, button='Grant Access'):
-    """How to grant `folder` in an open folder panel (NSOpenPanel) without typing: no keyboard, so the input source
-    does not matter (panel-choose.sh failed under a pinyin IME, i22-device-20261116e).
+    """How to grant `folder` in an open folder panel (NSOpenPanel) without typing (panel-choose.sh failed under a
+    pinyin IME, i22-device-20261116e), from FULL paths only.
 
-    mode 'row': the panel lists `folder` as a row of its file list (not the sidebar): select that row, press the
-    button. mode 'current': the panel already shows `folder` itself (location pop-up): press the button. The
-    location pop-up must name the folder's parent ('row') or the folder ('current'); a panel with no pop-up is
-    refused for 'current', and 'row' then carries a note that the location was not verified."""
+    The panel's location is established from the AXURL of its file-list rows (never the sidebar): the folder of the
+    first row in display order, which every other row must lie under; a location pop-up, when present, must name
+    that folder. No row URL: Refused (the location cannot be proven). mode 'row': a row's full path is `folder`:
+    select it, then press. mode 'current': `folder` is the location itself and no row is selected (the panel would
+    return a selected row, not the folder it shows): press. Anything else is Refused."""
     if not folder.startswith('/'):
         raise Usage(f'folder must be an absolute path: {folder!r}')
     target = clean_path(folder)
-    name, parent = basename(target), basename(target.rsplit('/', 1)[0] or '/')
     windows = [w for w in dialog_windows(nodes) if any(title == nfc(button) for title, _ in w.buttons)]
     if len(windows) != 1:
         raise Refused(f'{len(windows)} windows have a button titled {button!r}; expected one open panel')
     window = windows[0]
     button_path = next(path for title, path in window.buttons if title == nfc(button))
     inside = [n for n in nodes if n['path'][:1] == (window.index,)]
+    by_path = {n['path']: n for n in inside}
+    rows = list_rows(inside)
+    urls = [element_url(by_path[row.path], inside) for row in rows]
+    if not rows or None in urls:
+        raise Refused("cannot establish the panel's full location: its file-list rows expose no AXURL (grant by "
+                      'hand and record it under Script problems)')
+    urls = [clean_path(url) for url in urls]
+    location = urls[0].rsplit('/', 1)[0] or '/'
+    if any(not url.startswith(location.rstrip('/') + '/') for url in urls):
+        raise Refused(f'the panel lists rows outside {location!r}; collapse expanded folders')
     shown = sorted({nfc(n['value']) for n in inside if n['role'] == 'AXPopUpButton' and isinstance(n.get('value'), str)
                     and n['value']})
-    matches = [row for row in list_rows(inside) if row.name == name]
+    if shown and basename(location) not in shown:
+        raise Refused(f'the location pop-up shows {shown[0]!r} but the rows are in {location!r}')
+    selected = [row for row in rows if by_path[row.path].get('selected') is True]
+    matches = [row for row, url in zip(rows, urls) if url == target]
     if len(matches) > 1:
-        raise Refused(f'{len(matches)} rows named {name!r} in the panel')
+        raise Refused(f'{len(matches)} rows have the path {target!r}')
     if matches:
-        row = matches[0]
-        if shown and parent not in shown:
-            raise Refused(f'panel shows {shown[0]!r}, not the parent {parent!r} of {target!r}')
-        if not row.visible:
-            raise Refused(f'row {name!r} is not visible in the panel')
-        note = '' if shown else 'no location pop-up: the parent folder was not verified'
-        return PanelPlan('row', window.index, row.path, button_path, note)
-    if name in shown:
-        return PanelPlan('current', window.index, None, button_path, '')
-    raise Refused(f'no row named {name!r} in the panel, and the panel shows {shown[0] if shown else "an unknown folder"!r}')
+        if not matches[0].visible:
+            raise Refused(f'row {matches[0].name!r} is not visible in the panel')
+        return PanelPlan('row', window.index, matches[0].path, button_path, location,
+                         'verified: full path from AXURL, the only selected row')
+    if target == location:
+        if selected:
+            raise Refused(f'row {selected[0].name!r} is selected: the panel would return it, not {target!r}')
+        return PanelPlan('current', window.index, None, button_path, location,
+                         'verified: full location from AXURL, no row selected')
+    raise Refused(f'panel shows {basename(location)!r} ({location!r}): no row is {target!r} and it is not the shown '
+                  'folder')
+
+
+def panel_ready(nodes, folder, button='Grant Access'):
+    """The plan again, right before the button is pressed: in row mode the target row must now be the ONE selected
+    row, in current mode no row may be selected. Refused otherwise (nothing pressed)."""
+    plan = panel_plan(nodes, folder, button)
+    if plan.mode == 'row':
+        inside = [n for n in nodes if n['path'][:1] == (plan.window,)]
+        by_path = {n['path']: n for n in inside}
+        selected = [row.path for row in list_rows(inside) if by_path[row.path].get('selected') is True]
+        if selected != [plan.row_path]:
+            raise Refused(f'{len(selected)} rows selected, expected only {folder!r}: nothing pressed')
+    return plan
 
 
 def parse_process_table(text):

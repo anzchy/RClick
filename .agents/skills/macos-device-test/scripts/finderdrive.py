@@ -372,14 +372,16 @@ def press_button(pid, title, window_text=None, extra_pids=()):
 
 
 def grant(pid, folder, button='Grant Access', extra_pids=()):
+    """finderui.panel_plan from full paths, select the target row (row mode), re-read the panel and require
+    finderui.panel_ready (the target the only selected row; none in current mode), press, wait for it to close."""
     allowed_process(pid, extra_pids)
     plan = ui.panel_plan(app_nodes(pid, 20), folder, button)
-    if plan.row_path is not None:
+    if plan.mode == 'row':
         probe('act', pid, dotted(plan.row_path), 'select', 'AXRow', ui.basename(folder))
         time.sleep(0.4)
-        again = ui.panel_plan(app_nodes(pid, 20), folder, button)
-        if (again.mode, again.row_path, again.button_path) != (plan.mode, plan.row_path, plan.button_path):
-            raise ui.Refused('the panel changed after selecting the row; nothing pressed')
+    again = ui.panel_ready(app_nodes(pid, 20), folder, button)
+    if (again.mode, again.row_path, again.button_path) != (plan.mode, plan.row_path, plan.button_path):
+        raise ui.Refused('the panel changed after selecting the row; nothing pressed')
     probe('act', pid, dotted(plan.button_path), 'press', 'AXButton', button)
     for _ in range(20):
         time.sleep(0.25)
@@ -434,7 +436,7 @@ def command(args):
         print(f'pressed: {args.title}')
     elif args.command == 'grant':
         plan = grant(args.pid, args.folder, args.button)
-        print(f'granted: {ui.clean_path(args.folder)} ({plan.mode} mode{"; " + plan.note if plan.note else ""})')
+        print(f'granted: {ui.clean_path(args.folder)} ({plan.mode} mode; {plan.note})')
     return ui.OK
 
 
