@@ -276,7 +276,7 @@ nonisolated final class Messager: NSObject, Sendable {
     func onClickEvent(_ handler: @escaping @MainActor @Sendable (ClickEventPayload) async -> Void) {
         onExtensionMessage(.click) { [weak self] message in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.hasReadableKey, message.session == self.currentSession else { return }
                 if let event = message.decode(ClickEventPayload.self) {
                     self.sendActionAck(inReplyTo: message.id)
                     await handler(event)
