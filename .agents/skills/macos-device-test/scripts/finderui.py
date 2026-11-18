@@ -217,13 +217,36 @@ def rclick_group(items, also=()):
 
 
 def clean_path(path):
-    path = nfc(path.strip())
-    return path.rstrip('/') or '/' if path else ''
+    """A POSIX path for EXACT comparison: whitespace and every other character are significant; only one trailing
+    `/` of a folder is dropped. A path holding a line break is Refused: it cannot be read back exactly through
+    AppleScript's line-based output. Unicode decision: both sides are compared in NFC. APFS and HFS+ look names up
+    normalization-insensitively, so one folder cannot hold two names that differ only in normalization: NFC
+    equality still names exactly one file, while case stays significant (a case-only mismatch is refused)."""
+    if '\n' in path or '\r' in path:
+        raise Refused(f'{path!r} contains a line break: it cannot be read back exactly; rename it')
+    path = nfc(path)
+    return path[:-1] if len(path) > 1 and path.endswith('/') else path
+
+
+def one_line(text):
+    """osascript's single-line answer without its line terminator (exactly one `\\n`; nothing else is stripped)."""
+    if not text.endswith('\n') or '\n' in text[:-1]:
+        raise Refused(f'expected one line from AppleScript, got {text!r}')
+    return text[:-1]
 
 
 def parse_selection(text):
-    """POSIX paths read back from Finder's selection, one per line (folders end with '/', which is dropped)."""
-    return [clean_path(line) for line in text.splitlines() if line.strip()]
+    """Finder's selection as finderdrive's SELECTION_SCRIPT prints it through osascript: a count line, one POSIX path
+    per line (a folder ends with `/`, dropped), then osascript's own terminator. Only those line terminators are
+    removed. A count that does not match the lines means a path holds a line break: Refused, never guessed."""
+    lines = text.split('\n')
+    if len(lines) < 3 or lines[-2:] != ['', ''] or not lines[0].isdecimal():
+        raise Environment(f'selection read-back is not `count, paths, terminator`: {text[:80]!r}')
+    paths = lines[1:-2]
+    if len(paths) != int(lines[0]):
+        raise Refused(f'Finder reports {lines[0]} selected items but {len(paths)} lines: a selected path contains '
+                      'a line break and cannot be read back exactly')
+    return [clean_path(path) for path in paths]
 
 
 def basename(path):
