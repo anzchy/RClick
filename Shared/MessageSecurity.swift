@@ -6,6 +6,13 @@ nonisolated enum IPCSecurityError: Error {
     case noKey, malformed, unauthenticated, direction, session, freshness, replay, capacity, configVersion
     case clockDiscontinuity
     case keychain(Int32)
+
+    var warrantsNotice: Bool {
+        switch self {
+        case .noKey, .malformed, .unauthenticated, .keychain: true
+        default: false
+        }
+    }
 }
 
 nonisolated enum IPCDirection: String, Sendable {
