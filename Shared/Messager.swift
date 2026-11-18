@@ -508,3 +508,36 @@ nonisolated struct IPCDiagnostic: Sendable {
     let kind: Kind
     let count: Int
 }
+
+nonisolated protocol IPCCycleScheduler: Sendable {
+    func afterTenSeconds(_ work: @escaping @Sendable () -> Void)
+}
+nonisolated struct SystemIPCCycleScheduler: IPCCycleScheduler {
+    func afterTenSeconds(_ work: @escaping @Sendable () -> Void) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10, execute: work)
+    }
+}
+
+/// Main must retry even when both peers are keyless and neither can transmit.
+/// Weak scheduled callbacks keep this cycle tied to the app's lifetime.
+nonisolated final class IPCRunningCycle: Sendable {
+    private let messager: Messager
+    private let scheduler: any IPCCycleScheduler
+    private let started = Mutex(false)
+    init(messager: Messager, scheduler: any IPCCycleScheduler = SystemIPCCycleScheduler()) {
+        self.messager = messager
+        self.scheduler = scheduler
+    }
+    func start() {
+        let first = started.withLock { started in
+            guard !started else { return false }
+            started = true
+            return true
+        }
+        if first { tick() }
+    }
+    private func tick() {
+        messager.sendRunningNotification()
+        scheduler.afterTenSeconds { [weak self] in self?.tick() }
+    }
+}

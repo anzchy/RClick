@@ -408,6 +408,32 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(IPCDecodeProbe.count.withLock { $0 }, 2)
     }
 
+    func testIdleRunningCycleRecoversWhenNeitherPeerCanSend() {
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let center = NotificationCenter()
+        let provider = MutableIPCKeyProvider()
+        let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let scheduler = ManualIPCCycleScheduler()
+        let cycle = IPCRunningCycle(messager: app, scheduler: scheduler)
+        cycle.start()
+        XCTAssertTrue(ext.canUseCachedMenus)
+        provider.data.withLock { $0 = nil }
+        clock.advance(10)
+        XCTAssertTrue(scheduler.runNext(), "main maintenance must continue after the first successful handshake")
+        ext.sendHeartbeat()
+        XCTAssertFalse(app.hasReadableKey)
+        XCTAssertFalse(ext.hasReadableKey)
+        provider.data.withLock { $0 = Data(repeating: 7, count: 32) }
+        clock.advance(10)
+        XCTAssertTrue(scheduler.runNext(), "keyless main must retry without incoming traffic")
+        XCTAssertTrue(app.hasReadableKey)
+        XCTAssertTrue(ext.canUseCachedMenus)
+        XCTAssertEqual(ext.currentSession, app.currentSession)
+        cycle.start()
+        XCTAssertEqual(scheduler.pendingCount, 1, "starting twice must not multiply maintenance loops")
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
@@ -770,5 +796,16 @@ nonisolated struct IPCDecodeProbe: Decodable {
     init(from decoder: Decoder) throws {
         version = try decoder.container(keyedBy: CodingKeys.self).decode(Int.self, forKey: .version)
         Self.count.withLock { $0 += 1 }
+    }
+}
+
+nonisolated final class ManualIPCCycleScheduler: IPCCycleScheduler {
+    private let pending = Mutex<[@Sendable () -> Void]>([])
+    func afterTenSeconds(_ work: @escaping @Sendable () -> Void) { pending.withLock { $0.append(work) } }
+    var pendingCount: Int { pending.withLock { $0.count } }
+    func runNext() -> Bool {
+        let work = pending.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+        work?()
+        return work != nil
     }
 }
