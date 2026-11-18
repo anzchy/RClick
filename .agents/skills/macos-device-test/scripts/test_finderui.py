@@ -428,8 +428,23 @@ class Calibration(unittest.TestCase):
         steps = [step for step, _ in finderui.CALIBRATION_STEPS]
         for step in ('accessibility', 'gui-lock', 'row-order', 'select-readback', 'context-menu', 'menu-read',
                      'rclick-group', 'guard', 'choose', 'dialog-read', 'press-button', 'panel-grant-row',
-                     'panel-grant-current'):
+                     'panel-grant-current', 'option-menu', 'background-menu', 'background-choose', 'close-menu'):
             self.assertIn(step, steps)
+
+    def test_the_calibration_steps_prove_the_cli_paths_the_device_run_uses(self):
+        commands = dict(finderui.CALIBRATION_STEPS)
+        self.assertEqual(commands['option-menu'], 'ui.sh open-menu --option')
+        self.assertEqual(commands['background-menu'], 'ui.sh open-menu --background, ui.sh guard --background')
+        self.assertEqual(commands['background-choose'], 'ui.sh choose --background --sub')
+        self.assertEqual(commands['guard'], 'ui.sh guard')
+        self.assertEqual(commands['close-menu'], 'ui.sh close-menu')
+
+    def test_the_sandboxed_rclick_panel_is_named_as_not_covered(self):
+        lines, code = finderui.calibration_report(self.all_pass())
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[-1], f'CALIBRATION PASS ({len(finderui.CALIBRATION_STEPS)} steps) — NOT covered: '
+                                    "RClick's own sandboxed folder panel (the grant steps use an osascript panel); "
+                                    'PERM-01 on the device proves it')
 
     def test_all_pass_prints_one_line_per_helper_and_exits_zero(self):
         lines, code = finderui.calibration_report(self.all_pass())
@@ -500,3 +515,50 @@ class Lock(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BackgroundPoint(unittest.TestCase):
+    """`ui.sh open-menu --background` right-clicks the empty part of the file list, below its last row and inside
+    its scroll area, never a row or the sidebar (audit r1 F10: the background menu path was not calibrated)."""
+
+    def without_hidden_row(self):
+        nodes = dump('finder-window-display-order.jsonl')
+        hidden = next(row for row in finderui.list_rows(nodes) if not row.visible)
+        return [n for n in nodes if n['path'][:len(hidden.path)] != hidden.path]
+
+    def test_the_point_is_below_every_row_inside_the_file_list(self):
+        nodes = self.without_hidden_row()
+        x, y = finderui.background_point(nodes)
+        rows = finderui.list_rows(nodes)
+        self.assertGreater(y, max(row.frame[1] + row.frame[3] for row in rows))
+        self.assertTrue(finderui.contains([480, 160, 720, 540], (x, y)), (x, y))
+        self.assertFalse(any(finderui.contains(row.frame, (x, y)) for row in rows))
+        self.assertGreaterEqual(x, 480 + 1)  # right of the sidebar (300..480)
+
+    def test_a_list_with_a_row_below_its_scroll_area_has_no_empty_space(self):
+        with self.assertRaises(finderui.Refused):
+            finderui.background_point(dump('finder-window-display-order.jsonl'))
+
+    def test_a_list_filled_to_the_bottom_is_refused(self):
+        nodes = self.without_hidden_row()
+        for node in nodes:
+            if node['path'] == (0, 0, 1, 0, 5):  # the lowest visible row, moved to end 10 pt above the list's bottom
+                node['frame'] = [480, 670, 720, 20]
+        with self.assertRaises(finderui.Refused):
+            finderui.background_point(nodes)
+
+    def test_no_file_list_is_refused(self):
+        nodes = [n for n in self.without_hidden_row() if n['path'][:3] != (0, 0, 1)]
+        with self.assertRaises(finderui.Refused):
+            finderui.background_point(nodes)
+
+
+class MenuListing(unittest.TestCase):
+    """The calibration reads `ui.sh menu` output (index|title|enabled|x,y|subitems) back into titles; a title may hold
+    `|` itself."""
+
+    def test_titles_come_back_exactly(self):
+        text = ('1|Open|true|660,237|0\n2|Copy | Paste|true|660,259|0\n9|Delete Direct (skip confirmation)|true|660,400|0'
+                '\ncompress: Compress “alpha.txt”\nrclick-group (heuristic, never used to choose): Copy Path\n')
+        self.assertEqual(finderui.menu_listing_titles(text),
+                         ['Open', 'Copy | Paste', 'Delete Direct (skip confirmation)'])

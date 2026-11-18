@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import finderui as ui  # noqa: E402
 
-ACTING = ('select', 'open-menu', 'guard', 'choose', 'press-button', 'grant', 'calibrate', 'lock-check')
+ACTING = ('select', 'open-menu', 'close-menu', 'guard', 'choose', 'press-button', 'grant', 'calibrate', 'lock-check')
 SELECT_SCRIPT = '''on run argv
   set chosen to {}
   repeat with p in argv
@@ -192,8 +192,17 @@ return "skipped: Finder is not frontmost"'''
 
 def escape():
     """Esc (key code 53, not text: no input method involved) to close Finder's open menu, sent ONLY when Finder is
-    frontmost, so it never lands in another app (the terminal running the tester, an RClick dialog)."""
-    run(['osascript', '-e', ESCAPE_SCRIPT], timeout=10)
+    frontmost, so it never lands in another app (the terminal running the tester, an RClick dialog). Returns
+    osascript's answer (`escaped`, or `skipped: …`)."""
+    return run(['osascript', '-e', ESCAPE_SCRIPT], timeout=10).stdout.strip()
+
+
+def close_menu():
+    """`ui.sh close-menu`: escape(), refused (65) when Finder was not frontmost and nothing was sent."""
+    answer = escape()
+    if answer != 'escaped':
+        raise ui.Refused(f'Finder is not frontmost: no key sent ({answer or "no answer"})')
+    return answer
 
 
 def activate_finder():
@@ -227,6 +236,27 @@ def menu_point(click):
         except ui.Refused:
             continue
     raise ui.Refused(f'no menu opened at {click[0]},{click[1]} (probed {ui.probe_points(click)})')
+
+
+DESELECT_SCRIPT = 'tell application "Finder" to set selection to {}'
+
+
+def open_background_menu(option=False):
+    """Deselect everything, read the selection back (it must be empty), then right-click the empty part of the front
+    window's file list (finderui.background_point). Returns (point clicked, menu point)."""
+    escape()
+    activate_finder()
+    osascript(DESELECT_SCRIPT)
+    time.sleep(0.3)
+    left = selection()
+    if left:
+        raise ui.Refused(f'Finder still has {left} selected after deselecting: no background menu opened')
+    point = ui.background_point(finder_nodes())
+    click = run([HERE / 'rightclick.sh', *map(str, point), *(['option'] if option else [])], timeout=10)
+    if click.returncode != 0:
+        raise ui.Environment('rightclick.sh failed: ' + click.stderr.strip())
+    time.sleep(1.0)
+    return point, menu_point(point)
 
 
 def open_menu(name, option=False):
@@ -403,7 +433,7 @@ def command(args):
         return ui.OK  # require_lock above passed
     if args.command == 'calibrate':
         import calibration
-        return calibration.calibrate(Path(args.run_dir), args.dry_run, args.group)
+        return calibration.calibrate(Path(args.run_dir), args.dry_run, args.group, args.background_group)
     require_trust()
     if args.command == 'rows':
         nodes = finder_nodes()
@@ -416,10 +446,16 @@ def command(args):
     elif args.command == 'selection':
         for path in selection():
             print(path)
+    elif args.command == 'open-menu' and args.background:
+        clicked, point = open_background_menu(args.option)
+        print(f'background: {clicked[0]},{clicked[1]}')
+        print(f'menu-point {point[0]},{point[1]}')
     elif args.command == 'open-menu':
         row, point = open_menu(args.name, args.option)
         print(f'row: {row.index} {row.name} {row.point[0]},{row.point[1]}')
         print(f'menu-point {point[0]},{point[1]}')
+    elif args.command == 'close-menu':
+        print(close_menu())
     elif args.command == 'menu':
         print_menu(read_menu(args.point), args.also, args.group)
     elif args.command == 'guard':
@@ -441,7 +477,7 @@ def command(args):
 
 
 def main(argv):
-    if argv[:1] in (['-h'], ['--help'], ['help']):
+    if argv[:1] == ['help'] or any(arg in ('-h', '--help') for arg in argv):
         print(ui.USAGE_TEXT)
         return ui.OK
     try:

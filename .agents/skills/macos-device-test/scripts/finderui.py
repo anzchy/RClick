@@ -125,6 +125,30 @@ def list_rows(nodes):
             for i, (_, _, name, path, frame, point, visible) in enumerate(found, 1)]
 
 
+def background_point(nodes):
+    """Where a right-click opens the front window's BACKGROUND menu: the empty part of its one file list (not the
+    sidebar), below the lowest row and inside the list's scroll area, at least 30 pt of it. A list whose rows reach
+    the bottom (or run past it) has no empty space: Refused (enlarge the window or use a smaller fixture)."""
+    by_path = {node['path']: node for node in nodes}
+    lists = [node for node in nodes if node['role'] in LIST_CONTAINERS and node.get('frame')
+             and nfc(node.get('desc')).lower() != 'sidebar' and node.get('subrole') != 'AXSidebar'
+             and not in_sidebar(node, by_path)]
+    if len(lists) != 1:
+        raise Refused(f'{len(lists)} file lists in the front Finder window (list view expected), no background point')
+    box = lists[0]
+    left, top, width, height = box['frame']
+    bottom = top + height
+    area = next((p for p in ancestors(box, by_path) if p['role'] == 'AXScrollArea' and p.get('frame')), None)
+    if area is not None:
+        top, bottom = max(top, area['frame'][1]), min(bottom, area['frame'][1] + area['frame'][3])
+    rows = [row for row in list_rows(nodes) if row.path[:len(box['path'])] == box['path']]
+    lowest = max((row.frame[1] + row.frame[3] for row in rows), default=top)
+    if lowest > bottom or bottom - lowest < 30:
+        raise Refused(f'the file list has no empty space below its rows (rows end at {lowest}, the list at {bottom}): '
+                      'enlarge the window')
+    return round(left + width / 2), round(lowest + (bottom - lowest) / 2)
+
+
 def contains(frame, point):
     x, y, w, h = frame
     return x <= point[0] <= x + w and y <= point[1] <= y + h
@@ -264,6 +288,11 @@ def parse_selection(text):
         raise Refused(f'Finder reports {lines[0]} selected items but {len(paths)} lines: a selected path contains '
                       'a line break and cannot be read back exactly')
     return [clean_path(path) for path in paths]
+
+
+def menu_listing_titles(text):
+    """The titles of a `ui.sh menu` listing (`index|title|enabled|x,y|subitems` lines; a title may hold `|`)."""
+    return [line.split('|', 1)[1].rsplit('|', 3)[0] for line in text.splitlines() if re.match(r'\d+\|', line)]
 
 
 def basename(path):
@@ -490,6 +519,9 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   selection                              print Finder's selection (POSIX paths, read back through AppleScript)
   open-menu NAME [--option]              AXSelected on the one row named NAME, right-click its AX centre; prints
                                          `menu-point X,Y` (pass it to menu/guard/choose)
+  open-menu --background [--option]      deselect all, read the empty selection back, right-click the empty list
+                                         below the rows of the front window; prints `menu-point X,Y`
+  close-menu                             Esc (key code 53) only while Finder is frontmost, else refused (65)
   menu X,Y [--also TITLE]... [--group TITLE]...
                                          list the open menu (element at position): Compress title, RClick group
                                          (heuristic; with --group: where the expected group is, or refused)
@@ -504,8 +536,9 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   grant PID FOLDER [--button TITLE]      in PID's open folder panel select FOLDER's row (or the shown folder) and
                                          press TITLE (default `Grant Access`); no typing, any input source
   lock-check                             exit 0 only if the GUI lock is this run's (axprobe runs it before acting)
-  calibrate RUN_DIR --group TITLE... [--dry-run]
-                                         the calibration run (calibrate.sh)"""
+  calibrate RUN_DIR --group TITLE... --background-group TITLE... [--dry-run]
+                                         the calibration run (calibrate.sh); the groups are RClick's configured
+                                         top-level items of a file menu and of a window-background menu"""
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -540,8 +573,10 @@ def parse_args(argv):
     commands.add_parser('select').add_argument('paths', nargs='+', type=absolute)
     commands.add_parser('selection')
     command = commands.add_parser('open-menu')
-    command.add_argument('name')
+    command.add_argument('name', nargs='?')
+    command.add_argument('--background', action='store_true')
     command.add_argument('--option', action='store_true')
+    commands.add_parser('close-menu')
     command = commands.add_parser('menu')
     command.add_argument('point', type=point_arg)
     command.add_argument('--also', action='append', default=[])
@@ -571,15 +606,19 @@ def parse_args(argv):
     command.add_argument('run_dir', type=absolute)
     command.add_argument('--dry-run', action='store_true')
     command.add_argument('--group', action='append', default=[])
+    command.add_argument('--background-group', action='append', default=[])
     args = parser.parse_args(argv)
     if args.command is None:
         raise Usage('a command is required')
+    if args.command == 'open-menu' and (args.name is None) == (not args.background):
+        raise Usage('open-menu needs NAME or --background, not both')
     if args.command == 'guard' and bool(args.targets) == bool(args.background):
         raise Usage('guard needs TARGET paths or --background DIR, not both')
     if args.command == 'choose' and bool(args.target) == bool(args.background):
         raise Usage('choose needs --target PATH (repeatable) or --background DIR, not both')
-    if args.command == 'calibrate' and not args.dry_run and not args.group:
-        raise Usage("calibrate needs --group TITLE (repeated): RClick's configured top-level items of a file menu")
+    if args.command == 'calibrate' and not args.dry_run and not (args.group and args.background_group):
+        raise Usage("calibrate needs --group TITLE and --background-group TITLE (each repeated): RClick's configured "
+                    'top-level items of a file menu and of a window-background menu')
     if args.command == 'choose' and not args.group:
         raise Usage("choose needs --group TITLE (repeated): RClick's configured top-level items in menu order")
     return args
@@ -642,12 +681,18 @@ CALIBRATION_STEPS = (
     ('rclick-group', "ui.sh menu (RClick's group)"),
     ('guard', 'ui.sh guard'),
     ('choose', 'ui.sh choose'),
+    ('option-menu', 'ui.sh open-menu --option'),
+    ('background-menu', 'ui.sh open-menu --background, ui.sh guard --background'),
+    ('close-menu', 'ui.sh close-menu'),
+    ('background-choose', 'ui.sh choose --background --sub'),
     ('dialog-read', 'ui.sh dialog'),
     ('press-button', 'ui.sh press-button'),
     ('panel-grant-row', 'ui.sh grant (row mode)'),
     ('panel-grant-current', 'ui.sh grant (current-folder mode)'),
 )
 ENVIRONMENT_STEPS = ('gui-lock', 'axprobe', 'accessibility')
+NOT_COVERED = ("NOT covered: RClick's own sandboxed folder panel (the grant steps use an osascript panel); "
+               'PERM-01 on the device proves it')
 
 
 def calibration_report(results):
@@ -671,5 +716,5 @@ def calibration_report(results):
     if distrust:
         lines.append(f'CALIBRATION FAIL — distrust: {", ".join(distrust)}')
         return lines, REFUSED
-    lines.append(f'CALIBRATION PASS ({len(CALIBRATION_STEPS)} steps)')
+    lines.append(f'CALIBRATION PASS ({len(CALIBRATION_STEPS)} steps) — {NOT_COVERED}')
     return lines, OK
