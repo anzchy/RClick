@@ -1,0 +1,36 @@
+{"path": [0], "role": "AXWindow", "subrole": "AXDialog", "title": "Open", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 150, 800, 500]}
+{"path": [0, 0], "role": "AXSplitGroup", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 180, 800, 400]}
+{"path": [0, 0, 0], "role": "AXScrollArea", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 180, 160, 400]}
+{"path": [0, 0, 0, 0], "role": "AXOutline", "subrole": "", "title": "", "value": null, "desc": "sidebar", "enabled": null, "selected": null, "frame": [500, 180, 160, 400]}
+{"path": [0, 0, 0, 0, 0], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 190, 160, 22]}
+{"path": [0, 0, 0, 0, 0, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 190, 160, 22]}
+{"path": [0, 0, 0, 0, 0, 0, 0], "role": "AXStaticText", "subrole": "", "title": "", "value": "Applications", "desc": "", "enabled": null, "selected": null, "frame": [520, 193, 120, 16]}
+{"path": [0, 0, 0, 0, 1], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 212, 160, 22]}
+{"path": [0, 0, 0, 0, 1, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 212, 160, 22]}
+{"path": [0, 0, 0, 0, 1, 0, 0], "role": "AXStaticText", "subrole": "", "title": "", "value": "Desktop", "desc": "", "enabled": null, "selected": null, "frame": [520, 215, 120, 16]}
+{"path": [0, 0, 0, 0, 2], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 234, 160, 22]}
+{"path": [0, 0, 0, 0, 2, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 234, 160, 22]}
+{"path": [0, 0, 0, 0, 2, 0, 0], "role": "AXStaticText", "subrole": "", "title": "", "value": "Documents", "desc": "", "enabled": null, "selected": null, "frame": [520, 237, 120, 16]}
+{"path": [0, 0, 0, 0, 3], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 256, 160, 22]}
+{"path": [0, 0, 0, 0, 3, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 256, 160, 22]}
+{"path": [0, 0, 0, 0, 3, 0, 0], "role": "AXStaticText", "subrole": "", "title": "", "value": "Downloads", "desc": "", "enabled": null, "selected": null, "frame": [520, 259, 120, 16]}
+{"path": [0, 0, 0, 0, 4], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 278, 160, 22]}
+{"path": [0, 0, 0, 0, 4, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [500, 278, 160, 22]}
+{"path": [0, 0, 0, 0, 4, 0, 0], "role": "AXStaticText", "subrole": "", "title": "", "value": "rclick-cal", "desc": "", "enabled": null, "selected": null, "frame": [520, 281, 120, 16]}
+{"path": [0, 1], "role": "AXPopUpButton", "subrole": "", "title": "", "value": "fixtures", "desc": "", "enabled": true, "selected": null, "frame": [800, 155, 180, 22]}
+{"path": [0, 0, 1], "role": "AXScrollArea", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [660, 180, 640, 400]}
+{"path": [0, 0, 1, 0], "role": "AXOutline", "subrole": "", "title": "", "value": null, "desc": "list view", "enabled": null, "selected": null, "frame": [660, 180, 640, 400]}
+{"path": [0, 0, 1, 0, 0], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": false, "frame": [660, 190, 640, 20]}
+{"path": [0, 0, 1, 0, 0, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [660, 190, 300, 20]}
+{"path": [0, 0, 1, 0, 0, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "rclick-cal", "desc": "", "enabled": null, "selected": null, "frame": [690, 192, 200, 16]}
+{"path": [0, 0, 1, 0, 1], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": false, "frame": [660, 210, 640, 20]}
+{"path": [0, 0, 1, 0, 1, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [660, 210, 300, 20]}
+{"path": [0, 0, 1, 0, 1, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "alpha.txt", "desc": "", "enabled": null, "selected": null, "frame": [690, 212, 200, 16]}
+{"path": [0, 0, 1, 0, 2], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": false, "frame": [660, 230, 640, 20]}
+{"path": [0, 0, 1, 0, 2, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [660, 230, 300, 20]}
+{"path": [0, 0, 1, 0, 2, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "other", "desc": "", "enabled": null, "selected": null, "frame": [690, 232, 200, 16]}
+{"path": [0, 2], "role": "AXStaticText", "subrole": "", "title": "", "value": "RClick needs access to this folder to delete, create, and modify files. Choose this folder or a broader parent folder to cover its subfolders. You can manage these grants in Settings → Folder Permissions.", "desc": "", "enabled": null, "selected": null, "frame": [520, 600, 700, 30]}
+{"path": [0, 3], "role": "AXButton", "subrole": "", "title": "Cancel", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [1060, 620, 100, 28]}
+{"path": [0, 4], "role": "AXButton", "subrole": "", "title": "Grant Access", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [1170, 620, 120, 28]}
+{"path": [1], "role": "AXWindow", "subrole": "AXStandardWindow", "title": "General", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [400, 200, 700, 500]}
+{"path": [1, 0], "role": "AXButton", "subrole": "", "title": "Manage…", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [900, 400, 80, 24]}

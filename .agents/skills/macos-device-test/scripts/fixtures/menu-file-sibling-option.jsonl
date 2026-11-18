@@ -1,0 +1,81 @@
+{"path": [], "role": "AXMenu", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [490, 190, 300, 1100]}
+{"path": [0], "role": "AXMenuItem", "subrole": "", "title": "Open", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 195, 150, 22]}
+{"path": [1], "role": "AXMenuItem", "subrole": "", "title": "Open With", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 219, 150, 22]}
+{"path": [2], "role": "AXMenuItem", "subrole": "", "title": "Always Open With", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 219, 150, 22]}
+{"path": [3], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 236, 150, 22]}
+{"path": [4], "role": "AXMenuItem", "subrole": "", "title": "Move to Trash", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 254, 150, 22]}
+{"path": [5], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 271, 150, 22]}
+{"path": [6], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 289, 150, 22]}
+{"path": [7], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 289, 150, 22]}
+{"path": [8], "role": "AXMenuItem", "subrole": "", "title": "Get Info", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 289, 150, 22]}
+{"path": [9], "role": "AXMenuItem", "subrole": "", "title": "Show Inspector", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 289, 150, 22]}
+{"path": [10], "role": "AXMenuItem", "subrole": "", "title": "Rename", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 313, 150, 22]}
+{"path": [11], "role": "AXMenuItem", "subrole": "", "title": "Compress “%41.txt”", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 337, 150, 22]}
+{"path": [12], "role": "AXMenuItem", "subrole": "", "title": "Compress “%41.txt”", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 337, 150, 22]}
+{"path": [13], "role": "AXMenuItem", "subrole": "", "title": "Duplicate", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 361, 150, 22]}
+{"path": [14], "role": "AXMenuItem", "subrole": "", "title": "Duplicate Exactly", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 361, 150, 22]}
+{"path": [15], "role": "AXMenuItem", "subrole": "", "title": "Make Alias", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 385, 150, 22]}
+{"path": [16], "role": "AXMenuItem", "subrole": "", "title": "Quick Look", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 409, 150, 22]}
+{"path": [17], "role": "AXMenuItem", "subrole": "", "title": "Slideshow “%41.txt”", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 409, 150, 22]}
+{"path": [18], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 426, 150, 22]}
+{"path": [19], "role": "AXMenuItem", "subrole": "", "title": "Copy", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 444, 150, 22]}
+{"path": [20], "role": "AXMenuItem", "subrole": "", "title": "Copy “%41.txt” as Pathname", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 444, 150, 22]}
+{"path": [21], "role": "AXMenuItem", "subrole": "", "title": "Share…", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 468, 150, 22]}
+{"path": [22], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 485, 150, 22]}
+{"path": [23], "role": "AXMenuItem", "subrole": "", "title": "Tags", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 515, 150, 22]}
+{"path": [24], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 545, 150, 22]}
+{"path": [25], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 563, 150, 22]}
+{"path": [26], "role": "AXMenuItem", "subrole": "", "title": "Quick Actions", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 563, 150, 22]}
+{"path": [27], "role": "AXMenuItem", "subrole": "", "title": "Copy Path", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 587, 150, 22]}
+{"path": [28], "role": "AXMenuItem", "subrole": "", "title": "Copy File Name", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 611, 150, 22]}
+{"path": [29], "role": "AXMenuItem", "subrole": "", "title": "Delete Direct (skip confirmation)", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 635, 150, 22]}
+{"path": [30], "role": "AXMenuItem", "subrole": "", "title": "Terminal", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 659, 150, 22]}
+{"path": [31], "role": "AXMenuItem", "subrole": "", "title": "New File", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 683, 150, 22]}
+{"path": [31, 0], "role": "AXMenu", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [0, 1072, 200, 200]}
+{"path": [31, 0, 0], "role": "AXMenuItem", "subrole": "", "title": "TXT", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 1], "role": "AXMenuItem", "subrole": "", "title": "Markdown", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 2], "role": "AXMenuItem", "subrole": "", "title": "DOCX", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 3], "role": "AXMenuItem", "subrole": "", "title": "PPTX", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 4], "role": "AXMenuItem", "subrole": "", "title": "XLSX", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 5], "role": "AXMenuItem", "subrole": "", "title": "Pages", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 6], "role": "AXMenuItem", "subrole": "", "title": "Keynote", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [31, 0, 7], "role": "AXMenuItem", "subrole": "", "title": "Numbers", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32], "role": "AXMenuItem", "subrole": "", "title": "New File", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 707, 150, 22]}
+{"path": [32, 0], "role": "AXMenu", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [0, 1072, 200, 200]}
+{"path": [32, 0, 0], "role": "AXMenuItem", "subrole": "", "title": "Create custom new file", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 1], "role": "AXMenuItem", "subrole": "", "title": "TXT", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 2], "role": "AXMenuItem", "subrole": "", "title": "RTF", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 3], "role": "AXMenuItem", "subrole": "", "title": "XML", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 4], "role": "AXMenuItem", "subrole": "", "title": "Word", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 5], "role": "AXMenuItem", "subrole": "", "title": "Excel", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 6], "role": "AXMenuItem", "subrole": "", "title": "PPT", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 7], "role": "AXMenuItem", "subrole": "", "title": "WPS Writer", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 8], "role": "AXMenuItem", "subrole": "", "title": "WPS Spreadsheet", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [32, 0, 9], "role": "AXMenuItem", "subrole": "", "title": "WPS Presentation", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [0, 1072, 200, 16]}
+{"path": [33], "role": "AXMenuItem", "subrole": "", "title": "Move file to...", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 731, 150, 22]}
+{"path": [34], "role": "AXMenuItem", "subrole": "", "title": "Copy file to...", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 755, 150, 22]}
+{"path": [35], "role": "AXMenuItem", "subrole": "", "title": "File Icon", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 779, 150, 22]}
+{"path": [36], "role": "AXMenuItem", "subrole": "", "title": "File Information", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 803, 150, 22]}
+{"path": [37], "role": "AXMenuItem", "subrole": "", "title": "Print", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 827, 150, 22]}
+{"path": [38], "role": "AXMenuItem", "subrole": "", "title": "Send Shortcut to Desktop", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 851, 150, 22]}
+{"path": [39], "role": "AXMenuItem", "subrole": "", "title": "AirDrop", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 875, 150, 22]}
+{"path": [40], "role": "AXMenuItem", "subrole": "", "title": "Copy File (Folder) Name", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 899, 150, 22]}
+{"path": [41], "role": "AXMenuItem", "subrole": "", "title": "Create Folder Using Filename", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 923, 150, 22]}
+{"path": [42], "role": "AXMenuItem", "subrole": "", "title": "Cut", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 947, 150, 22]}
+{"path": [43], "role": "AXMenuItem", "subrole": "", "title": "Copy Path", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 971, 150, 22]}
+{"path": [44], "role": "AXMenuItem", "subrole": "", "title": "Permanent Delete", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 995, 150, 22]}
+{"path": [45], "role": "AXMenuItem", "subrole": "", "title": "Grant Write Permission to Selected Files", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1019, 150, 22]}
+{"path": [46], "role": "AXMenuItem", "subrole": "", "title": "Unhide Selected Files", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1043, 150, 22]}
+{"path": [47], "role": "AXMenuItem", "subrole": "", "title": "Hide Selected Files", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1067, 150, 22]}
+{"path": [48], "role": "AXMenuItem", "subrole": "", "title": "Hide/Show file extension", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1091, 150, 22]}
+{"path": [49], "role": "AXMenuItem", "subrole": "", "title": "Lock", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1115, 150, 22]}
+{"path": [50], "role": "AXMenuItem", "subrole": "", "title": "Fix garbled filename", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1139, 150, 22]}
+{"path": [51], "role": "AXMenuItem", "subrole": "", "title": "Compress to \"%41.txt.7z\"", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1163, 150, 22]}
+{"path": [52], "role": "AXMenuItem", "subrole": "", "title": "Compress to \"%41.txt.zip\"", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1187, 150, 22]}
+{"path": [53], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 1204, 150, 22]}
+{"path": [54], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [326, 178, 150, 22]}
+{"path": [55], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 195, 150, 22]}
+{"path": [56], "role": "AXMenuItem", "subrole": "", "title": "", "value": null, "desc": "", "enabled": false, "selected": null, "frame": [490, 195, 150, 22]}
+{"path": [57], "role": "AXMenuItem", "subrole": "", "title": "New Warp Tab Here", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1222, 150, 22]}
+{"path": [58], "role": "AXMenuItem", "subrole": "", "title": "New Warp Window Here", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1246, 150, 22]}
+{"path": [59], "role": "AXMenuItem", "subrole": "", "title": "Send files with TeamViewer", "value": null, "desc": "", "enabled": true, "selected": null, "frame": [490, 1270, 150, 22]}
