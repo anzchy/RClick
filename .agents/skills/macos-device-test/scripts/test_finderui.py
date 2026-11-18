@@ -102,5 +102,62 @@ class Menu(unittest.TestCase):
                          ['Copy Path', 'Copy File Name', 'Delete Direct', 'Visual Studio Code', 'New File'])
 
 
+class Guard(unittest.TestCase):
+    DIR = '/tmp/rclick-cal'
+
+    def items(self, name):
+        return finderui.menu_items(dump(name))
+
+    def test_selection_readback_drops_the_folder_slash_and_blank_lines(self):
+        self.assertEqual(finderui.parse_selection('/tmp/rclick-cal/%2544ocuments/\n/tmp/rclick-cal/a b.txt\n\n'),
+                         ['/tmp/rclick-cal/%2544ocuments', '/tmp/rclick-cal/a b.txt'])
+        self.assertEqual(finderui.parse_selection(''), [])
+
+    def test_matching_title_and_selection_pass(self):
+        target = self.DIR + '/alpha.txt'
+        reason = finderui.check_guard([target], [target], self.items('menu-file-alpha.jsonl'))
+        self.assertIn('Compress “alpha.txt”', reason)
+
+    def test_compress_title_naming_the_sibling_is_refused_even_when_the_selection_matches(self):
+        # i5-device-20261117b: the click landed on `%41.txt` while `%2541.txt` was the target.
+        target = self.DIR + '/%2541.txt'
+        with self.assertRaisesRegex(finderui.Refused, 'Compress “%41.txt”'):
+            finderui.check_guard([target], [target], self.items('menu-file-sibling-option.jsonl'))
+
+    def test_selection_of_another_item_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, 'selection'):
+            finderui.check_guard([self.DIR + '/alpha.txt'], [self.DIR + '/%41.txt'], self.items('menu-file-alpha.jsonl'))
+        with self.assertRaisesRegex(finderui.Refused, 'selection'):
+            finderui.check_guard([self.DIR + '/alpha.txt'], [self.DIR + '/alpha.txt', self.DIR + '/beta.txt'],
+                                 self.items('menu-file-alpha.jsonl'))
+
+    def test_a_menu_without_finders_compress_item_is_refused(self):
+        items = [item for item in self.items('menu-file-alpha.jsonl') if not item.title.startswith('Compress “')]
+        target = self.DIR + '/alpha.txt'
+        with self.assertRaisesRegex(finderui.Refused, 'no Finder Compress item'):
+            finderui.check_guard([target], [target], items)
+
+    def test_multi_selection_needs_the_item_count_title_and_the_same_set(self):
+        targets = [self.DIR + '/a.txt', self.DIR + '/b.txt']
+        nodes = dump('menu-file-alpha.jsonl')
+        for node in nodes:
+            if node.get('title') == 'Compress “alpha.txt”':
+                node['title'] = 'Compress 2 Items'
+        items = finderui.menu_items(nodes)
+        self.assertIn('Compress 2 Items', finderui.check_guard(targets, list(reversed(targets)), items))
+        with self.assertRaisesRegex(finderui.Refused, 'Compress 3 Items'):
+            finderui.check_guard(targets + [self.DIR + '/c.txt'], targets + [self.DIR + '/c.txt'], items)
+
+    def test_background_menu_needs_no_selection_and_the_front_window_folder(self):
+        items = [item for item in self.items('menu-file-alpha.jsonl') if not item.title.startswith('Compress')]
+        self.assertIn('background', finderui.check_guard([], [], items, background=self.DIR, front=self.DIR + '/'))
+        with self.assertRaisesRegex(finderui.Refused, 'front Finder window'):
+            finderui.check_guard([], [], items, background=self.DIR, front='/tmp/other')
+        with self.assertRaisesRegex(finderui.Refused, 'selection'):
+            finderui.check_guard([], [self.DIR + '/alpha.txt'], items, background=self.DIR, front=self.DIR)
+        with self.assertRaisesRegex(finderui.Refused, 'Compress'):
+            finderui.check_guard([], [], self.items('menu-file-alpha.jsonl'), background=self.DIR, front=self.DIR)
+
+
 if __name__ == '__main__':
     unittest.main()
