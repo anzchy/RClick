@@ -23,6 +23,7 @@ final class ActionService {
     private let fileOperations: any FileOperations
     private let pasteboard: NSPasteboard
     private let cutWarning: (String) -> Void
+    private let cutVolumeIsReadOnly: (URL) -> Bool
     /// System boundary: tests can observe reveal without opening Finder or posting keys.
     private let revealNewFile: ((URL) -> Void)?
     /// 当前时间；只用于自动重命名等待 Finder 的截止时间。
@@ -41,7 +42,10 @@ final class ActionService {
         now: @escaping @Sendable () -> Date = { Date() },
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
         revealNewFile: ((URL) -> Void)? = nil,
-        cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) }
+        cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) },
+        cutVolumeIsReadOnly: @escaping (URL) -> Bool = {
+            (try? $0.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) == true
+        }
     ) {
         self.state = state
         self.permission = permission
@@ -52,6 +56,7 @@ final class ActionService {
         self.accessLeaser = accessLeaser
         self.revealNewFile = revealNewFile
         self.cutWarning = cutWarning
+        self.cutVolumeIsReadOnly = cutVolumeIsReadOnly
     }
 
     struct CutRecord: Sendable {
@@ -215,6 +220,14 @@ final class ActionService {
         }
         let lease = accessLeaser.beginAccess(covering: parents)
         defer { lease.end() }
+        for url in urls {
+            let parent = url.deletingLastPathComponent()
+            let values = try? parent.resourceValues(forKeys: [.isWritableKey])
+            if cutVolumeIsReadOnly(parent) || values?.isWritable == false || !fileOperations.isWritable(parent) {
+                cutWarning(String(format: AppLocalization.localized("The source is on a read-only disk or in an unwritable folder: %@"), url.path))
+                return
+            }
+        }
         guard let identities = try? urls.map({ try fileOperations.fileIdentity(of: $0) }),
               let count = PendingCut(pasteboard: pasteboard).writeCut(target) else { return }
         cutRecord = CutRecord(paths: target, identities: identities, changeCount: count)

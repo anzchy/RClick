@@ -136,4 +136,33 @@ struct CutActionServiceTests {
         }
     }
 
+    @Test(arguments: [true, false])
+    func readOnlyVolumeOrUnwritableParentWarnsBeforeWritingCut(readOnlyVolume: Bool) async throws {
+        let (root, files) = try makeFiles()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("keep", forType: .string)
+        let before = board.changeCount
+        let permission = MockPermission()
+        permission.replies = [true]
+        let lease = TrackingLease()
+        let operations = FaultInjectingFileOperations()
+        if !readOnlyVolume { operations.reportUnwritable(root) }
+        var warnings: [String] = []
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
+                                    fileOperations: operations, pasteboard: board, accessLeaser: lease,
+                                    cutWarning: { warnings.append($0) }, cutVolumeIsReadOnly: { _ in readOnlyVolume })
+        await service.actionHandler(rid: "cut", target: [files[0].path], trigger: "ctx-items")
+        #expect(permission.prompts == [root])
+        #expect(service.pendingCut == nil)
+        #expect(board.changeCount == before)
+        #expect(board.string(forType: .string) == "keep")
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.contains(files[0].path) == true)
+        #expect(lease.ended == 1)
+        #expect(try Data(contentsOf: files[0]) == Data("unchanged".utf8))
+    }
+
 }

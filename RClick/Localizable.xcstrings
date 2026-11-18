@@ -1,6 +1,41 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The source is on a read-only disk or in an unwritable folder: %@" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The source is on a read-only disk or in an unwritable folder: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源项目位于只读磁盘或不可写入的文件夹中：%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の項目は読み取り専用ディスクまたは書き込み不可のフォルダ内にあります：%@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El origen está en un disco de solo lectura o en una carpeta sin permiso de escritura: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La source se trouve sur un disque en lecture seule ou dans un dossier non modifiable : %@"
+          }
+        }
+      }
+    },
     "Protected system folders cannot be cut: %@" : {
       "extractionState": "manual",
       "localizations": {
