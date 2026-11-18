@@ -149,3 +149,19 @@ effects in `finderdrive.py` and `calibration.py`.
   by calibration steps `background-menu`, `background-choose` and `choose`.
 - The osascript `display alert` stands in for RClick's alerts in `dialog-read`/`press-button`; the real Delete Direct
   confirmation was read through AX the same way (i5-device-20261117d).
+
+### 2026-11-18 — hypothesis: Finder may not answer AppleScript while its context menu is open (UNVERIFIED)
+
+- Suspicion (#32 audit r1, opus M1; no device trace): `guard` and `choose` read Finder's selection
+  (`SELECTION_SCRIPT`) and, with `--background`, its front window (`FRONT_SCRIPT`) through AppleScript while the
+  context menu is open (the `menu-session` holds it). If an app tracking a menu does not service Apple events until
+  the menu closes, every such call waits for the 20 s `run` timeout. It fails closed: the session is aborted, Esc,
+  nothing is pressed.
+- What calibration prints if it is true: `FAIL guard — ui.sh guard exited 70: ENVIRONMENT: osascript timed out after
+  20 s`, then `SKIP choose — needs guard`, `background-menu` and `background-choose` FAIL the same way, and the
+  summary is `CALIBRATION FAIL — distrust: ui.sh guard, …` (calibration exit 65; each `ui.sh guard` exits 70).
+- Fallback if it is true (not built now): read the selection (and front folder) BEFORE opening the menu, and bind it
+  to the menu session by the row identity: the selected rows' `AXURL` full paths read through AX, then right-click
+  that row; after the menu is open, re-check through AX inside axprobe (the front window's `AXSelectedRows` and
+  their `AXURL`), never through AppleScript.
+- Evidence: none yet; the first calibration run on #32's final head decides. Record the result here.
