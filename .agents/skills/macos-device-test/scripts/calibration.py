@@ -7,9 +7,11 @@ Side effects on the desktop, all under the GUI lock: opens and closes one Finder
 view), selects in it, opens context menus there, chooses RClick's Copy Path once (the pasteboard is overwritten with a
 fixture path), shows one alert and two folder panels from its own osascript processes.
 """
+import os
+import stat
 import subprocess
+import tempfile
 import time
-from datetime import datetime
 from pathlib import Path
 
 import device
@@ -20,8 +22,69 @@ FILES = ('%41.txt', '%2541.txt', 'alpha.txt', 'beta.txt', '中文 名称.txt', '
 ALERT = 'RClick calibration alert'
 
 
+class Fixture:
+    """The calibration's throwaway folder: allocated exclusively (mkdtemp, 0700) under $RUN_DIR/fixtures/, which
+    must be a real directory of this user; files are created O_EXCL|O_NOFOLLOW (an existing name is Refused, never
+    overwritten). remove() deletes only what this instance created or adopted (plus Finder's .DS_Store in its own
+    folders) and returns a note for anything it had to leave."""
+
+    def __init__(self, run):
+        fixtures = Path(run) / 'fixtures'
+        try:
+            os.mkdir(fixtures, 0o700)
+        except FileExistsError:
+            pass
+        info = os.lstat(fixtures)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise ui.Environment(f'{fixtures} is not a directory of this user (a symlink?): calibration refuses it')
+        self.folder = Path(tempfile.mkdtemp(prefix='calibration-', dir=fixtures))
+        self.created = [self.folder]
+
+    def create(self, names):
+        for name in names:
+            target = self.folder / name
+            if target.parent != self.folder and target.parent not in self.created:
+                os.mkdir(target.parent, 0o700)
+                self.created.append(target.parent)
+            try:
+                handle = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            except FileExistsError as error:
+                raise ui.Refused(f'{target} already exists: the fixture is not this calibration\'s alone') from error
+            with os.fdopen(handle, 'w', encoding='utf-8') as stream:
+                stream.write(name + '\n')
+            self.created.append(target)
+
+    def adopt(self, path):
+        """A regular file a calibration step made RClick create directly in the folder (New File): removed too."""
+        path = Path(path)
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError as error:
+            raise ui.Refused(f'{path} does not exist') from error
+        if path.parent != self.folder or not stat.S_ISREG(info.st_mode) or path in self.created:
+            raise ui.Refused(f'{path} is not a new regular file directly in {self.folder}')
+        self.created.append(path)
+
+    def remove(self):
+        notes = []
+        for path in reversed(self.created):
+            try:
+                if stat.S_ISDIR(os.lstat(path).st_mode):
+                    store = path / '.DS_Store'  # Finder writes it into a folder it showed
+                    if store.is_file() and not store.is_symlink():
+                        store.unlink()
+                    os.rmdir(path)
+                else:
+                    os.unlink(path)
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                notes.append(f'left {path}: {error.strerror} (not only this calibration\'s files)')
+        return notes
+
+
 def plan_lines(run_dir):
-    lines = [f'calibration plan (dry run, nothing touched); fixture folder {run_dir}/fixtures/calibration-<time>/',
+    lines = [f'calibration plan (dry run, nothing touched); fixture folder {run_dir}/fixtures/calibration-<random>/',
              '  files: ' + ', '.join(repr(name) for name in FILES)]
     lines += [f'  step {step}: proves {command}' for step, command in ui.CALIBRATION_STEPS]
     return lines
@@ -31,8 +94,8 @@ class Run:
     def __init__(self, run_dir, group):
         self.group = group
         self.run = device.run_dir(str(run_dir))
-        stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-        self.folder = self.run / 'fixtures' / f'calibration-{stamp}'
+        self.fixture = None
+        self.folder = None
         self.evidence = self.run / 'calibration'
         self.results = []
         self.started = []
@@ -81,10 +144,9 @@ class Run:
 
     # fixture -------------------------------------------------------------------------------------------------
     def make_fixture(self):
-        for name in FILES:
-            target = self.folder / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(name + '\n', encoding='utf-8')
+        self.fixture = Fixture(self.run)
+        self.folder = self.fixture.folder
+        self.fixture.create(FILES)
         drive.run(['open', self.folder], timeout=10)
         for _ in range(20):
             time.sleep(0.25)
@@ -99,20 +161,16 @@ class Run:
         time.sleep(0.5)
 
     def remove_fixture(self):
+        if self.fixture is None:
+            return
         drive.escape()
         try:
             drive.osascript('on run argv\ntell application "Finder" to close (every Finder window whose target is '
                             '((POSIX file (item 1 of argv)) as alias))\nend run', str(self.folder))
-        except ui.Environment:
+        except (ui.Environment, ui.Refused):
             print('note: could not close the fixture Finder window; close it by hand')
-        for name in FILES:
-            (self.folder / name).unlink(missing_ok=True)
-        for directory in (self.folder / 'folder a', self.folder):
-            (directory / '.DS_Store').unlink(missing_ok=True)  # Finder writes it into the fixture folder
-            try:
-                directory.rmdir()
-            except OSError:
-                print(f'note: left {directory} (not empty: Finder may have written .DS_Store)')
+        for note in self.fixture.remove():
+            print('note: ' + note)
 
     # steps ---------------------------------------------------------------------------------------------------
     def row_order(self):
