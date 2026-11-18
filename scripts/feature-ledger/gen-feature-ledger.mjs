@@ -111,8 +111,13 @@ function expand(files, rel) {
 // returns a mask of the text with the same length and line breaks: comment characters become spaces
 // and the visible characters of a string's contents become `_`. Lines and declarations are read from
 // the mask, so a commented-out test is not a test and a string spanning lines is still code.
-// Limits (stated, not hidden): string interpolation is read as string contents, a single-line string
-// ends at its line, and JavaScript regular-expression literals are read as code.
+// Swift strings follow the language: a string with N leading `#` closes on `"` plus N `#`; its escape
+// introducer is `\` plus N `#` (so `\#"` in `#"…"#` is an escaped quote, and a plain `\` is a letter),
+// and `\(` (`\#(` with one `#`) opens an interpolation, which is code: it is scanned like any code,
+// with its own strings, comments and nested interpolations, up to the `)` that balances it.
+// Limits (stated, not hidden): JavaScript `${…}` and Python f-string braces are read as string
+// contents, a non-Swift single-line string ends at its line, and regular-expression literals (JavaScript
+// `/…/`, Swift `/…/` and `#/…/#`) are read as code.
 const LEXERS = {
   swift: { line: "//", block: true, nest: true, swift: true },
   c: { line: "//", block: true, quotes: ['"', "'"] },
@@ -123,19 +128,24 @@ const LEXERS = {
 const LEXER_OF = { ".swift": "swift", ".m": "c", ".h": "c", ".js": "js", ".mjs": "js", ".ts": "js", ".py": "python", ".sh": "shell" };
 const lexerOf = (ext) => LEXERS[LEXER_OF[ext] ?? "c"];
 
-/** The string literal that opens at `i`, or null: its opener length, closer, and whether it may span lines or has escapes. */
+/**
+ * The string literal that opens at `i`, or null: its opener length, its closer, whether it may span lines,
+ * its escape introducer (null when it has none) and whether that introducer followed by `(` interpolates.
+ */
 function stringOpener(text, i, lx) {
   if (lx.swift) {
     let h = 0;
     while (text[i + h] === "#") h++;
     const hashes = "#".repeat(h);
-    if (text.startsWith('"""', i + h)) return { len: h + 3, close: '"""' + hashes, multiline: true, raw: h > 0 };
-    if (text[i + h] === '"') return { len: h + 1, close: '"' + hashes, multiline: false, raw: h > 0 };
+    const swift = { escape: "\\" + hashes, interpolates: true };
+    if (text.startsWith('"""', i + h)) return { len: h + 3, close: '"""' + hashes, multiline: true, ...swift };
+    if (text[i + h] === '"') return { len: h + 1, close: '"' + hashes, multiline: false, ...swift };
     return null;
   }
-  for (const q of lx.triple ?? []) if (text.startsWith(q, i)) return { len: 3, close: q, multiline: true, raw: false };
-  for (const q of lx.multiline ?? []) if (text[i] === q) return { len: 1, close: q, multiline: true, raw: false };
-  for (const q of lx.quotes ?? []) if (text[i] === q) return { len: 1, close: q, multiline: false, raw: (lx.raw ?? []).includes(q) };
+  const plain = (q, multiline, raw = false) => ({ len: q.length, close: q, multiline, escape: raw ? null : "\\", interpolates: false });
+  for (const q of lx.triple ?? []) if (text.startsWith(q, i)) return plain(q, true);
+  for (const q of lx.multiline ?? []) if (text[i] === q) return plain(q, true);
+  for (const q of lx.quotes ?? []) if (text[i] === q) return plain(q, false, (lx.raw ?? []).includes(q));
   return null;
 }
 
@@ -146,43 +156,75 @@ function mask(text, ext) {
   const n = text.length;
   const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== "\n") out[k] = " "; };
   const fill = (a, b) => { for (let k = a; k < b; k++) if (!/\s/.test(out[k])) out[k] = "_"; };
-  let i = 0;
-  while (i < n) {
-    const lineComment = lx.hash
-      ? text[i] === "#" && (lx.hash === "anywhere" || i === 0 || /[\s;]/.test(text[i - 1]))
-      : text.startsWith(lx.line, i);
-    if (lineComment) {
-      const nl = text.indexOf("\n", i);
-      const end = nl === -1 ? n : nl;
-      blank(i, end);
-      i = end;
-      continue;
+
+  const lineCommentAt = (i) => lx.hash
+    ? text[i] === "#" && (lx.hash === "anywhere" || i === 0 || /[\s;]/.test(text[i - 1]))
+    : text.startsWith(lx.line, i);
+
+  /** Blanks the block comment that opens at `i`; returns the index after it. */
+  function blockComment(i) {
+    let depth = 0;
+    let k = i;
+    while (k < n) {
+      if (text.startsWith("/*", k) && (depth === 0 || lx.nest)) { depth++; k += 2; }
+      else if (text.startsWith("*/", k)) { depth--; k += 2; if (depth === 0) break; }
+      else k++;
     }
-    if (lx.block && text.startsWith("/*", i)) {
-      let depth = 0;
-      let k = i;
-      while (k < n) {
-        if (text.startsWith("/*", k) && (depth === 0 || lx.nest)) { depth++; k += 2; }
-        else if (text.startsWith("*/", k)) { depth--; k += 2; if (depth === 0) break; }
-        else k++;
-      }
-      blank(i, Math.min(k, n));
-      i = k;
-      continue;
-    }
-    const open = stringOpener(text, i, lx);
-    if (open) {
-      let k = i + open.len;
-      while (k < n && !(text[k] === "\n" && !open.multiline) && !text.startsWith(open.close, k)) {
-        k += !open.raw && text[k] === "\\" ? 2 : 1;
-      }
-      const end = Math.min(k, n);
-      fill(i + open.len, end);
-      i = end < n && text.startsWith(open.close, end) ? end + open.close.length : end;
-      continue;
-    }
-    i++;
+    blank(i, Math.min(k, n));
+    return Math.min(k, n);
   }
+
+  /** Fills the string that opens at `i`, scanning its interpolations as code; returns the index after it. */
+  function string(i, open) {
+    let k = i + open.len;
+    let from = k; // start of the contents not filled yet
+    while (k < n) {
+      if (text.startsWith(open.close, k)) { fill(from, k); return k + open.close.length; }
+      if (text[k] === "\n" && !open.multiline) break;
+      if (open.escape !== null && text.startsWith(open.escape, k)) {
+        const after = k + open.escape.length;
+        if (open.interpolates && text[after] === "(") {
+          fill(from, after + 1);
+          k = code(after + 1, true);
+          fill(k - 1, k); // the closing parenthesis
+          from = k;
+          continue;
+        }
+        k = after + 1; // the escaped character, whatever it is
+        continue;
+      }
+      k++;
+    }
+    const end = Math.min(k, n);
+    fill(from, end);
+    return end;
+  }
+
+  /** Scans code from `i`; inside an interpolation, up to and including the `)` that balances it. */
+  function code(i, interpolation) {
+    let depth = 0;
+    let k = i;
+    while (k < n) {
+      if (lineCommentAt(k)) {
+        const nl = text.indexOf("\n", k);
+        const end = nl === -1 ? n : nl;
+        blank(k, end);
+        k = end;
+        continue;
+      }
+      if (lx.block && text.startsWith("/*", k)) { k = blockComment(k); continue; }
+      const open = stringOpener(text, k, lx);
+      if (open) { k = string(k, open); continue; }
+      if (interpolation) {
+        if (text[k] === "(") depth++;
+        else if (text[k] === ")") { if (depth === 0) return k + 1; depth--; }
+      }
+      k++;
+    }
+    return n;
+  }
+
+  code(0, false);
   return out.join("");
 }
 
