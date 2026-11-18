@@ -297,7 +297,8 @@ function testCases(lines, masked, ext) {
       const m = /^\s*(?:async\s+)?def\s+(test\w*)\s*\(/.exec(line);
       if (m) name = m[1];
     } else {
-      if (/^\s*@Test\b/.test(line)) attribute ??= i;
+      // `@Test` may follow other attributes (`@MainActor @Test func a()`); the mask hides it in text.
+      if (/(?:^|[\s)])@Test\b/.test(line)) attribute ??= i;
       const swift = /\bfunc\s+(\w+)\s*\(/.exec(line);
       const js = /^\s*(?:test|it)\(\s*(["'`])/.exec(line);
       if (swift && (attribute !== null || swift[1].startsWith("test"))) {
