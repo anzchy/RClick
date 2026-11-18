@@ -3,8 +3,9 @@
 Run recipes for device-testing RClick, one file per feature area, with stable recipe IDs (`EXT-01`, `ACT-03`, …)
 that briefs, verdict tables and validation records cite. Read this index before a run, then the matching file.
 
-None of these recipes has been driven live yet (runbook §14). Correct a recipe when the real app differs, in the same
-change, and record the deviation.
+Runs i5, i13 and i22 drove part of these recipes live with improvised helpers; `ui.sh` is built from what worked
+(runbook §14, [ui-driver-notes.md](../references/ui-driver-notes.md)). Correct a recipe when the real app differs, in
+the same change, and record the deviation.
 
 ## Baseline preconditions
 
@@ -16,13 +17,17 @@ change, and record the deviation.
 - Fixtures created under `$RUN_DIR/fixtures/` (runbook §8), opened in a Finder window in list view.
 - App Group state noted or backed up (runbook §5). Default settings unless the recipe says otherwise: Actions,
   Apps, New File and Common Dirs each shown in a submenu or inline as Settings says; record which.
-- Input source ABC.
+- Calibration run after doctor (`calibrate.sh`, runbook §7a); a distrusted helper is not used.
+- Input source ABC only for recipes that type characters (`key.sh`); the Finder helpers (`ui.sh`) do not type.
 
 ## Driving conventions
 
-- Right-click with `rightclick.sh`; read the menu with `finder-menu.sh`; dismiss with `finder-kc.sh 53`.
-- A menu's item list is taken while it is open; record its titles verbatim (they are localized).
-- Choose an item by click on its coordinates from a fresh screenshot, or by keyboard navigation.
+- Open the menu on a row with `ui.sh open-menu "<exact name>"`; read it with `ui.sh menu X,Y`; dismiss with
+  `finder-kc.sh 53` (runbook §7).
+- A menu's item list is taken while it is open; record its titles verbatim (they are localized). Save the
+  `ui.sh menu` output under `$RUN_DIR/menus/`.
+- Choose an RClick item with `ui.sh choose X,Y "<title>" --target <path>` (it runs the pre-action guard first). Never
+  aim by AppleScript order, remembered coordinates or a screenshot.
 - Undo what a recipe changes (settings, hidden flags, granted folders) when the brief asks for a clean machine;
   never delete evidence.
 
@@ -43,10 +48,13 @@ stable handles, required state and observable proof.
 
 Record here what a real run finds out about the tools.
 
-- Context menus and `NSAlert`s belong to Finder (or the extension), not RClick: capture them by region, not by window.
-- `finder-menu.sh` reading Finder's open context menu through AX: unverified.
-- Synthetic right-click with the Option flag set on the CGEvent: unverified as a substitute for a held Option key
-  (the extension reads the modifier state while it builds the menu).
+The dated ledger with evidence is [ui-driver-notes.md](../references/ui-driver-notes.md); the tester records new
+findings under "Script problems" in the validation record, and the delegator moves them there.
+
+- Context menus and `NSAlert`s belong to Finder (or the extension), not RClick: capture them by region, not by window,
+  or read them through AX (`ui.sh menu`, `ui.sh dialog`).
+- Finder's context menu is visible to the element-at-position probe (`ui.sh menu`), not to System Events.
+- The Option flag on the synthetic right-click is seen by the extension (`Delete Direct (skip confirmation)`).
 
 ## Features
 

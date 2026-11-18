@@ -33,11 +33,11 @@ used.
 3. `ACT-03`: select `alpha.txt` → Hide. Result: `ls -lO` shows `hidden`; Finder no longer lists it (unless the owner
    shows hidden files). Show hidden files with ⌘⇧. only if the owner agrees, then select it → Unhide. Result: flag
    cleared. Without ⌘⇧., Unhide on the container trigger is the user path; record which one was used.
-4. `ACT-04`: select `delete-1.txt` → Delete Direct. Result: a confirmation (`axdump.sh <rclick pid>`: the title, the
-   Cancel button and the tip about Option); capture `ACT-04-confirm`. Cancel → the file is still there (`shasum`
+4. `ACT-04`: select `delete-1.txt` → Delete Direct. Result: a confirmation (`ui.sh dialog <rclick pid>`: the title, the
+   Cancel button and the tip about Option; `ui.sh press-button <rclick pid> Cancel`); capture `ACT-04-confirm`. Cancel → the file is still there (`shasum`
    matches `fixtures.sha256`). Repeat and confirm → the file is gone and is not in `~/.Trash`.
-5. `ACT-05`: `rightclick.sh X Y option` on `delete-2.txt`. Result: the item title ends with **(skip confirmation)**
-   (`finder-menu.sh`); choose it → no dialog, the file is gone, not in the Trash. Log shows the Option state at
+5. `ACT-05`: `ui.sh open-menu delete-2.txt --option`. Result: the item title ends with **(skip confirmation)**
+   (`ui.sh menu`); choose it with `ui.sh choose` and `--target` the file → no dialog, the file is gone, not in the Trash. Log shows the Option state at
    menu build. If the title lacks the suffix, NOT VERIFIED (synthetic Option not seen by the extension) unless a real
    held Option reproduces it with the owner.
 6. `ACT-06`: select `alpha.txt` → AirDrop. Result: the system AirDrop sheet appears; capture and cancel it. Never send.

@@ -119,7 +119,7 @@ exits non-zero on any FAIL. Collection errors become FAIL on the affected lines.
 | `extension-registered` | exactly one fork `FinderSyncExt` registration inside this run's bundle; no foreign RClick registration, even dormant |
 | `extension-enabled` | that registration has the `+` (user-enabled) flag |
 | `extension-process` | exactly one `FinderSyncExt` process, running from this run's bundle |
-| `accessibility` | the host terminal is AX-trusted (needed for menus, alerts and panels) |
+| `accessibility` | the host terminal is AX-trusted: required for any Finder driving (menus, alerts, panels); the owner grants it, no restart needed |
 | `machine` | model, chip, memory, macOS and scale match `build.json` |
 
 `extension-process` may need one right-click in Finder before Finder loads the extension: right-click the fixture
@@ -127,26 +127,89 @@ folder once, Esc, then rerun doctor. Offline contract tests: `doctor.sh --fixtur
 
 ## 7. Drive
 
-- **Open the fixtures in Finder:** `open "$RUN_DIR/fixtures"` (under the lock). Use list view so rows have stable
-  positions; read coordinates from a screenshot, never from memory.
-- **Right-click:** `$DT/rightclick.sh X Y` on a row, the window background, or a sidebar entry. Add `option` to hold
-  Option while the menu is built (Delete Direct's skip title). Synthetic input: disclose it.
-- **Read the menu:** `$DT/finder-menu.sh` prints `<title>|<enabled>|<submenu count>` for Finder's open menu. If it
-  prints nothing while a menu is visibly open, record the tool limit and use a region screenshot of the menu.
-- **Choose an item:** `$DT/click.sh X Y` on the item, or keyboard: type the title's first letters and Return through
-  `$DT/finder-kc.sh`. Close a menu with `$DT/finder-kc.sh 53`.
-- **Read alerts and dialogs:** `$DT/axdump.sh FinderSyncExt` (extension alerts), `$DT/axdump.sh <rclick pid>` (Delete
-  Direct confirmation, permission panel). Press buttons by AX title or `kc.sh "$RUN_DIR" 36` (Return) / `53` (Esc).
-- **Folder permission panel:** `$DT/panel-choose.sh "$RUN_DIR" "$RUN_DIR/fixtures"` writes the path into the Go-to
-  field through AX, reads it back, and confirms; it fails before Open on any mismatch.
+Every Finder action goes through `$DT/ui.sh` (`ui.sh --help`), which needs the GUI lock held by this run and an
+AX-trusted host terminal. Its pure logic is `finderui.py` (tested offline), its AX calls are `axprobe.swift`
+(compiled into `$TMPDIR` on first use), and the pitfalls it avoids are in [ui-driver-notes.md](ui-driver-notes.md).
+Exit codes of `ui.sh` and `calibrate.sh`: **0** ok, **64** usage, **65** refused (target missing, ambiguous or
+mismatched: nothing was done and an open menu was closed), **70** environment (no Accessibility, GUI lock not held by
+an rclick run, axprobe build failed, no single Finder process).
+
+- **Calibrate first:** `$DT/calibrate.sh "$RUN_DIR"` after doctor, before any recipe (§7a).
+- **Open the fixtures in Finder:** `open "$RUN_DIR/fixtures"` (under the lock), list view. Keep fixture names unique
+  (expanded folders can show a name twice: `ui.sh` refuses duplicates).
+- **Rows in display order:** `$DT/ui.sh rows` prints `index<TAB>name<TAB>x<TAB>y<TAB>visible|hidden` for the front
+  Finder window, ordered by the on-screen position read through AX. AppleScript's `items` order is not the display
+  order: never compute coordinates from it, and never from a screenshot or memory.
+- **Select and read back:** `$DT/ui.sh select <abs path>...` selects through AppleScript and reads the selection's
+  POSIX paths back (exit 65 if they differ); `$DT/ui.sh selection` prints them.
+- **Open the context menu on a row:** `$DT/ui.sh open-menu "<exact name>" [--option]` finds the one visible row with
+  that exact name (case, spaces and percent signs significant), sets `AXSelected` on it and right-clicks the centre
+  of its name cell (`rightclick.sh`; `--option` sets the Option flag, for Delete Direct's skip title). It prints
+  `row: <index> <name> <x>,<y>` and `menu-point X,Y`. `AXShowMenu` does not work on Finder rows. Synthetic input:
+  disclose it. For the window background or a sidebar entry, right-click with `$DT/rightclick.sh X Y` at a point read
+  from `ui.sh rows`/a dump, then probe the menu with `ui.sh menu`.
+- **Read the menu:** `$DT/ui.sh menu X,Y` (the `menu-point`) prints every item as
+  `<index>|<title>|<enabled>|<x>,<y>|<submenu count>`, then `compress: <Finder's Compress title>` and
+  `rclick-group: <titles>` (RClick's items after `Quick Actions`, with their submenus). A user-added Open With app or
+  common folder in RClick's section needs `--also "<title>"`.
+- **Pre-action guard:** `$DT/ui.sh guard X,Y <target abs path>...` (or `--background <dir>` for a window-background
+  menu) passes only when Finder's `Compress “<name>”` title (`Compress N Items` for N targets) names the target and
+  the selection read back is exactly the target set; otherwise it closes the menu and exits 65. The system language
+  must be English for the Compress title.
+- **Choose an RClick item:** `$DT/ui.sh choose X,Y "<title>" [--sub "<submenu item>"] --target <abs path>...` (or
+  `--background <dir>`) runs the guard, then presses the item with `AXPress` inside RClick's group only (another
+  extension's same-titled item is never taken). Example: `ui.sh choose 660,237 "New File" --sub TXT --background
+  "$RUN_DIR/fixtures"`. Close a menu with `$DT/finder-kc.sh 53`.
+- **Read alerts and dialogs:** `$DT/ui.sh dialog <pid>` prints each window's `text:` and `button:` lines: the RClick
+  PID (`rclick.pid`) for the Delete Direct confirmation, the folder panel and the auto-rename alert; the
+  `FinderSyncExt` PID (`pgrep -x FinderSyncExt`) for "RClick is not running" / "RClick did not respond".
+- **Press a button:** `$DT/ui.sh press-button <pid> "<title>" [--window-text "<text in that window>"]` presses the one
+  button with that exact title; two candidates are refused. Prefer it to `kc.sh "$RUN_DIR" 36` (Return).
+- **Folder permission panel:** `$DT/ui.sh grant <rclick pid> <abs folder> [--button "Grant Access"]` selects the
+  folder's row in the panel's file list (never the sidebar) and presses the button, all through AX: no typing, so
+  the input source does not matter. If the panel already shows that folder it presses the button directly. It
+  refuses when the panel's location pop-up does not show the folder's parent (or the folder), and fails if the panel
+  is still open afterwards. Check the grant through a second view (Settings → Folder Permissions, the app log).
 - **Keys to RClick:** `$DT/key.sh "$RUN_DIR" <char> [mods]` (one printable character), `$DT/kc.sh "$RUN_DIR" <code>`
-  (Esc 53, Return 36, Tab 48). Switch the input source to ABC by hand before key checks; never from a script.
+  (Esc 53, Return 36, Tab 48). Typed characters pass through the input method: switch the input source to ABC by
+  hand before key checks; never from a script. Key codes (Esc, Return) do not depend on it.
 - **Hung host (no-ack):** `$DT/pause.sh "$RUN_DIR"` sends SIGSTOP to the recorded PID only; `$DT/resume.sh` sends
   SIGCONT. Both are logged in `signals.log`. The extension still believes the host is online for up to 30 s after the
   last heartbeat, so click within that window.
 - **Hint relaunch:** after `cleanup.sh`, clicking the offline hint starts the app again from this bundle. Record it
   with `$DT/adopt.sh "$RUN_DIR-relaunch" --from "$RUN_DIR"`, then doctor/cleanup that new run directory.
 - **Probe symmetrically:** Hide then Unhide, cancel then confirm, without Option then with Option, online then offline.
+- **When the list changes** (after a delete, a new file, a rename) run `open-menu` again: it re-reads the rows. Never
+  reuse a `menu-point` after its menu closed.
+
+### 7a. Calibration
+
+`$DT/calibrate.sh "$RUN_DIR"` (under the lock, after doctor) proves each helper on this Mac's macOS and Finder before
+the run relies on it. It creates `$RUN_DIR/fixtures/calibration-<time>/` (`%41.txt`, `%2541.txt`, `alpha.txt`,
+`beta.txt`, `中文 名称.txt`, `folder a/inner.txt`), opens it in a Finder window in list view, and removes both at the
+end. It overwrites the pasteboard once (Copy Path on a fixture) and shows one alert and two folder panels from
+`osascript` processes it starts itself (only those may be terminated). `--dry-run` prints the plan and touches
+nothing. Output, one line per step in this order, then a summary:
+
+| Step | PASS means | Distrust on FAIL/SKIP |
+|---|---|---|
+| `gui-lock`, `axprobe`, `accessibility` | lock held by rclick, probe compiled, host terminal AX-trusted | every `ui.sh` command (exit 70: fix and rerun) |
+| `row-order` | every fixture name found once, visible, in display order; prints the display and AppleScript orders | `ui.sh rows` |
+| `select-readback` | AppleScript select of `beta.txt` reads back exactly | `ui.sh select` |
+| `context-menu` | `open-menu %2541.txt` opened a menu that the element-at-position probe finds | `ui.sh open-menu` |
+| `menu-read` | that menu's Compress title is `Compress “%2541.txt”` | `ui.sh menu` |
+| `rclick-group` | RClick's group is present (else: the extension is not loaded, §6) | `ui.sh menu` (RClick's group) |
+| `guard` | the guard accepts `%2541.txt` and refuses the sibling `%41.txt` | `ui.sh guard` |
+| `choose` | `choose … Copy Path` on `alpha.txt` puts that fixture path on the pasteboard | `ui.sh choose` |
+| `dialog-read` | the calibration alert's text is read through AX | `ui.sh dialog` |
+| `press-button` | pressing `OK` by title returns `OK` to its osascript | `ui.sh press-button` |
+| `panel-grant-row` | an `osascript choose folder` panel showing the fixture: `grant … "folder a" --button Choose` returns that folder | `ui.sh grant` (row mode) |
+| `panel-grant-current` | the same panel: `grant <fixture folder>` returns the shown folder | `ui.sh grant` (current-folder mode) |
+
+Summary: `CALIBRATION PASS (14 steps)` → exit 0; `CALIBRATION FAIL — distrust: <commands>` → exit 65; `CALIBRATION
+FAIL — environment (<step>): fix it and rerun; distrust: every ui.sh command` → exit 70. A step whose prerequisite
+failed is `SKIP` and counts as not proven. The output is saved to `$RUN_DIR/calibration/calibration.txt` with the AX
+dumps (`finder-window.jsonl`, `menu.jsonl`, `alert.jsonl`, `panel-*.jsonl`): cite them in "Script problems".
 
 ## 8. Fixtures
 
@@ -183,7 +246,8 @@ log show --start "$(cat "$RUN_DIR/start.txt")" --style compact --info \
 (`菜单打开时 Option 状态`), and `菜单构建耗时` (menu build time). Values not marked public show as `<private>`; report
 that as a logging gap instead of guessing.
 
-Screenshots: `$DT/shot.sh "$RUN_DIR" <name> [x,y,w,h]` captures the main display or a rectangle (points), after a
+Screenshots are optional (Screen Recording is optional): `ui.sh menu` and `ui.sh dialog` output saved to the run
+folder is the evidence without them. `$DT/shot.sh "$RUN_DIR" <name> [x,y,w,h]` captures the main display or a rectangle (points), after a
 Screen Recording preflight that never requests permission, and rejects black or empty captures. Context menus and
 alerts belong to Finder, so a window-by-PID capture can't see them. Keep captures to the menu region, and make sure
 nothing private is on screen. Never save a screenshot into the repo.
@@ -223,15 +287,16 @@ pixels.
 
 ## 14. Proving this skill
 
-Not yet proven live on RClick. The first run is a proof run: build → lock → launch → doctor (13 PASS) → one
-right-click on `alpha.txt` with `finder-menu.sh` output → Copy Path with `pbpaste` → cleanup → release. Record which
-signing (`team:` or `adhoc`) Finder accepted, whether `finder-menu.sh` reads the context menu, and whether
-`extension-process` needed the warm-up right-click. Fix any helper defect with a failing offline test first.
+Runs i5, i13 and i22 drove RClick live with improvised helpers; what they found is in
+[ui-driver-notes.md](ui-driver-notes.md), and `ui.sh` is built from the parts that worked. Each run proves the helpers
+again with the calibration (§7a) before it relies on them; a calibration FAIL goes into the record's "Script
+problems". Record which signing (`team:` or `adhoc`) Finder accepted and whether `extension-process` needed the
+warm-up right-click. Fix any helper defect with a failing offline test first.
 
 Offline tests (no desktop, no real lock):
 
 ```bash
-cd $DT && python3 -m unittest test_device test_gui_lock test_panel_choose
+cd $DT && python3 -m unittest test_device test_gui_lock test_finderui test_finderdrive
 RCLICK_PICSEE_GUI_SCRIPT=~/Documents/mac-app/picsee/.agents/skills/picsee-delegator/scripts/gui-lock.sh \
 RCLICK_MDPRO_GUI_SCRIPT=~/Documents/mac-app/mdpro/.agents/skills/mdpro-delegator/scripts/gui-lock.sh \
   python3 -m unittest test_gui_lock      # cross-project lock exclusion against the real scripts
@@ -241,7 +306,8 @@ RCLICK_MDPRO_GUI_SCRIPT=~/Documents/mac-app/mdpro/.agents/skills/mdpro-delegator
 
 Write `docs/validation/<YYYY-MM-DD>-<topic>.md` from
 [validation-record-template.md](validation-record-template.md): machine, display, bundle path, SHA (and how doctor
-verified it), signing, fixtures, verdict table, deviations, NOT VERIFIED reasons, and the run ID. Commit it on its own,
+verified it), signing, fixtures, calibration summary, verdict table, deviations, NOT VERIFIED reasons, Script
+problems, and the run ID. Commit it on its own,
 touching nothing outside `docs/validation/`:
 
 ```text
@@ -260,9 +326,11 @@ A record without the trailer, or written by the implementer of the change, does 
 [ ] Built from a clean commit with an explicit signing choice (§4)
 [ ] Launched; PID recorded; App Group state noted or backed up (§5)
 [ ] Doctor: every line PASS (§6)
+[ ] Calibration run; distrusted helpers not used, or their rows NOT VERIFIED (§7a)
 [ ] Fixtures created per run; every entry point driven; effects checked through a second view (§7–9)
 [ ] Logs saved for the run window (§10)
 [ ] Verdict table honest about NOT VERIFIED (§12)
 [ ] Cleanup by recorded PID; settings restored; lock released (§11)
+[ ] Script problems recorded in the validation record (§15)
 [ ] docs/validation record committed with Validated-by (§15)
 ```

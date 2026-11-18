@@ -13,6 +13,7 @@
 - App Group state: <created by this run | existing, backed up to settings-before.json and restored>
 - GUI lock: acquired <time>, released <time>
 - Fixtures: per-run, `fixtures.sha256` in the run folder
+- Calibration: <`CALIBRATION PASS (14 steps)` | `CALIBRATION FAIL — distrust: …`>, `calibration/calibration.txt`
 
 ## Verdicts
 
@@ -31,3 +32,13 @@
 ## Defects filed
 
 - <#issue — one line>
+
+## Script problems
+
+Every helper that broke, misled or was bypassed in this run (calibration FAILs included); "none" if none. The
+tester does not fix scripts: the delegator collects these rows into `references/ui-driver-notes.md` and the scripts
+through a ticket or PR.
+
+| Helper (command) | What broke (symptom, exit code, message) | What was done instead | Evidence |
+|---|---|---|---|
+| <`ui.sh grant` (current-folder mode)> | <refused: panel shows '…'> | <granted the row of the parent instead> | <`calibration/panel-current.jsonl`> |

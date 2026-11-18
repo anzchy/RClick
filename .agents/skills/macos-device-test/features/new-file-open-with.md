@@ -28,9 +28,9 @@ the run never toggles it). Note which apps RClick lists.
    `shasum` matches the template from the built bundle's resources (or is empty for txt). Repeat once to check the
    unique name. Right-click `alpha.txt` → New File → Markdown: the file lands next to it.
 2. `NEW-02`: with Accessibility granted to RClick, the new file is selected and its name field is editable
-   (`axdump.sh Finder` shows the text field); type `renamed` + Return through `finder-kc.sh`/AX, then `ls`.
+   (`ui.sh rows` and `ui.sh selection` show the new file selected; the name field is an `AXTextField`); type `renamed` + Return through `finder-kc.sh`/AX, then `ls`.
    Without it: NOT VERIFIED for `NEW-02`, and run `NEW-03`.
-3. `NEW-03`: without Accessibility for RClick, the first New File shows the explanation once (`axdump.sh`), naming the
+3. `NEW-03`: without Accessibility for RClick, the first New File shows the explanation once (`ui.sh dialog <rclick pid>`), naming the
    RClick app, not the extension; a second New File does not repeat it.
 4. `APP-01`: right-click `alpha.txt` → TextEdit. Result: TextEdit opens the file (window title); quit only the
    TextEdit document window the run opened (⌘W), not TextEdit if it was already running.

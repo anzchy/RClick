@@ -25,8 +25,8 @@ Preconditions: baseline; doctor PASS including `extension-registered`, `extensio
 
 1. `EXT-01`: save `pluginkit -m -v -i cn.anzchy.RClick.FinderSyncExt` and `doctor.txt`. Result: one `+` line whose path
    is inside `$RUN_DIR`'s bundle.
-2. `EXT-02`: right-click `alpha.txt`; `finder-menu.sh` > `$RUN_DIR/menus/EXT-02-file.txt`; region screenshot
-   `EXT-02-file-menu`. Result: the Actions items (Copy Path, Copy File Name, Delete Direct, AirDrop, Hide, Unhide — or
+2. `EXT-02`: `ui.sh open-menu alpha.txt`, then `ui.sh menu X,Y > "$RUN_DIR/menus/EXT-02-file.txt"`; region
+   screenshot `EXT-02-file-menu` if Screen Recording is granted. Result: the Actions items (Copy Path, Copy File Name, Delete Direct, AirDrop, Hide, Unhide — or
    the **Actions** submenu), Open With apps, **New File**, Common Dirs. Esc.
 3. `EXT-03`: right-click `folder a`; then select `alpha.txt` and `folder a` (⌘-click) and right-click the selection.
    Result: the items appear both times. Esc.
