@@ -108,6 +108,11 @@ nonisolated final class IPCReceiver: Sendable {
     private struct State {
         var session: String
         var configVersion: Int?
+        var lastAdoptedSession = ""
+        var adoptedAt: TimeInterval?
+        var retired: Set<String> = []
+        var revisions: [String: Int] = [:]
+        var discoveryExhausted = false
         var wall: TimeInterval
         var monotonic: TimeInterval
         var nonces: [Data: TimeInterval] = [:]
@@ -133,6 +138,12 @@ nonisolated final class IPCReceiver: Sendable {
             if discontinuity {
                 state.wall = wall
                 state.monotonic = monotonic
+                if !state.lastAdoptedSession.isEmpty {
+                    if state.retired.count < 1024 { state.retired.insert(state.lastAdoptedSession) }
+                    else { state.discoveryExhausted = true }
+                }
+                state.lastAdoptedSession = ""
+                state.adoptedAt = nil // New clock epoch; retired ids remain dead.
                 state.session = ""
                 state.configVersion = nil
             }
@@ -153,7 +164,14 @@ nonisolated final class IPCReceiver: Sendable {
                 let bootstrap = envelope.session.isEmpty && ["heartbeat", "request-config"].contains(envelope.action)
                 guard bootstrap || (!state.session.isEmpty && envelope.session == state.session) else { throw IPCSecurityError.session }
             } else if announcesSession {
-                guard !envelope.session.isEmpty else { throw IPCSecurityError.session }
+                guard !envelope.session.isEmpty, !state.retired.contains(envelope.session),
+                      !state.discoveryExhausted else { throw IPCSecurityError.session }
+                if envelope.session != state.lastAdoptedSession {
+                    // Unknown launches must postdate the current launch's first
+                    // adoption, not merely have a still-fresh captured timestamp.
+                    guard state.adoptedAt.map({ envelope.timestamp > $0 }) ?? true else { throw IPCSecurityError.session }
+                    guard state.retired.count < 1024 else { throw IPCSecurityError.capacity }
+                }
             } else {
                 guard !state.session.isEmpty, envelope.session == state.session else { throw IPCSecurityError.session }
             }
@@ -170,13 +188,21 @@ nonisolated final class IPCReceiver: Sendable {
                 struct Revision: Decodable { let version: Int }
                 guard let revision = try? JSONDecoder().decode(Revision.self, from: envelope.payload),
                       revision.version >= 0 else { throw IPCSecurityError.configVersion }
-                let previous = envelope.session == state.session ? state.configVersion : nil
+                let previous = state.revisions[envelope.session]
                 guard previous == nil || revision.version >= previous! else { throw IPCSecurityError.configVersion }
                 state.configVersion = revision.version
+                state.revisions[envelope.session] = revision.version
             } else if announcesSession, envelope.session != state.session {
                 state.configVersion = nil
             }
-            if announcesSession { state.session = envelope.session }
+            if announcesSession {
+                if envelope.session != state.lastAdoptedSession {
+                    if !state.lastAdoptedSession.isEmpty { state.retired.insert(state.lastAdoptedSession) }
+                    state.lastAdoptedSession = envelope.session
+                    state.adoptedAt = max(clock.wallTime, envelope.timestamp)
+                }
+                state.session = envelope.session
+            }
         }
         return VerifiedMessage(envelope: envelope)
     }

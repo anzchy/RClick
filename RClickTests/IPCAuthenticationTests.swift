@@ -164,6 +164,39 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertFalse(delivery.isHostAppRunning)
     }
 
+    func testRetiredAndUnknownOlderAnnouncementsCannotRollBackRenderedSession() throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let delivery = IPCExtensionDelivery(messager: ext)
+        func post(_ session: String, _ action: String, time: Double, version: Int = 1) throws {
+            let config = MenuConfigPayload(version: version, actions: [ActionMenuItem(id: session, name: session, icon: "", tag: 1)])
+            let payload = action == "menu-config" ? try JSONEncoder().encode(config) : try JSONEncoder().encode(RunningPayload())
+            let wire = MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: action, id: UUID().uuidString,
+                session: session, timestamp: time, nonce: try SystemIPCRandom().bytes(count: 16), payload: payload), key: key).wireString()
+            center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: wire)
+        }
+        try post("A", "menu-config", time: 100, version: 10)
+        XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.version, 10)
+        clock.advance(0.2)
+        try post("B", "running", time: 100.2)
+        XCTAssertNil(delivery.menuConfig(as: MenuConfigPayload.self), "renderer must discard the former session even before new config arrives")
+        try post("B", "menu-config", time: 100.2)
+        for action in ["running", "menu-config", "quit"] {
+            try post("A", action, time: 100.3) // Even a later timestamp cannot revive a retired launch.
+            XCTAssertEqual(ext.currentSession, "B", "retired announcements must not restore A")
+            XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.actions.map(\.id), ["B"])
+            XCTAssertTrue(delivery.isHostAppRunning)
+        }
+        try post("unseen-old-launch", "running", time: 100.1)
+        XCTAssertEqual(ext.currentSession, "B", "unknown announcements must postdate current adoption")
+        try post("B", "menu-config", time: 100.2, version: 0)
+        XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.version, 1)
+        try post("B", "quit", time: 100.2)
+        XCTAssertFalse(delivery.isHostAppRunning)
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
