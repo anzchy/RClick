@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -331,11 +332,32 @@ class AxprobeCache(unittest.TestCase):
         self.assertEqual(len(self.compiles), 1)
         self.assertEqual(list(self.tmpdir.iterdir()), [])  # $TMPDIR is never used
 
-    def test_a_planted_symlink_is_refused(self):
+    def test_a_planted_symlink_to_an_admissible_file_is_refused(self):
+        # The link's target passes every other check (same user, regular, 0700), so only lstat refuses it
+        # (audit r2 gpt M3: a link to root-owned /bin/sh was refused by the owner check even through os.stat).
         binary = finderdrive.probe_binary()
+        admissible = self.home / 'admissible'
+        admissible.write_text('#!/bin/sh\n')
+        admissible.chmod(0o700)
         binary.unlink()
-        binary.symlink_to('/bin/sh')
+        binary.symlink_to(admissible)
         with self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
+            finderdrive.probe_binary()
+
+    def test_a_binary_owned_by_another_user_is_refused(self):
+        binary = finderdrive.probe_binary()
+        real_lstat = os.lstat
+
+        def foreign(path, *args, **kwargs):
+            info = real_lstat(path, *args, **kwargs)
+            if Path(path) != binary:
+                return info
+            fields = list(info)
+            fields[stat.ST_UID] = os.getuid() + 1
+            return os.stat_result(fields)
+
+        with mock.patch.object(finderdrive.os, 'lstat', foreign), \
+                self.assertRaisesRegex(finderdrive.ui.Environment, 'axprobe cache'):
             finderdrive.probe_binary()
 
     def test_a_cache_others_can_write_is_refused(self):
