@@ -7,6 +7,7 @@ types through the keyboard layer (Esc is a key code, not text). Acting commands 
 is held by an rclick run (gui-lock.sh).
 """
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -41,6 +42,15 @@ def run(argv, timeout=20):
         raise ui.Environment(f'{argv[0]} not found') from error
     except subprocess.TimeoutExpired as error:
         raise ui.Environment(f'{Path(str(argv[0])).name} timed out after {timeout} s') from error
+
+
+def spawn(argv):
+    """A long-lived process with pipes (axprobe menu-session). With `run`, the only process boundary of the driver."""
+    try:
+        return subprocess.Popen([str(a) for a in argv], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+    except FileNotFoundError as error:
+        raise ui.Environment(f'{argv[0]} not found') from error
 
 
 def probe_binary():
@@ -200,6 +210,87 @@ def guard(point, targets, background=None):
         raise
 
 
+class MenuSession:
+    """`axprobe menu-session X Y`: one axprobe process finds the menu under the point, prints its owner pid and its
+    dump, and waits for one decision. The press it is then told to make is checked by that same process against the
+    menu it holds (owner pid, every top-level title) right before AXPress, so a menu closed or replaced after the
+    guard is refused (65), never pressed."""
+
+    def __init__(self, point):
+        self.process = spawn([probe_binary(), 'menu-session', point[0], point[1], '3'])
+        lines = []
+        while True:
+            line = self.process.stdout.readline()
+            if not line:
+                _, err = self.finish(None)
+                raise (ui.Refused if self.process.returncode == 65 else ui.Environment)(
+                    err or f'axprobe menu-session ended before its dump (exit {self.process.returncode})')
+            text = line.decode('utf-8')
+            try:
+                if text.strip() and json.loads(text) == {'end': True}:
+                    break
+            except json.JSONDecodeError as error:
+                self.process.kill()
+                raise ui.Environment(f'axprobe menu-session printed a line that is not JSON: {error}') from error
+            lines.append(text)
+        header = json.loads(lines.pop(0)) if lines else {}
+        if not isinstance(header.get('session'), dict) or not isinstance(header['session'].get('pid'), int):
+            self.finish({'abort': True})
+            raise ui.Environment('axprobe menu-session printed no owner pid')
+        self.pid = header['session']['pid']
+        self.nodes = ui.parse_dump(''.join(lines))
+
+    def finish(self, request):
+        data = (json.dumps(request) + '\n').encode('utf-8') if request is not None else None
+        try:
+            out, err = self.process.communicate(input=data, timeout=30)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+            raise ui.Environment('axprobe menu-session did not answer in 30 s: nothing pressed')
+        return out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace').strip()
+
+    def abort(self):
+        self.finish({'abort': True})
+
+    def press(self, item, sub_path, sub_title):
+        request = {'press': list(sub_path or item.path), 'title': item.title, 'sub': sub_title if sub_path else None,
+                   'titles': [node.get('title') or '' for node in sorted(self.nodes, key=lambda n: n['path'])
+                              if len(node['path']) == 1],
+                   'pid': self.pid}
+        _, err = self.finish(request)
+        if self.process.returncode == 65:
+            raise ui.Refused(err or 'the menu changed since it was verified: nothing pressed')
+        if self.process.returncode != 0:
+            raise ui.Environment(err or f'axprobe menu-session exited {self.process.returncode}')
+
+
+def choose(point, title, sub=None, targets=(), background=None, also=()):
+    """The guard and the press at ONE boundary: the menu session's dump must belong to Finder, pass the guard
+    against a selection read now (inside the session), and hold `title` in RClick's group; the same axprobe
+    process then re-checks the held menu and presses. Any refusal aborts the session, closes the menu, presses
+    nothing. Returns (guard reason, item)."""
+    session = MenuSession(point)
+    try:
+        owner = finder_pid()
+        if session.pid != owner:
+            raise ui.Refused(f'the menu at {point[0]},{point[1]} belongs to pid {session.pid}, not Finder ({owner})')
+        items = ui.menu_items(session.nodes)
+        front = osascript(FRONT_SCRIPT).strip() if background else None
+        reason = ui.check_guard(targets, selection(), items, background=background, front=front)
+        item, sub_path = ui.find_group_item(items, title, sub, also)
+    except (ui.Refused, ui.Environment):
+        session.abort()
+        escape()
+        raise
+    try:
+        session.press(item, sub_path, sub)
+    except ui.Refused:
+        escape()
+        raise
+    return reason, item
+
+
 def print_menu(items, also=()):
     for item in items:
         x, y = item.point or ('?', '?')
@@ -267,16 +358,9 @@ def command(args):
         _, reason = guard(args.point, args.targets, args.background)
         print('GUARD PASS — ' + reason)
     elif args.command == 'choose':
-        items, reason = guard(args.point, args.target, args.background)
-        try:
-            item, sub = ui.find_group_item(items, args.title, args.sub, args.also)
-        except ui.Refused:
-            escape()
-            raise
+        reason, item = choose(args.point, args.title, args.sub, args.target, args.background, args.also)
         print('GUARD PASS — ' + reason)
-        probe('menu-press', args.point[0], args.point[1], dotted(sub or item.path), item.title,
-              *([args.sub] if sub else []))
-        print('chose: ' + item.title + (f' → {args.sub}' if sub else ''))
+        print('chose: ' + item.title + (f' → {args.sub}' if args.sub else ''))
     elif args.command == 'dialog':
         print(ui.format_dialogs(ui.dialog_windows(app_nodes(args.pid))))
     elif args.command == 'press-button':
