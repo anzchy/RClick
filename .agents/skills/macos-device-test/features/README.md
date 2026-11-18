@@ -23,10 +23,11 @@ the same change, and record the deviation.
 ## Driving conventions
 
 - Open the menu on a row with `ui.sh open-menu "<exact name>"`; read it with `ui.sh menu X,Y`; dismiss with
-  `ui.sh close-menu` (Esc only while Finder is frontmost; runbook §7).
+  `ui.sh close-menu X,Y` (AXCancel on Finder's menu, Esc to Finder as the fallback; runbook §7).
 - A menu's item list is taken while it is open; record its titles verbatim (they are localized). Save the
   `ui.sh menu` output under `$RUN_DIR/menus/`.
-- Choose an RClick item with `ui.sh choose X,Y "<title>" --group "<title>"... --target <path>` (it runs the pre-action guard first). Never
+- Choose an RClick item with `ui.sh choose "<title>" --group "<title>"... --target <path>`: it opens the menu itself
+  (no `open-menu` before it), verifies the target through AX and presses in one process. Never
   aim by AppleScript order, remembered coordinates or a screenshot.
 - Undo what a recipe changes (settings, hidden flags, granted folders) when the brief asks for a clean machine;
   never delete evidence.

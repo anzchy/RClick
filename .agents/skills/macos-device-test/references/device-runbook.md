@@ -163,17 +163,23 @@ an rclick run, axprobe build failed, no single Finder process).
   `<index>|<title>|<enabled>|<x>,<y>|<submenu count>`, then `compress: <Finder's Compress title>` and
   `rclick-group (heuristic, never used to choose): <titles>`; with `--group` it also prints where that exact group
   is, or refuses (65). For the heuristic only, a user-added Open With app or common folder needs `--also "<title>"`.
-- **Pre-action guard:** `$DT/ui.sh guard X,Y <target abs path>...` (or `--background <dir>` for a window-background
-  menu) passes only when Finder's `Compress “<name>”` title (`Compress N Items` for N targets) names the target and
-  the selection read back is exactly the target set; otherwise it closes the menu and exits 65. The system language
-  must be English for the Compress title.
-- **Choose an RClick item:** `$DT/ui.sh choose X,Y "<title>" [--sub "<submenu item>"] --group "<title>"...
-  --target <abs path>...` (or `--background <dir>`) runs the guard and the press inside one `axprobe` menu session:
-  the menu must be Finder's, the item inside RClick's `--group` (another extension's same-titled item is never
-  taken), and axprobe re-checks the menu it holds right before `AXPress`. Example: `ui.sh choose 660,237 "New File"
-  --sub TXT --group Terminal --group "New File" --background "$RUN_DIR/fixtures"`.
-- **Close a menu:** `$DT/ui.sh close-menu` sends Esc only while Finder is frontmost (65 otherwise, no key sent).
-  Do not use `finder-kc.sh 53` for it: it has no frontmost check.
+- **Choose an RClick item:** `$DT/ui.sh choose "<title>" [--sub "<submenu item>"] [--option] --group "<title>"...
+  --target <abs path>...` (or `--background <dir>`) is one process from selection to press, and it opens the menu
+  itself (no `open-menu` first). While a Finder menu is open every AppleScript call to Finder times out (device run,
+  2026-11-18), so all AppleScript happens BEFORE the right-click: it selects the targets (or deselects for
+  `--background`), then reads the window through AX: each target's row must carry the target's full path (`AXURL`),
+  the rows marked selected must be exactly the targets, and the row must not move between two reads (for
+  `--background`: no row selected, and the rows' folder must be `<dir>`; an empty folder has no rows and is refused,
+  65). It right-clicks the row, waits up to 4 s for the menu (refused with what the probe found instead), and the
+  guard plus the press run inside one `axprobe` menu session: the menu must be Finder's, Finder's `Compress
+  “<name>”` title (`Compress N Items` for N targets; no Compress item for `--background`) must name the target, the
+  item must be inside RClick's `--group` (another extension's same-titled item is never taken), and axprobe re-checks
+  the menu it holds right before `AXPress`. It prints `GUARD PASS — …` then `chose: …`. Any refusal closes the menu
+  and exits 65. The system language must be English for the Compress title. Example: `ui.sh choose "New File" --sub
+  TXT --group Terminal --group "New File" --background "$RUN_DIR/fixtures"`.
+- **Close a menu:** `$DT/ui.sh close-menu X,Y` (the `menu-point`) cancels the Finder menu at that point through
+  `AXCancel`; if it is still open, it sends Esc to Finder through System Events; a menu of another process is never
+  touched (65). No AppleScript to Finder is involved. Do not use `finder-kc.sh 53` for it.
 - **Read alerts and dialogs:** `$DT/ui.sh dialog <pid>` prints each window's `text:` and `button:` lines: the RClick
   PID (`rclick.pid`) for the Delete Direct confirmation, the folder panel and the auto-rename alert; the
   `FinderSyncExt` PID (`pgrep -x FinderSyncExt`) for "RClick is not running" / "RClick did not respond".
@@ -219,11 +225,11 @@ this order, then a summary:
 | `context-menu` | `open-menu %2541.txt` opened a menu that the element-at-position probe finds | `ui.sh open-menu` |
 | `menu-read` | that menu's Compress title is `Compress “%2541.txt”` | `ui.sh menu` |
 | `rclick-group` | RClick's group is present (else: the extension is not loaded, §6) | `ui.sh menu` (RClick's group) |
-| `guard` | `ui.sh guard` accepts `%2541.txt` and refuses (65) the sibling `%41.txt` | `ui.sh guard` |
-| `choose` | `ui.sh choose … Copy Path --group …` on `alpha.txt` puts that fixture path on the pasteboard | `ui.sh choose` |
+| `close-menu` | `ui.sh close-menu X,Y` closes the `context-menu` step's menu (none left at its point) | `ui.sh close-menu` |
+| `choose` | `ui.sh choose Copy Path --group … --target alpha.txt` puts that fixture path on the pasteboard | `ui.sh choose` |
+| `choose-multi` | `ui.sh choose Copy Path … --target %41.txt --target %2541.txt`: `Compress 2 Items`, both paths on the pasteboard | `ui.sh choose` (several targets) |
 | `option-menu` | `ui.sh open-menu %2541.txt --option`: the menu shows `Delete Direct (skip confirmation)` | `ui.sh open-menu --option` |
-| `background-menu` | `ui.sh open-menu --background` on the fixture window; `ui.sh guard --background` accepts it; `--background-group` found | `ui.sh open-menu --background`, `ui.sh guard --background` |
-| `close-menu` | `ui.sh close-menu` closes that menu (none left at its point) | `ui.sh close-menu` |
+| `background-menu` | `ui.sh open-menu --background` on the fixture window; `--background-group` found; closed with `close-menu` | `ui.sh open-menu --background` |
 | `background-choose` | `ui.sh choose … "New File" --sub TXT --background <fixture>` creates one new file in the fixture, or opens RClick's folder panel (saved, then Cancel) | `ui.sh choose --background --sub` |
 | `dialog-read` | the calibration alert's text is read through AX | `ui.sh dialog` |
 | `press-button` | pressing `OK` by title returns `OK` to its osascript | `ui.sh press-button` |

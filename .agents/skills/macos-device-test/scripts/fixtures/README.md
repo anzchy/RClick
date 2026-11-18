@@ -6,6 +6,7 @@ see `finderui.py`). They hold no personal path and no machine identifier: replac
 | File | Source | Exact or shaped |
 |---|---|---|
 | `finder-window-display-order.jsonl` | names and on-screen y of `ax-row-order.txt`, run i5-device-20261117d; the AX tree order is the AppleScript `items` order of the same run | names, display order and y are recorded; the element shape (outline, cells, text field) is reconstructed |
+| `finder-window-calibration.jsonl` | the calibration fixture window's AX dump (`calibration/finder-window.jsonl`), device run, 2026-11-18: list view, a header row, one `AXRow` per file whose name `AXTextField` carries the full path as `url`, `selected` on each row, the sidebar `AXOutline` | recorded; only the home folder and run directory are replaced (`/Users/tester/runs/run-1/fixtures/calibration-x1y2z3`) and the sidebar's user name by `tester`. The FakeDesktop of `test_finderdrive.py` rewrites the `selected` flags to model a selection |
 | `finder-window-duplicate-name.jsonl` | two expanded folders that each hold `inner.txt` | constructed |
 | `menu-file-alpha.jsonl` | `menu-alpha.txt`, run i22-device-20261116e (Finder, RClick and other extensions' items with centres) | titles, order, enabled flags and centres are recorded; frames are derived from the centres |
 | `menu-file-sibling-option.jsonl` | the same menu as seen in run i5-device-20261117b when the click landed on the sibling: `Compress “%41.txt”` while `%2541.txt` was the target, opened with Option | derived from the two records |

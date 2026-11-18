@@ -192,6 +192,59 @@ class Guard(unittest.TestCase):
             finderui.check_guard([], [], self.items('menu-file-alpha.jsonl'), background=self.DIR, front=self.DIR)
 
 
+class TargetRowsThroughAx(unittest.TestCase):
+    """The checks `choose` makes before its right-click, from the REAL Finder window dump of the device run of
+    2026-11-18 (fixtures/finder-window-calibration.jsonl, sanitised): each row's name field carries its full path as
+    AXURL and every row its AXSelected. No AppleScript: Finder answers none while its menu is open."""
+    FOLDER = '/Users/tester/runs/run-1/fixtures/calibration-x1y2z3'
+
+    def nodes(self, *selected):
+        nodes = dump('finder-window-calibration.jsonl')
+        urls = {self.FOLDER + '/' + name for name in selected}
+        for row in [n for n in nodes if n['role'] == 'AXRow' and n['path'][:4] == (0, 0, 2, 0)]:
+            row['selected'] = finderui.element_url(row, nodes) in urls
+        return nodes
+
+    def test_the_recorded_rows_carry_full_paths_and_a_selected_flag(self):
+        rows = finderui.list_rows(self.nodes('beta.txt'))
+        self.assertEqual([row.name for row in rows], ['%41.txt', '%2541.txt', 'alpha.txt', 'beta.txt', 'folder a',
+                                                      '中文 名称.txt'])
+        self.assertEqual(rows[1].url, self.FOLDER + '/%2541.txt')
+        self.assertEqual([row.selected for row in rows], [False, False, False, True, False, False])
+
+    def test_the_target_row_is_the_one_with_the_full_path_and_the_selection_is_exactly_the_targets(self):
+        row, selected = finderui.target_row(self.nodes('%2541.txt'), [self.FOLDER + '/%2541.txt'])
+        self.assertEqual((row.name, row.point), ('%2541.txt', (323, 395)))  # the device's click point
+        self.assertEqual(selected, [self.FOLDER + '/%2541.txt'])
+        targets = [self.FOLDER + '/beta.txt', self.FOLDER + '/%41.txt']
+        row, _ = finderui.target_row(self.nodes('beta.txt', '%41.txt'), targets)
+        self.assertEqual(row.name, '%41.txt')  # the first target in display order
+
+    def test_equal_basenames_elsewhere_or_another_selection_are_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, 'not the target'):
+            finderui.target_row(self.nodes('alpha.txt'), ['/tmp/other/alpha.txt'])
+        for selected in ((), ('%41.txt',), ('%2541.txt', '%41.txt')):
+            with self.subTest(selected=selected), self.assertRaisesRegex(finderui.Refused, r'selection \(AX\)'):
+                finderui.target_row(self.nodes(*selected), [self.FOLDER + '/%2541.txt'])
+        with self.assertRaisesRegex(finderui.Refused, 'no row named'):
+            finderui.target_row(self.nodes('alpha.txt'), [self.FOLDER + '/alpha.txt', self.FOLDER + '/gone.txt'])
+
+    def test_a_row_without_axurl_cannot_be_verified(self):
+        nodes = self.nodes('alpha.txt')
+        for node in nodes:
+            node['url'] = None
+        with self.assertRaisesRegex(finderui.Refused, 'no AXURL'):
+            finderui.target_row(nodes, [self.FOLDER + '/alpha.txt'])
+
+    def test_the_front_folder_comes_from_the_rows_and_needs_an_empty_selection(self):
+        self.assertEqual(finderui.front_folder(self.nodes()), self.FOLDER)
+        with self.assertRaisesRegex(finderui.Refused, 'selected'):
+            finderui.front_folder(self.nodes('alpha.txt'))
+        empty = [n for n in self.nodes() if not (n['path'][:5] == (0, 0, 2, 0, 0) and len(n['path']) > 5)]
+        with self.assertRaisesRegex(finderui.Refused, 'no rows'):
+            finderui.front_folder(empty)
+
+
 class Choose(unittest.TestCase):
     GROUP = Menu.RCLICK
 
@@ -432,22 +485,26 @@ class Arguments(unittest.TestCase):
     def test_commands_parse_into_their_options(self):
         args = finderui.parse_args(['open-menu', '%2541.txt', '--option'])
         self.assertEqual((args.command, args.name, args.option), ('open-menu', '%2541.txt', True))
-        args = finderui.parse_args(['choose', '620,225', 'New File', '--sub', 'TXT', '--target', '/tmp/a b.txt',
-                                    '--group', 'Copy Path', '--group', 'New File'])
-        self.assertEqual((args.point, args.title, args.sub, args.target), ((620, 225), 'New File', 'TXT', ['/tmp/a b.txt']))
+        args = finderui.parse_args(['choose', 'New File', '--sub', 'TXT', '--target', '/tmp/a b.txt',
+                                    '--group', 'Copy Path', '--group', 'New File', '--option'])
+        self.assertEqual((args.title, args.sub, args.target, args.option), ('New File', 'TXT', ['/tmp/a b.txt'], True))
         self.assertEqual(args.group, ['Copy Path', 'New File'])
-        args = finderui.parse_args(['guard', '620,225', '--background', '/tmp/rclick-cal'])
-        self.assertEqual((args.targets, args.background), ([], '/tmp/rclick-cal'))
+        args = finderui.parse_args(['choose', 'New File', '--background', '/tmp/rclick-cal', '--group', 'Copy Path',
+                                    '--group', 'New File'])
+        self.assertEqual((args.target, args.background, args.option), ([], '/tmp/rclick-cal', False))
+        self.assertEqual(finderui.parse_args(['close-menu', '620,225']).point, (620, 225))
         args = finderui.parse_args(['press-button', '4242', 'Delete', '--window-text', 'Permanently delete'])
         self.assertEqual((args.pid, args.title, args.window_text), (4242, 'Delete', 'Permanently delete'))
 
     def test_bad_arguments_are_usage_errors(self):
         for argv in ([], ['bogus'], ['menu', 'a,b'], ['menu', '620'], ['select', 'alpha.txt'],
-                     ['guard', '620,225'], ['guard', '620,225', '/tmp/a', '--background', '/tmp'],
-                     ['choose', '620,225', 'Copy Path'], ['choose', '620,225', 'Copy Path', '--target', '/tmp/a'],
+                     ['guard', '620,225', '/tmp/a'], ['close-menu'], ['close-menu', '620'],
+                     ['choose', 'Copy Path'], ['choose', 'Copy Path', '--target', '/tmp/a'],
+                     ['choose', '620,225', 'Copy Path', '--target', '/tmp/a', '--group', 'A', '--group', 'B'],
+                     ['choose', 'Copy Path', '--target', '/tmp/a', '--background', '/tmp', '--group', 'A', '--group', 'B'],
                      ['dialog', 'Finder'], ['grant', '4242', 'fixtures'],
                      ['open-menu'], ['calibrate', 'relative/run'],
-                     ['choose', '620,225', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path'],
+                     ['choose', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path'],
                      ['menu', '620,225', '--group', 'Copy Path'],
                      ['calibrate', '/tmp/run', '--group', 'Copy Path', '--group', 'New File', '--background-group', 'T'],
                      ['calibrate', '/tmp/run', '--group', 'Copy Path', '--background-group', 'T', '--background-group',
@@ -467,16 +524,17 @@ class Calibration(unittest.TestCase):
     def test_every_helper_has_a_calibration_step(self):
         steps = [step for step, _ in finderui.CALIBRATION_STEPS]
         for step in ('accessibility', 'gui-lock', 'row-order', 'select-readback', 'context-menu', 'menu-read',
-                     'rclick-group', 'guard', 'choose', 'dialog-read', 'press-button', 'panel-grant-row',
+                     'rclick-group', 'choose', 'choose-multi', 'dialog-read', 'press-button', 'panel-grant-row',
                      'panel-grant-current', 'option-menu', 'background-menu', 'background-choose', 'close-menu'):
             self.assertIn(step, steps)
 
     def test_the_calibration_steps_prove_the_cli_paths_the_device_run_uses(self):
         commands = dict(finderui.CALIBRATION_STEPS)
         self.assertEqual(commands['option-menu'], 'ui.sh open-menu --option')
-        self.assertEqual(commands['background-menu'], 'ui.sh open-menu --background, ui.sh guard --background')
+        self.assertEqual(commands['background-menu'], 'ui.sh open-menu --background')
         self.assertEqual(commands['background-choose'], 'ui.sh choose --background --sub')
-        self.assertEqual(commands['guard'], 'ui.sh guard')
+        self.assertEqual(commands['choose-multi'], 'ui.sh choose (several targets)')
+        self.assertNotIn('guard', ' '.join(commands.values()))
         self.assertEqual(commands['close-menu'], 'ui.sh close-menu')
 
     def test_the_sandboxed_rclick_panel_is_named_as_not_covered(self):

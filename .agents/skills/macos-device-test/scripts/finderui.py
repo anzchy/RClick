@@ -89,8 +89,9 @@ def centre(frame):
 
 
 class Row:
-    def __init__(self, index, name, path, frame, point, visible):
+    def __init__(self, index, name, path, frame, point, visible, url=None, selected=False):
         self.index, self.name, self.path, self.frame, self.point, self.visible = index, name, path, frame, point, visible
+        self.url, self.selected = url, selected  # the row's AXURL (its name field's) and its AXSelected
 
     def __repr__(self):
         return f'Row({self.index}, {self.name!r}, point={self.point}, visible={self.visible})'
@@ -119,10 +120,10 @@ def list_rows(nodes):
         area = next((p for p in ancestors(node, by_path) if p['role'] == 'AXScrollArea' and p.get('frame')), None)
         visible = area is None or contains(area['frame'], point)
         found.append((node['frame'][1], node['frame'][0], nfc(label(name_node)), node['path'], node['frame'], point,
-                      visible))
+                      visible, element_url(node, nodes), node.get('selected') is True))
     found.sort(key=lambda item: (item[0], item[1]))
-    return [Row(i, name, path, frame, point, visible)
-            for i, (_, _, name, path, frame, point, visible) in enumerate(found, 1)]
+    return [Row(i, name, path, frame, point, visible, url, selected)
+            for i, (_, _, name, path, frame, point, visible, url, selected) in enumerate(found, 1)]
 
 
 def background_point(nodes):
@@ -307,12 +308,58 @@ def basename(path):
     return clean_path(path).rsplit('/', 1)[-1]
 
 
+def target_row(nodes, targets):
+    """Before the right-click, from one AX dump of the front Finder window, with no AppleScript (Finder does not
+    answer AppleScript while its context menu is open: device run, 2026-11-18). Every target is the one visible row
+    of its name (find_row) and that row's AXURL is the target's full path; the rows marked AXSelected are exactly the
+    targets (a title such as `Compress 2 Items` proves only the count). Returns (the row to right-click: the first
+    target in display order, the selected rows' full paths)."""
+    wanted = sorted(clean_path(path) for path in targets)
+    if not wanted:
+        raise Refused('no target given')
+    rows = list_rows(nodes)
+    found = []
+    for path in wanted:
+        row = find_row(rows, basename(path))
+        if not row.url:
+            raise Refused(f'row {row.name!r} exposes no AXURL: its full path cannot be verified')
+        if clean_path(row.url) != path:
+            raise Refused(f'row {row.name!r} is {clean_path(row.url)!r}, not the target {path!r}')
+        found.append(row)
+    if any(row.selected and not row.url for row in rows):
+        raise Refused('a selected row exposes no AXURL: the selection cannot be verified')
+    selected = sorted(clean_path(row.url) for row in rows if row.selected)
+    if selected != wanted:
+        raise Refused(f'Finder selection (AX) {selected} is not the target {wanted}')
+    return min(found, key=lambda row: row.index), selected
+
+
+def front_folder(nodes):
+    """The folder the front Finder window lists, from AX only: the folder of its first row's AXURL in display order,
+    which every other row must lie under; no row may be selected (a background menu needs an empty selection). An
+    empty folder has no row: Refused, never guessed (put a file in it)."""
+    rows = list_rows(nodes)
+    if not rows:
+        raise Refused('the front Finder window lists no rows: its folder cannot be read through AX (an empty folder?);'
+                      ' nothing clicked')
+    if any(not row.url for row in rows):
+        raise Refused('a row of the front Finder window exposes no AXURL: its folder cannot be verified')
+    urls = [clean_path(row.url) for row in rows]
+    location = urls[0].rsplit('/', 1)[0] or '/'
+    if any(not url.startswith(location.rstrip('/') + '/') for url in urls):
+        raise Refused(f'the front Finder window lists rows outside {location!r}; collapse expanded folders')
+    selected = [row.name for row in rows if row.selected]
+    if selected:
+        raise Refused(f'background menu expected, but {selected} is selected')
+    return location
+
+
 def check_guard(targets, selection, items, background=None, front=None):
     """The pre-action guard. Before any RClick item is chosen, the open menu must be the menu of the intended
-    target: Finder's own `Compress “<name>”` (`Compress N Items`) title names it, and Finder's selection read back
-    through AppleScript is exactly the target set. For a window-background menu: nothing selected, no Compress
-    item, and the front Finder window shows `background`. Returns what matched; raises Refused otherwise (the
-    caller closes the menu and acts on nothing)."""
+    target: Finder's own `Compress “<name>”` (`Compress N Items`) title names it, and `selection` (the selected rows'
+    full paths, read through AX before the menu opened: target_row) is exactly the target set. For a window-background
+    menu: nothing selected, no Compress item, and `front` (front_folder, read before the menu opened) is `background`.
+    Returns what matched; raises Refused otherwise (the caller closes the menu and acts on nothing)."""
     selected = sorted(clean_path(path) for path in selection)
     titles = compress_titles(items)
     if background is not None:
@@ -518,20 +565,24 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   rows                                   rows of the front Finder window in display order: index, name, centre x y
   select PATH...                         select these items through AppleScript, read the selection back, compare
   selection                              print Finder's selection (POSIX paths, read back through AppleScript)
-  open-menu NAME [--option]              AXSelected on the one row named NAME, right-click its AX centre; prints
-                                         `menu-point X,Y` (pass it to menu/guard/choose)
+  open-menu NAME [--option]              AXSelected on the one row named NAME, right-click its AX centre, wait for the
+                                         menu; prints `menu-point X,Y` (pass it to menu and close-menu). It leaves the
+                                         menu open: Finder answers no AppleScript until close-menu closes it
   open-menu --background [--option]      deselect all, read the empty selection back, right-click the empty list
                                          below the rows of the front window; prints `menu-point X,Y`
-  close-menu                             Esc (key code 53) only while Finder is frontmost, else refused (65)
+  close-menu X,Y                         close Finder's menu at X,Y: AXCancel, then Esc to Finder only while AX still
+                                         shows that Finder menu (no menu there: nothing sent; another app's: 65)
   menu X,Y [--also TITLE]... [--group TITLE --group TITLE...]
                                          list the open menu (element at position): Compress title, RClick group
                                          (heuristic; with --group: where the expected group is, or refused)
-  guard X,Y (TARGET... | --background DIR)
-                                         refuse (close the menu, exit 65) unless the menu and the selection are the target's
-  choose X,Y TITLE [--sub ITEM] --group TITLE... (--target PATH... | --background DIR)
-                                         guard, then AXPress TITLE (and ITEM in its submenu) inside RClick's group,
-                                         the one run of exactly the --group titles (RClick's configured items in order,
-                                         at least two: pass the full configured run)
+  choose TITLE [--sub ITEM] [--option] --group TITLE... (--target PATH... | --background DIR)
+                                         one process: select the targets (AppleScript, read back) or deselect all;
+                                         verify through AX each target row's full path (AXURL) and the selected rows
+                                         (or the front folder); right-click; in the open menu require Finder as owner
+                                         and the target's Compress title (none for a background menu); AXPress TITLE
+                                         (and ITEM in its submenu) inside RClick's group, the one run of exactly the
+                                         --group titles (RClick's configured items in order, at least two: pass the
+                                         full configured run). Any refusal closes the menu and presses nothing (65)
   dialog PID                             texts and buttons of every window of PID (alerts, confirmations, panels)
   press-button PID TITLE [--window-text TEXT]
                                          AXPress the one button titled TITLE (in the window containing TEXT)
@@ -578,19 +629,15 @@ def parse_args(argv):
     command.add_argument('name', nargs='?')
     command.add_argument('--background', action='store_true')
     command.add_argument('--option', action='store_true')
-    commands.add_parser('close-menu')
+    commands.add_parser('close-menu').add_argument('point', type=point_arg)
     command = commands.add_parser('menu')
     command.add_argument('point', type=point_arg)
     command.add_argument('--also', action='append', default=[])
     command.add_argument('--group', action='append', default=[])
-    command = commands.add_parser('guard')
-    command.add_argument('point', type=point_arg)
-    command.add_argument('targets', nargs='*', type=absolute)
-    command.add_argument('--background', type=absolute)
     command = commands.add_parser('choose')
-    command.add_argument('point', type=point_arg)
     command.add_argument('title')
     command.add_argument('--sub')
+    command.add_argument('--option', action='store_true')
     command.add_argument('--group', action='append', default=[])
     command.add_argument('--target', action='append', default=[], type=absolute)
     command.add_argument('--background', type=absolute)
@@ -614,8 +661,6 @@ def parse_args(argv):
         raise Usage('a command is required')
     if args.command == 'open-menu' and (args.name is None) == (not args.background):
         raise Usage('open-menu needs NAME or --background, not both')
-    if args.command == 'guard' and bool(args.targets) == bool(args.background):
-        raise Usage('guard needs TARGET paths or --background DIR, not both')
     if args.command == 'choose' and bool(args.target) == bool(args.background):
         raise Usage('choose needs --target PATH (repeatable) or --background DIR, not both')
     if args.command == 'calibrate' and not args.dry_run and not (args.group and args.background_group):
@@ -684,11 +729,11 @@ CALIBRATION_STEPS = (
     ('context-menu', 'ui.sh open-menu'),
     ('menu-read', 'ui.sh menu'),
     ('rclick-group', "ui.sh menu (RClick's group)"),
-    ('guard', 'ui.sh guard'),
-    ('choose', 'ui.sh choose'),
-    ('option-menu', 'ui.sh open-menu --option'),
-    ('background-menu', 'ui.sh open-menu --background, ui.sh guard --background'),
     ('close-menu', 'ui.sh close-menu'),
+    ('choose', 'ui.sh choose'),
+    ('choose-multi', 'ui.sh choose (several targets)'),
+    ('option-menu', 'ui.sh open-menu --option'),
+    ('background-menu', 'ui.sh open-menu --background'),
     ('background-choose', 'ui.sh choose --background --sub'),
     ('dialog-read', 'ui.sh dialog'),
     ('press-button', 'ui.sh press-button'),
