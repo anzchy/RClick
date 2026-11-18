@@ -84,4 +84,28 @@ struct CutActionServiceTests {
         board.setString("new copy", forType: .string)
         #expect(service.pendingCut == nil)
     }
+    @Test func protectedSourceRefusesTheWholeCutAndWarnsWithoutTouchingClipboard() async throws {
+        let (root, files) = try makeFiles()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("keep", forType: .string)
+        let before = board.changeCount
+        let permission = MockPermission()
+        let lease = TrackingLease()
+        var warnings: [String] = []
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
+                                    pasteboard: board, accessLeaser: lease, cutWarning: { warnings.append($0) })
+        await service.actionHandler(rid: "cut", target: [files[0].path, "/System"], trigger: "ctx-items")
+        #expect(service.pendingCut == nil)
+        #expect(board.changeCount == before)
+        #expect(board.string(forType: .string) == "keep")
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.contains("/System") == true)
+        #expect(permission.prompts.isEmpty)
+        #expect(lease.parents.isEmpty)
+        #expect(try Data(contentsOf: files[0]) == Data("unchanged".utf8))
+    }
+
 }
