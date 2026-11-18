@@ -90,6 +90,36 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertNoThrow(try receiver.receive(wire(101, 4), key: key))
     }
 
+    func testMainBindsClicksToLaunchSessionAndAllowsOnlyBootstrapWithoutSession() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let receiver = IPCReceiver(direction: .toMain, session: "current")
+        func wire(_ session: String, _ action: String) -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: action, id: UUID().uuidString, session: session,
+                                              timestamp: Date().timeIntervalSince1970, nonce: Data(UUID().uuidString.utf8.prefix(16))), key: key).wireString()
+        }
+        XCTAssertThrowsError(try receiver.receive(wire("previous", "click"), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire("", "click"), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire("current", "click"), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire("", "heartbeat"), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire("", "request-config"), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire("previous", "heartbeat"), key: key))
+    }
+
+    func testExtensionLearnsAndEchoesAuthenticatedSession() {
+        let center = NotificationCenter()
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key)
+        let accepted = Mutex(0)
+        app.onExtensionMessage(.click) { _ in accepted.withLock { $0 += 1 } }
+        let click = ClickEventPayload(itemId: "test", itemType: .action, trigger: .contextualItems)
+        ext.sendClickEvent(click)
+        XCTAssertEqual(accepted.withLock { $0 }, 0)
+        app.sendRunningNotification()
+        ext.sendClickEvent(click)
+        XCTAssertEqual(accepted.withLock { $0 }, 1)
+    }
+
 }
 
 
