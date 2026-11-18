@@ -391,6 +391,23 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(acks.withLock { $0 }, ["captured-click", "legitimate-after-resync"])
     }
 
+    func testRendererDecodesEachVerifiedSnapshotOnce() {
+        let center = NotificationCenter()
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key)
+        let delivery = IPCExtensionDelivery(messager: ext)
+        var cache: (id: String, value: IPCDecodeProbe)?
+        IPCDecodeProbe.count.withLock { $0 = 0 }
+        app.sendMenuConfig(MenuConfigPayload())
+        XCTAssertEqual(delivery.menuConfig(as: IPCDecodeProbe.self, cached: &cache)?.version, 1)
+        XCTAssertEqual(delivery.menuConfig(as: IPCDecodeProbe.self, cached: &cache)?.version, 1)
+        XCTAssertEqual(IPCDecodeProbe.count.withLock { $0 }, 1, "menu-item rendering must reuse the decoded snapshot")
+        app.sendMenuConfig(MenuConfigPayload())
+        XCTAssertEqual(delivery.menuConfig(as: IPCDecodeProbe.self, cached: &cache)?.version, 2)
+        XCTAssertEqual(IPCDecodeProbe.count.withLock { $0 }, 2)
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
@@ -743,5 +760,15 @@ nonisolated final class IPCStepAfterSampleClock: IPCClock {
     }
     func prepareRollbackAfterNextSample() {
         state.withLock { $0.wall += 16; $0.monotonic += 16; $0.rollbackAfterSample = true }
+    }
+}
+
+nonisolated struct IPCDecodeProbe: Decodable {
+    static let count = Mutex(0)
+    let version: Int
+    enum CodingKeys: String, CodingKey { case version }
+    init(from decoder: Decoder) throws {
+        version = try decoder.container(keyedBy: CodingKeys.self).decode(Int.self, forKey: .version)
+        Self.count.withLock { $0 += 1 }
     }
 }

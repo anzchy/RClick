@@ -481,6 +481,10 @@ nonisolated final class IPCExtensionDelivery: Sendable {
         callback?()
     }
     func menuConfig<T: Decodable>(as type: T.Type) -> T? {
+        var cached: (id: String, value: T)?
+        return menuConfig(as: type, cached: &cached)
+    }
+    func menuConfig<T: Decodable>(as type: T.Type, cached: inout (id: String, value: T)?) -> T? {
         let message: VerifiedMessage? = state.withLock { state in
             guard messager.canUseCachedMenus, state.config?.session == messager.currentSession else {
                 state.config = nil
@@ -488,7 +492,11 @@ nonisolated final class IPCExtensionDelivery: Sendable {
             }
             return state.config
         }
-        return message?.decode(type)
+        guard let message else { cached = nil; return nil }
+        if let cached, cached.id == message.id { return cached.value }
+        guard let decoded = message.decode(type) else { cached = nil; return nil }
+        cached = (message.id, decoded)
+        return decoded
     }
     var isHostAppRunning: Bool { messager.canUseCachedMenus && state.withLock { $0.activity.isActive() } }
     func registerClick(_ id: String) { state.withLock { $0.pending.register(id) } }
