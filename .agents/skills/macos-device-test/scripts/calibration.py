@@ -33,6 +33,24 @@ FILES = ('%41.txt', '%2541.txt', 'alpha.txt', 'beta.txt', '中文 名称.txt', '
 ALERT = 'RClick calibration alert'
 
 
+# The fixture window is addressed by the id Finder gave it, read in the same call as its folder: on the device run,
+# 2026-11-18, `close (every Finder window whose target is <alias>)` matched nothing (-1708) and left it open.
+FRONT_WINDOW_SCRIPT = ('tell application "Finder" to tell front Finder window to return (id as text) & linefeed & '
+                       'POSIX path of (target as alias)')
+LIST_VIEW_SCRIPT = ('on run argv\ntell application "Finder" to set current view of Finder window id '
+                    '((item 1 of argv) as integer) to list view\nend run')
+CLOSE_WINDOW_SCRIPT = ('on run argv\ntell application "Finder" to close Finder window id ((item 1 of argv) as integer)'
+                       '\nend run')
+
+
+def front_window(reply):
+    """FRONT_WINDOW_SCRIPT's reply → (window id, folder path); a reply of another shape is refused."""
+    lines = reply.rstrip('\n').split('\n')
+    if len(lines) != 2 or not lines[0].isdigit():
+        raise ui.Refused(f'unexpected front Finder window reply {reply!r}')
+    return int(lines[0]), ui.clean_path(lines[1])
+
+
 class Fixture:
     """The calibration's throwaway folder: allocated exclusively (mkdtemp, 0700) under $RUN_DIR/fixtures/, which
     must be a real directory of this user; files are created O_EXCL|O_NOFOLLOW (an existing name is Refused, never
@@ -119,6 +137,7 @@ class Run:
         self.run = device.run_dir(str(run_dir))
         self.fixture = None
         self.folder = None
+        self.window_id = None  # the fixture Finder window's id, read when it came to the front; teardown closes it
         self.point = None
         self.menu_points = []  # every menu point a step opened: closed after a failure and before teardown
         self.evidence = self.run / 'calibration'
@@ -190,13 +209,15 @@ class Run:
         for _ in range(20):
             time.sleep(0.25)
             try:
-                if ui.clean_path(ui.one_line(drive.osascript(drive.FRONT_SCRIPT))) == str(self.folder):
-                    break
+                window_id, front = front_window(drive.osascript(FRONT_WINDOW_SCRIPT))
             except (ui.Environment, ui.Refused):
                 continue
+            if front == str(self.folder):
+                self.window_id = window_id
+                break
         else:
             raise ui.Environment('the fixture window did not come to the front')
-        drive.osascript('tell application "Finder" to set current view of front Finder window to list view')
+        drive.osascript(LIST_VIEW_SCRIPT, str(self.window_id))
         time.sleep(0.5)
 
     def close_menus(self, when):
@@ -212,9 +233,11 @@ class Run:
             return
         try:
             self.close_menus('before removing the fixture')
-            self.attempt('could not close the fixture Finder window; close it by hand', lambda: drive.osascript(
-                'on run argv\ntell application "Finder" to close (every Finder window whose target is '
-                '((POSIX file (item 1 of argv)) as alias))\nend run', str(self.folder)))
+            if self.window_id is None:
+                self.note('no fixture Finder window id was recorded: no window closed; close it by hand if one is open')
+            else:
+                self.attempt(f'could not close the fixture Finder window (id {self.window_id}); close it by hand',
+                             lambda: drive.osascript(CLOSE_WINDOW_SCRIPT, str(self.window_id)))
         finally:
             for note in self.attempt(f'could not remove the fixture {self.folder}', self.fixture.remove) or []:
                 self.note(note)

@@ -38,7 +38,6 @@ repeat with a in chosen
   set out to out & POSIX path of a & linefeed
 end repeat
 return out'''
-FRONT_SCRIPT = 'tell application "Finder" to return POSIX path of (target of front Finder window as alias)'
 
 
 def run(argv, timeout=20):
