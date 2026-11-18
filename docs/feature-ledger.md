@@ -52,8 +52,7 @@ A result that only a private record states is marked **UNVERIFIED by this ledger
 | [PR #27](https://github.com/anzchy/RClick/pull/27) › Device | `cfec391` (PR #27 head) | `d63c29c`, same tree | `i13-device-20261117c` | the same flows again, multi-selection delete, partial failure, batch responsiveness, offline menu; its NOT VERIFIED list |
 | [PR #29](https://github.com/anzchy/RClick/pull/29) › Device | `971b658` (PR #29 head, **not merged**) | not on main | `i5-device-20261117b` | PENDING as written there. No public result, so every claim from this run is UNVERIFIED by this ledger (private record) |
 
-Earlier attempts of these runs stopped before any behavioural row; they exist only as private records and this ledger
-cites none of them. PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
+PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
 menu was read through an Accessibility helper. No public evidence covers the Settings window, the menu bar item,
 updates, backup, launch at login or localization.
 
@@ -70,8 +69,8 @@ delete its line in the same change.
    `ClipboardTests.copyPathsDecodesPercentEncoding` pins the decoding as intended behaviour, so fixing #28 changes
    that test.
 3. `delete-direct`, `hide`, `unhide`, `airdrop`, `common-dirs`, `new-file`: `RClick/Runtime/ActionService.swift`
-   lines 134, 190, 244, 290, 323, 371 and 543 decode percent sequences in the paths they act on. A device run on the
-   unmerged PR #29 head exercised percent-named siblings, but PR #29 › Device still reads PENDING, so its result is
+   lines 134, 190, 244, 290, 323, 371 and 543 decode percent sequences in the paths they act on. PR #29 › Device lists
+   Delete Direct and Hide on a literal percent sibling pair at the unmerged PR #29 head as PENDING, so that result is
    **UNVERIFIED by this ledger (private record)** (run `i5-device-20261117b`). Main's behaviour on such names is
    **UNVERIFIED** on a device. Issue #5, PR #29 (open).
 4. `delete-direct`, `hide`, `airdrop`: the protected-folder check never matches. `Utils.isProtectedFolder`
@@ -127,7 +126,7 @@ delete its line in the same change.
 - **Issues, PRs:** #25, #28; PR #27 (injected pasteboard).
 - **Device:** PASS single and multi-selection (PR #23 › Device at `ed3ef56`, PR #27 › Device at `cfec391`; runs
   `i22-device-20261116e`, `i13-device-20261117c`, private records). Offline Copy Path (`CONN-02`): NOT VERIFIED
-  (PR #23 › Device lists it). Literal-percent name: UNVERIFIED by this ledger (private record, `i5-device-20261117b`).
+  (PR #23 › Device lists it).
 
 ### `copy-file-name`
 - **What:** puts every selected item's name, without its path, one per line, and no file URLs
@@ -160,9 +159,9 @@ delete its line in the same change.
 - **Device:** PASS confirmation, cancel, confirm and the Option variant, on a file and on a folder (PR #23 › Device);
   multi-selection of two files and a folder under one alert, a partial failure (the others removed, the unremovable
   item kept, the failure only logged), batches of 300 and 30000 files with Finder and RClick responsive (PR #27 ›
-  Device) (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). Percent-named siblings at the
-  unmerged PR #29 head: UNVERIFIED by this ledger (private record, `i5-device-20261117b`; PR #29 › Device reads
-  PENDING). NOT VERIFIED: protected folders (no real-desktop action for #5, owner decision recorded on issue #5), the
+  Device) (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). A literal percent sibling pair
+  at the unmerged PR #29 head: PENDING in PR #29 › Device, so UNVERIFIED by this ledger (private record,
+  `i5-device-20261117b`). NOT VERIFIED: protected folders (no real-desktop action for #5, owner decision recorded on issue #5), the
   access-lease revoke race (PR #27 › Device lists it).
 - **Gaps:** a partial failure is only logged; the user sees no message (PR #27 › Device).
 
@@ -239,9 +238,8 @@ delete its line in the same change.
 - **Issues:** #24 (missing templates), #25 (localization of the type names).
 - **Device:** PASS TXT, one file, one click event, no no-ack alert (PR #23 › Device, PR #27 › Device) and XLSX, whose
   bytes equal the bundled template (PR #23 › Device, issue #24); DOCX created a 0-byte file (issue #24, finding 1)
-  (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). Percent-named and CJK folders at the
-  PR #29 head: UNVERIFIED by this ledger (private record, `i5-device-20261117b`). PPTX, JSON, Pages, Keynote,
-  Numbers: never run.
+  (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). PPTX, JSON, Pages, Keynote, Numbers:
+  never run.
 
 ### `new-file-auto-rename`
 - **What:** after creating the file, selects it in Finder and starts rename mode by sending Return once Finder is
@@ -251,7 +249,7 @@ delete its line in the same change.
 - **Default:** always attempted; works only with Accessibility granted.
 - **Tests:** none (spine `tests: []`).
 - **Device:** NOT VERIFIED: auto-rename needs Accessibility for RClick itself (PR #23 › Device and PR #27 › Device
-  list it). The one-time explanation: UNVERIFIED by this ledger (private record, `i22-device-20261116e`).
+  list it).
 
 ## Finder menu: Common Dirs
 
@@ -378,8 +376,8 @@ delete its line in the same change.
   authorization cases in `ActionServiceTests`; metrics `folder-permissions` › Test cases.
 - **Device:** PASS the folder-permission panel on the first action under `~/Downloads`, with no protected-folder
   alert (PR #23 › Device, PR #27 › Device, both via New File; runs `i22-device-20261116e`, `i13-device-20261117c`,
-  private records). Via Delete Direct at the PR #29 head: UNVERIFIED by this ledger (private record,
-  `i5-device-20261117b`). NOT VERIFIED: Delete Direct as the first action (PR #23 › Device lists it), reuse after
+  private records). The protected-folder alert for a protected path at the unmerged PR #29 head: PENDING in PR #29 ›
+  Device, so UNVERIFIED by this ledger (private record, `i5-device-20261117b`). NOT VERIFIED: Delete Direct as the first action (PR #23 › Device lists it), reuse after
   relaunch (`PERM-02`), cancelling the panel, the Settings sheet.
 
 ### `permission-status`
