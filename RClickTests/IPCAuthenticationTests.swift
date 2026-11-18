@@ -258,6 +258,39 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(acknowledgements.withLock { $0 }, 0)
     }
 
+    func testQueuedClickFromInvalidatedSessionNeverReachesAppHandler() async throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let events = Mutex<[ClickEventPayload]>([])
+        let acks = Mutex(0)
+        ext.onMainMessage(.actionAck) { _ in acks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        let blocked = expectation(description: "invalidated queued click must not reach handleClickEvent")
+        blocked.isInverted = true
+        app.onClickEvent { event in events.withLock { $0.append(event) }; blocked.fulfill() }
+        let event = ClickEventPayload(itemId: "delete-direct", itemType: .action, target: ["/tmp/exact-disposable-selection"], trigger: .contextualItems, optionKeyPressed: true)
+        let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "queued-old-click", session: app.currentSession,
+            timestamp: 100, nonce: Data(repeating: 1, count: 16), payload: try JSONEncoder().encode(event)), key: key).wireString()
+        center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+        clock.step(wall: 0, monotonic: 16)
+        center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+        await fulfillment(of: [blocked], timeout: 0.05)
+        XCTAssertEqual(events.withLock { $0.count }, 0)
+        XCTAssertEqual(acks.withLock { $0 }, 0)
+        let accepted = expectation(description: "legitimate resynced click reaches app handler")
+        app.onClickEvent { event in events.withLock { $0.append(event) }; accepted.fulfill() }
+        app.sendRunningNotification()
+        ext.sendClickEvent(event)
+        await fulfillment(of: [accepted], timeout: 1)
+        XCTAssertEqual(events.withLock { $0.count }, 1)
+        XCTAssertEqual(events.withLock { $0.last?.target }, event.target)
+        XCTAssertEqual(events.withLock { $0.last?.optionKeyPressed }, true)
+        XCTAssertEqual(acks.withLock { $0 }, 1)
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
