@@ -457,8 +457,13 @@ class Messager: @unchecked Sendable {
         do {
             let signedPayload = try JSONDecoder().decode(SignedPayload<T>.self, from: signedData)
 
-            if MessageSecurity.verify(signedPayload) {
-                return signedPayload.payload
+            if MessageSecurity.verify(signedPayload),
+               let authenticated = Data(base64Encoded: signedPayload.jsonData),
+               let payload = try? JSONDecoder().decode(T.self, from: authenticated) {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = .sortedKeys
+                guard try encoder.encode(payload) == encoder.encode(signedPayload.payload) else { return nil }
+                return payload
             } else {
                 logger.warning("Message signature verification failed, dropping message")
                 return nil
