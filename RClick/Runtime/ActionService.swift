@@ -180,7 +180,18 @@ final class ActionService {
 
         switch rcitem.id {
         case "cut":
-            guard rcitem.enabled, trigger == MenuTrigger.contextualItems.rawValue, !target.isEmpty else { return }
+            guard rcitem.enabled else {
+                logger.info("Cut refused: stored action is disabled")
+                return
+            }
+            guard trigger == MenuTrigger.contextualItems.rawValue else {
+                logger.info("Cut refused: trigger is not an item-selection menu")
+                return
+            }
+            guard !target.isEmpty else {
+                logger.info("Cut refused: selection is empty")
+                return
+            }
             await prepareCut(target)
         case "copy-path":
             copyPath(target)
@@ -200,21 +211,34 @@ final class ActionService {
     }
 
     private func prepareCut(_ target: [String]) async {
-        guard !preparingCut else { return }
+        guard !preparingCut else {
+            logger.info("Cut ignored: another Cut is preparing")
+            return
+        }
         preparingCut = true
         defer { preparingCut = false }
         let urls = target.map { URL(fileURLWithPath: $0) }
         var seen: Set<String> = []
         let parents = urls.map { $0.deletingLastPathComponent() }.filter { seen.insert($0.path).inserted }
         for parent in parents where !permission.hasAccess(to: parent) {
-            guard await permission.promptForPermission(for: parent) != nil,
-                  permission.hasAccess(to: parent) else { return }
+            guard await permission.promptForPermission(for: parent) != nil else {
+                logger.info("Cut cancelled: source-parent permission panel dismissed")
+                return
+            }
+            guard permission.hasAccess(to: parent) else {
+                logger.warning("Cut refused: source-parent grant does not cover the selection")
+                return
+            }
         }
         // An earlier grant may have been revoked while a later panel was open.
-        guard parents.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        guard parents.allSatisfy({ permission.hasAccess(to: $0) }) else {
+            logger.warning("Cut refused: source-parent access was revoked during preparation")
+            return
+        }
         // Check after authorization: sandbox-denied traversal is deliberately
         // fail-closed in isProtectedFolder, but must not suppress the access panel.
         if let protected = target.first(where: { Utils.isProtectedFolder($0) }) {
+            logger.warning("Cut refused: selection contains a protected folder")
             cutWarning(String(format: AppLocalization.localized("Protected system folders cannot be cut: %@"), protected))
             return
         }
@@ -224,13 +248,24 @@ final class ActionService {
             let parent = url.deletingLastPathComponent()
             let values = try? parent.resourceValues(forKeys: [.isWritableKey])
             if cutVolumeIsReadOnly(url) || values?.isWritable == false || !fileOperations.isWritable(parent) {
+                logger.warning("Cut refused: source volume is read-only or its parent is not writable")
                 cutWarning(String(format: AppLocalization.localized("The source is on a read-only disk or in an unwritable folder: %@"), url.path))
                 return
             }
         }
-        guard let identities = try? urls.map({ try fileOperations.fileIdentity(of: $0) }),
-              let count = PendingCut(pasteboard: pasteboard).writeCut(target) else { return }
+        let identities: [FileIdentity]
+        do {
+            identities = try urls.map { try fileOperations.fileIdentity(of: $0) }
+        } catch {
+            logger.error("Cut failed: source identity could not be read; selection count: \(target.count)")
+            return
+        }
+        guard let count = PendingCut(pasteboard: pasteboard).writeCut(target) else {
+            logger.error("Cut failed: clipboard write was rejected or could not be verified; selection count: \(target.count)")
+            return
+        }
         cutRecord = CutRecord(paths: target, identities: identities, changeCount: count)
+        logger.info("Cut recorded; selection count: \(target.count)")
     }
 
     func showAirDrop(_ target: [String], _ trigger: String) async {
