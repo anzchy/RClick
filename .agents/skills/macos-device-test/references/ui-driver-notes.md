@@ -126,9 +126,9 @@ effects in `finderdrive.py` and `calibration.py`.
 
 - Symptom: none; this is what makes the guard reliable for percent-encoded names.
 - Cause: Finder titles the item `Compress “%2544ocuments”` with the on-disk name, undecoded.
-- Fix: the guard expects `Compress “<basename of the target>”` (`Compress N Items` for N targets; that plural form is
-  UNVERIFIED on a real run) and an English system language; another language makes the guard refuse.
-- Evidence: i5-device-20261117d.
+- Fix: the guard expects `Compress “<basename of the target>”` (`Compress N Items` for N targets) and an English
+  system language; another language makes the guard refuse.
+- Evidence: i5-device-20261117d; the plural `Compress 2 Items`: device run, 2026-11-18 (the multi-selection rows).
 
 ### 2026-11-17 — the Option flag on the synthetic right-click is seen by the extension
 
@@ -149,18 +149,80 @@ effects in `finderdrive.py` and `calibration.py`.
 - The osascript `display alert` stands in for RClick's alerts in `dialog-read`/`press-button`; the real Delete Direct
   confirmation was read through AX the same way (i5-device-20261117d).
 
-### 2026-11-18 — hypothesis: Finder may not answer AppleScript while its context menu is open (UNVERIFIED)
+### 2026-11-18 — Finder does not answer AppleScript while its context menu is open (CONFIRMED)
 
-- Suspicion (#32 audit r1, opus M1; no device trace): `guard` and `choose` read Finder's selection
-  (`SELECTION_SCRIPT`) and, with `--background`, its front window (`FRONT_SCRIPT`) through AppleScript while the
-  context menu is open (the `menu-session` holds it). If an app tracking a menu does not service Apple events until
-  the menu closes, every such call waits for the 20 s `run` timeout. It fails closed: the session is aborted, Esc,
-  nothing is pressed.
-- What calibration prints if it is true: `FAIL guard — ui.sh guard exited 70: ENVIRONMENT: osascript timed out after
-  20 s`, then `SKIP choose — needs guard`, `background-menu` and `background-choose` FAIL the same way, and the
-  summary is `CALIBRATION FAIL — distrust: ui.sh guard, …` (calibration exit 65; each `ui.sh guard` exits 70).
-- Fallback if it is true (not built now): read the selection (and front folder) BEFORE opening the menu, and bind it
-  to the menu session by the row identity: the selected rows' `AXURL` full paths read through AX, then right-click
-  that row; after the menu is open, re-check through AX inside axprobe (the front window's `AXSelectedRows` and
-  their `AXURL`), never through AppleScript.
-- Evidence: none yet; the first calibration run on #32's final head decides. Record the result here.
+- Symptom: with a Finder context menu open, every AppleScript call to Finder timed out after 20 s (exit 70):
+  `ui.sh selection` after `ui.sh menu` left the menu open (and answered at once after Esc), `ui.sh open-menu
+  --background` with a stale menu open, `ui.sh choose ... --target %41.txt` (nothing pressed), calibration's `ui.sh
+  guard` and `guard --background`. System Events (AppleScript to another app) still answered. Calibration ended
+  `CALIBRATION FAIL`, 13 helpers distrusted.
+- Cause: Finder services Apple events only after its menu tracking ends; `guard`/`choose` read the selection (and
+  the front window for `--background`) through AppleScript while the `menu-session` held the menu.
+- Fix (#32 fix round 3): no AppleScript to Finder while a menu is open or about to open. `ui.sh choose` is one
+  process: it selects through AppleScript BEFORE the right-click, then proves the target through AX (each target's
+  row carries its full path as `AXURL`; the rows marked selected are exactly the targets; the row did not move),
+  and checks the Compress title inside the menu session. `--background` takes the folder from the rows' `AXURL`
+  parent (an empty folder is refused). The standalone `ui.sh guard` is removed: its pass did not carry to `choose`
+  and it left a menu open for the next call to hang on. Test: `test_finderdrive.FakeDesktop` times out Finder
+  AppleScript while a menu is open; `test_calibration.CalibrationThroughTheRealDriver`.
+- Evidence: device run, 2026-11-18 ("Hypothesis settled", "Script problems").
+
+### 2026-11-18 — `ui.sh close-menu` refused while a menu was open
+
+- Symptom: `ui.sh close-menu` refused `Finder is not frontmost: no key sent` with a Finder menu open, so the menu
+  stayed open; `finder-kc.sh 53` (Esc to Finder) closed it.
+- Cause: its frontmost check (System Events) did not report Finder as frontmost while the menu was open.
+- Fix: `ui.sh close-menu X,Y` reads the menu at the point through AX, cancels it with `AXCancel` (`axprobe
+  menu-cancel`, owner pid checked: another process's menu is never touched), and only while AX still shows that
+  Finder menu sends Esc to Finder through System Events. Every refusal or failure of `choose` after its click
+  closes the menu the same way. UNVERIFIED on a device: that `AXCancel` closes a Finder context menu.
+- Evidence: device run, 2026-11-18 ("Script problems").
+
+### 2026-11-18 — the press allow-list compared `ps` comm, not the executable
+
+- Symptom: `press-button`, `panel-grant-row` and `panel-grant-current` refused `pid N is osascript` for the
+  calibration's own osascript, which the safety page allows.
+- Cause: calibration spawned `osascript` through a PATH lookup, and `ps -o comm=` prints argv[0] (`osascript`), while
+  the allow-list required `/usr/bin/osascript`. comm is whatever the process chose as argv[0], so it can also be
+  spoofed (a real capture: `/bin/sleep` started with Finder's path as argv[0]).
+- Fix: the allow-list reads the executable the kernel resolved (`proc_pidpath`), never comm; calibration spawns
+  `/usr/bin/osascript`. Test: `test_finderui.ProcessAllowList` on a real capture (`fixtures/process-table.txt`).
+- Evidence: device run, 2026-11-18 (calibration.txt; the capture on the same Mac).
+
+### 2026-11-18 — the open panel is a column browser
+
+- Symptom: both calibration grant steps would have refused "its file-list rows expose no AXURL".
+- Cause: the `osascript choose folder` panel was in column view: `AXBrowser` → one `AXScrollArea` per column →
+  `AXList` → one `AXGroup` per entry → `AXImage` + `AXTextField` (value = name, `url` = full path); no `AXRow`. The
+  `selected` flag read False on every entry, even on the folders the browser showed opened. Columns 4 to 7 lay
+  outside the window's frame.
+- Fix: `ui.sh grant` reads the browser: the shown folder is the folder of the deepest column, each column must list
+  an entry of the column before it, the `Where:` pop-up must agree; row mode selects the entry's `AXGroup` and
+  presses only when the browser then shows the target. UNVERIFIED on a device: that `AXSelected` on the `AXGroup`
+  opens the entry, and the shape of RClick's own panel (PERM-01). Test: `test_finderui.PanelBrowser` on the
+  sanitised real dumps (`fixtures/panel-browser-*.jsonl`).
+- Evidence: device run, 2026-11-18 (calibration/panel-row.jsonl, panel-current.jsonl).
+
+### 2026-11-18 — the fixture window could not be closed by its folder
+
+- Symptom: calibration teardown's `close (every Finder window whose target is <alias>)` failed with -1708; the
+  window had navigated to the parent folder and was closed by hand.
+- Cause: the window was addressed by the folder it showed, which had changed.
+- Fix: calibration reads the window's id together with its folder when the window opens and closes `Finder window
+  id N`. UNVERIFIED on a device.
+- Evidence: device run, 2026-11-18 (calibrate.out note).
+
+### 2026-11-18 — `launch.sh` refuses a run dir with a retired ownership record
+
+- Symptom: a second launch into the same run directory (phase 2 of a run) was refused.
+- Cause: the run directory already held the retired ownership record of the first launch.
+- Fix: none in the scripts (by design one run directory belongs to one launch): launch a second phase into a new run
+  directory and copy `bundle.path` and `build.json` into it.
+- Evidence: device run, 2026-11-18 ("Script problems").
+
+### 2026-11-18 — `finder-kc.sh 9 command` works as Command-V
+
+- Symptom: none; it was unproven.
+- Cause: key code 9 is V; the `command` modifier reaches Finder through System Events.
+- Fix: use `finder-kc.sh 9 command` to paste into Finder (for example into a rename field) instead of typing.
+- Evidence: device run, 2026-11-18 (the paste-into-rename-field rows).
