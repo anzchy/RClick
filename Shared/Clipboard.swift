@@ -31,7 +31,7 @@ enum Clipboard {
     /// 粘到 Finder 的行为变成复制文件，与「复制文件名」的语义不符。
     nonisolated static func copyFileNames(_ paths: [String], to pasteboard: NSPasteboard = .general) {
         let names = paths
-            .map { URL(fileURLWithPath: $0.removingPercentEncoding ?? $0).lastPathComponent }
+            .map { URL(fileURLWithPath: $0).lastPathComponent }
             .filter { !$0.isEmpty }
         guard !names.isEmpty else { return }
 
