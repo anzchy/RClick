@@ -1,14 +1,54 @@
 import Foundation
 import XCTest
+import Synchronization
 @testable import RClick
 
 @MainActor
 final class IPCAuthenticationTests: XCTestCase {
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
-        let receiver = Messager(isExtension: false, center: NotificationCenter())
+        let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
-        let captured = try MessageSecurity.sign(original)
-        let forged = SignedPayload(payload: ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/other"], trigger: .contextualItems, optionKeyPressed: true), signature: captured.signature, jsonData: captured.jsonData)
-        XCTAssertNil(receiver.decodeSignedData(try JSONEncoder().encode(forged), as: ClickEventPayload.self))
+        let envelope = IPCEnvelope(direction: .toMain, action: "click", id: "click", session: "session", timestamp: Date().timeIntervalSince1970,
+                                   nonce: Data(repeating: 1, count: 16), payload: try JSONEncoder().encode(original))
+        var captured = MessageSecurity.sign(envelope, key: key)
+        captured.payload = try JSONEncoder().encode(ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/other"], trigger: .contextualItems, optionKeyPressed: true))
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(captured.wireString(), key: key))
     }
+    func testPayloadFreeMessagesRequireAuthentication() throws {
+        let center = NotificationCenter()
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key)
+        let dispatches = Mutex(0)
+        for action in [MainToExtensionAction.quit, .actionAck] { ext.onMainMessage(action) { _ in dispatches.withLock { $0 += 1 } } }
+        for action in [ExtensionToMainAction.heartbeat, .requestConfig] { app.onExtensionMessage(action) { _ in dispatches.withLock { $0 += 1 } } }
+        for action in ["quit", "action-ack", "heartbeat", "request-config"] {
+            let name = ["quit", "action-ack"].contains(action) ? Messager.mainToExtensionNotification : Messager.extensionToMainNotification
+            center.post(name: Notification.Name(name), object: "{\"id\":\"legacy\",\"action\":\"\(action)\"}")
+            let envelope = IPCEnvelope(direction: name == Messager.mainToExtensionNotification ? .toExtension : .toMain,
+                                       action: action, id: UUID().uuidString, session: "session", timestamp: Date().timeIntervalSince1970,
+                                       nonce: Data(repeating: 1, count: 16), mac: Data(repeating: 0, count: 32))
+            center.post(name: Notification.Name(name), object: envelope.wireString())
+        }
+        XCTAssertEqual(dispatches.withLock { $0 }, 0)
+    }
+    func testEveryEnvelopeFieldIsAuthenticatedAndWrongKeyRejected() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let original = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "click", inReplyTo: "reply", session: "session",
+                                                       timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16), payload: Data("{}".utf8)), key: key)
+        var variants: [IPCEnvelope] = []
+        var changed = original; changed.direction = .toExtension; variants.append(changed)
+        changed = original; changed.action = "heartbeat"; variants.append(changed)
+        changed = original; changed.id = "other"; variants.append(changed)
+        changed = original; changed.inReplyTo = "other"; variants.append(changed)
+        changed = original; changed.session = "other"; variants.append(changed)
+        changed = original; changed.timestamp += 1; variants.append(changed)
+        changed = original; changed.nonce[0] ^= 1; variants.append(changed)
+        changed = original; changed.payload = Data("null".utf8); variants.append(changed)
+        for envelope in variants {
+            XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(envelope.wireString(), key: key))
+        }
+        XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(original.wireString(), key: Data(repeating: 7, count: 32)))
+    }
+
 }

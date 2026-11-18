@@ -185,36 +185,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Register message handlers using type-safe API
             logger.info("Registering message handlers")
-            messager.onExtensionMessage(.click) { [weak self] data in
-                guard let self = self else { return }
-                if let event: ClickEventPayload = messager.decodeSignedData(data) {
-                    // 确认收到，供扩展判断主程序可通信性（操作成败另议）
-                    messager.sendActionAck()
-                    Task { @MainActor in
+            messager.onExtensionMessage(.click) { [weak self] message in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let event = self.messager.decodeSignedData(message, as: ClickEventPayload.self) {
+                        // Receipt acknowledgement, independent of operation success.
+                        self.messager.sendActionAck(inReplyTo: message.id)
                         await self.handleClickEvent(event)
                     }
-                } else {
-                    logger.warning("Invalid click event data")
                 }
             }
 
             messager.onExtensionMessage(.heartbeat) { [weak self] _ in
-                guard let self = self else { return }
-                logger.debug("Received heartbeat from extension")
-                // Acknowledge every heartbeat without re-sending the menu configuration.
-                // The extension needs a reply to keep its own liveness cache online.
-                let reconnected = pluginActivity.receive()
-                messager.sendRunningNotification()
-                if reconnected {
-                    sendMenuConfigurationUpdate()
+                Task { @MainActor in
+                    guard let self else { return }
+                    let reconnected = self.pluginActivity.receive()
+                    self.messager.sendRunningNotification()
+                    if reconnected { self.sendMenuConfigurationUpdate() }
                 }
             }
 
-            // 处理 Extension 请求菜单配置
             messager.onExtensionMessage(.requestConfig) { [weak self] _ in
-                guard let self = self else { return }
-                logger.info("Received menu config request from extension")
-                self.sendMenuConfigurationUpdate()
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.messager.sendRunningNotification()
+                    self.sendMenuConfigurationUpdate()
+                }
             }
 
             // 启动 running 消息重试机制
