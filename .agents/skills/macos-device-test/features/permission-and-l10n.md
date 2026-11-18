@@ -27,7 +27,7 @@ is NOT VERIFIED on this machine).
 
 1. `PERM-01`: right-click the background → New File → TXT. Result: the panel (`ui.sh dialog <rclick pid>`); save it as
    `PERM-01-panel`. Cancel (`ui.sh press-button <rclick pid> Cancel`) → no file created. Repeat →
-   `ui.sh grant <rclick pid> "$RUN_DIR/fixtures"` → the file is created. Disclose the AX row selection and button
+   `ui.sh grant <rclick pid> "$RUN_DIR/fixtures"` → the file is created. Disclose the AX selection (if any) and button
    press.
 2. `PERM-02`: quit RClick through its UI, `cleanup.sh`, `launch.sh` into a new run directory (same bundle path is
    fine: write `bundle.path` and `build.json` from the first run), doctor, New File again → no panel. Settings lists

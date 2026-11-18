@@ -361,10 +361,11 @@ class Dialogs(unittest.TestCase):
 
 
 class PanelGrant(unittest.TestCase):
-    # The panel shows /tmp/run/fixtures (location pop-up `fixtures`, rows with AXURL); the sidebar also lists a
-    # `rclick-cal` favourite. The file list, the pop-up and the AXURL values are ASSUMED (fixtures/README.md).
+    # List view (no device dump has one; the real panel was a column browser, PanelBrowser). The panel shows
+    # /tmp/run/fixtures (location pop-up `fixtures`, rows with AXURL); the sidebar also lists a `rclick-cal`
+    # favourite. The file list, the pop-up and the AXURL values are ASSUMED (fixtures/README.md).
     def setUp(self):
-        self.nodes = dump('panel-grant.jsonl')
+        self.nodes = dump('panel-grant-listview-assumed.jsonl')
 
     def test_target_row_in_the_file_list_is_selected_not_the_sidebar_favourite(self):
         plan = finderui.panel_plan(self.nodes, '/tmp/run/fixtures/rclick-cal')
@@ -430,6 +431,91 @@ class PanelGrant(unittest.TestCase):
     def test_relative_folder_is_refused(self):
         with self.assertRaisesRegex(finderui.Usage, 'absolute'):
             finderui.panel_plan(self.nodes, 'fixtures/rclick-cal')
+
+
+PANEL_FOLDER = '/Users/tester/work/runs/run-1/phase2/fixtures/calibration-x1y2z3'
+
+
+def opened(nodes, folder, names):
+    """The browser after an entry was selected: a new column (after the existing ones) lists `folder`'s `names`.
+    Constructed from the real dump's shapes; what the real panel shows after AX select is UNVERIFIED."""
+    browser = next(n['path'] for n in nodes if n['role'] == 'AXBrowser')
+    base = browser + (0, 8)
+    def node(path, role, **fields):
+        return dict({'path': path, 'role': role, 'subrole': '', 'title': '', 'value': None, 'desc': '',
+                     'enabled': None, 'selected': None, 'url': None, 'frame': [2400, 248, 246, 294]}, **fields)
+    extra = [node(base, 'AXScrollArea'), node(base + (0,), 'AXList')]
+    for index, name in enumerate(names):
+        extra += [node(base + (0, index), 'AXGroup'), node(base + (0, index, 0), 'AXImage'),
+                  node(base + (0, index, 1), 'AXTextField', value=name, url=f'{folder}/{name}', selected=False,
+                       enabled=True)]
+    return nodes + extra
+
+
+class PanelBrowser(unittest.TestCase):
+    """`grant` on the REAL folder panel (fix r3 item 3): an osascript `choose folder` panel of the device run,
+    2026-11-18 (fixtures/panel-browser-row.jsonl, sanitised), a column browser of AXGroup entries with no AXRow.
+    It showed the calibration fixture: 7 columns from the home folder down, `Where:` naming the fixture."""
+
+    def setUp(self):
+        self.nodes = dump('panel-browser-row.jsonl')
+
+    def test_the_real_dumps_are_a_column_browser_of_groups_carrying_full_paths(self):
+        for name in ('panel-browser-row.jsonl', 'panel-browser-current.jsonl'):
+            nodes = dump(name)
+            with self.subTest(name=name):
+                columns = finderui.browser_columns([n for n in nodes if n['path'][:1] == (0,)])
+                self.assertEqual(len(columns), 7)
+                self.assertEqual(columns[0].folder, '/Users/tester')
+                self.assertEqual(finderui.browser_location(columns), PANEL_FOLDER)
+                self.assertEqual([entry[0] for entry in columns[-1].entries],
+                                 ['%41.txt', '%2541.txt', 'alpha.txt', 'beta.txt', 'folder a', '中文 名称.txt'])
+                self.assertFalse(any(n['role'] == 'AXRow' and n['path'][:4] == (0, 0, 2, 0) for n in nodes))
+
+    def test_current_mode_grants_the_shown_folder_without_selecting(self):
+        plan = finderui.panel_plan(self.nodes, PANEL_FOLDER, button='Choose')
+        self.assertEqual((plan.mode, plan.kind, plan.row_path, plan.button_path), ('current', 'browser', None, (0, 0, 11)))
+        self.assertIs(finderui.panel_ready(self.nodes, PANEL_FOLDER, 'Choose', plan), plan)
+
+    def test_row_mode_selects_the_entrys_group_and_needs_the_browser_to_open_it(self):
+        target = PANEL_FOLDER + '/folder a'
+        plan = finderui.panel_plan(self.nodes, target, button='Choose')
+        self.assertEqual((plan.mode, plan.row_role, plan.row_path), ('row', 'AXGroup', (0, 0, 2, 0, 0, 6, 0, 4)))
+        with self.assertRaisesRegex(finderui.Refused, 'does not show'):
+            finderui.panel_ready(self.nodes, target, 'Choose', plan)  # the select did nothing
+        self.assertIs(finderui.panel_ready(opened(self.nodes, target, ['inner.txt']), target, 'Choose', plan), plan)
+        with self.assertRaisesRegex(finderui.Refused, 'lists nothing'):
+            finderui.panel_ready(opened(self.nodes, target, []), target, 'Choose', plan)  # an empty folder
+
+    def test_the_wrong_entry_opened_is_refused(self):
+        target = PANEL_FOLDER + '/folder a'
+        plan = finderui.panel_plan(self.nodes, target, button='Choose')
+        other = opened(self.nodes, '/Users/tester/elsewhere', ['inner.txt'])
+        with self.assertRaisesRegex(finderui.Refused, 'does not show'):
+            finderui.panel_ready(other, target, 'Choose', plan)
+
+    def test_same_basenames_elsewhere_and_unlisted_folders_are_refused(self):
+        for target in ('/Users/tester/elsewhere/calibration-x1y2z3', '/tmp/calibration-x1y2z3/folder a',
+                       PANEL_FOLDER + '/missing', '/Users/tester/work'):
+            with self.subTest(target=target), self.assertRaisesRegex(finderui.Refused, 'panel shows'):
+                finderui.panel_plan(self.nodes, target, button='Choose')
+
+    def test_a_selected_entry_in_the_shown_folder_blocks_current_mode(self):
+        nodes = [dict(n, selected=True) if n.get('url') == PANEL_FOLDER + '/beta.txt' else n for n in self.nodes]
+        with self.assertRaisesRegex(finderui.Refused, 'selected'):
+            finderui.panel_plan(nodes, PANEL_FOLDER, button='Choose')
+
+    def test_a_location_that_cannot_be_proven_is_refused(self):
+        cases = {
+            'AXURL': [dict(n, url=None) if n.get('url') == PANEL_FOLDER + '/alpha.txt' else n for n in self.nodes],
+            'does not show': [dict(n, url='/Users/tester/other/' + n['url'].rsplit('/', 1)[1])
+                              if (n.get('url') or '').startswith(PANEL_FOLDER + '/') else n for n in self.nodes],
+            'pop-up': [dict(n, value='elsewhere') if n['role'] == 'AXPopUpButton' else n for n in self.nodes],
+            '2 column browsers': self.nodes + [dict(n, path=(0, 0, 5)) for n in self.nodes if n['role'] == 'AXBrowser'],
+        }
+        for message, nodes in cases.items():
+            with self.subTest(message), self.assertRaisesRegex(finderui.Refused, message):
+                finderui.panel_plan(nodes, PANEL_FOLDER, button='Choose')
 
 
 def process_capture():

@@ -458,9 +458,9 @@ def find_button(nodes, title, window_text=None):
 
 
 class PanelPlan:
-    def __init__(self, mode, window, row_path, button_path, location, note):
+    def __init__(self, mode, window, row_path, button_path, location, note, kind='rows', row_role='AXRow'):
         self.mode, self.window, self.row_path, self.button_path = mode, window, row_path, button_path
-        self.location, self.note = location, note
+        self.location, self.note, self.kind, self.row_role = location, note, kind, row_role
 
 
 def element_url(node, nodes):
@@ -470,15 +470,78 @@ def element_url(node, nodes):
     return next((d['url'] for d in sorted(descendants(node, nodes), key=lambda d: d['path']) if d.get('url')), None)
 
 
+class Column:
+    """One column of an open panel's column browser: the folder it lists and its entries as
+    (name, full path, AXGroup path, selected)."""
+
+    def __init__(self, path, folder, entries):
+        self.path, self.folder, self.entries = path, folder, entries
+
+
+def browser_columns(inside):
+    """The columns of the panel's column browser, left to right, or None when the panel has no AXBrowser.
+
+    The real panel (device run, 2026-11-18; fixtures/panel-browser-*.jsonl) is AXBrowser → AXScrollArea → one
+    AXScrollArea per column → AXList → one AXGroup per entry → [AXImage, AXTextField value=name url=full path].
+    Every entry must carry a full path, and the entries of one column must share one parent folder. The `selected`
+    flag read False on every entry, even on the folders the browser shows opened, so selection is not read from it
+    except to refuse an entry marked selected."""
+    browsers = [n for n in inside if n['role'] == 'AXBrowser']
+    if not browsers:
+        return None
+    if len(browsers) > 1:
+        raise Refused(f'the panel has {len(browsers)} column browsers')
+    root = browsers[0]['path']
+    lists = sorted((n for n in inside if n['role'] == 'AXList' and n['path'][:len(root)] == root),
+                   key=lambda n: n['path'])
+    columns = []
+    for node in lists:
+        depth = len(node['path'])
+        entries = []
+        for group in (n for n in inside if len(n['path']) == depth + 1 and n['path'][:depth] == node['path']):
+            url = element_url(group, inside)
+            if not url:
+                raise Refused("cannot establish the panel's full location: a column entry exposes no AXURL (grant by "
+                              'hand and record it under Script problems)')
+            url = clean_path(url)
+            selected = any(d.get('selected') is True for d in [group] + descendants(group, inside))
+            entries.append((basename(url), url, group['path'], selected))
+        parents = {url.rsplit('/', 1)[0] or '/' for _, url, _, _ in entries}
+        if len(parents) > 1:
+            raise Refused(f'a panel column lists entries of {len(parents)} folders')
+        columns.append(Column(node['path'], parents.pop() if parents else None, entries))
+    return columns
+
+
+def browser_location(columns):
+    """The folder the column browser shows: the folder of its deepest column. Each column must list the contents of
+    an entry of the column before it (the chain the browser opened), and no column may be empty: an empty folder has
+    no entries, so the folder it belongs to cannot be proven (Refused, never guessed)."""
+    if not columns:
+        raise Refused("cannot establish the panel's full location: the column browser shows no column")
+    for index, column in enumerate(columns):
+        if column.folder is None:
+            raise Refused(f'panel column {index + 1} of {len(columns)} lists nothing: its folder cannot be proven '
+                          '(grant by hand and record it under Script problems)')
+        if index and column.folder not in {url for _, url, _, _ in columns[index - 1].entries}:
+            raise Refused(f'panel column {index + 1} lists {column.folder!r}, which column {index} does not show')
+    return columns[-1].folder
+
+
 def panel_plan(nodes, folder, button='Grant Access'):
     """How to grant `folder` in an open folder panel (NSOpenPanel) without typing (panel-choose.sh failed under a
     pinyin IME, i22-device-20261116e), from FULL paths only.
 
-    The panel's location is established from the AXURL of its file-list rows (never the sidebar): the folder of the
-    first row in display order, which every other row must lie under; a location pop-up, when present, must name
-    that folder. No row URL: Refused (the location cannot be proven). mode 'row': a row's full path is `folder`:
-    select it, then press. mode 'current': `folder` is the location itself and no row is selected (the panel would
-    return a selected row, not the folder it shows): press. Anything else is Refused."""
+    Column view (the real panel, device run, 2026-11-18): the location is the folder of the browser's deepest column
+    (finderui.browser_location); mode 'row': `folder` is an entry of that column: select its AXGroup, then
+    panel_ready requires the browser to show `folder` itself; mode 'current': `folder` is the location and no entry
+    of the deepest column is marked selected.
+    List view (rows; ASSUMED, fixtures/panel-grant-listview-assumed.jsonl): the location is the folder of the first
+    file-list row (never the sidebar), which every other row must lie under. mode 'row': a row's full path is
+    `folder`; mode 'current': `folder` is the location and no row is selected (the panel would return a selected
+    row, not the folder it shows).
+    Either way a location pop-up, when present, must name the location; a location that cannot be proven, and
+    anything else, is Refused."""
     if not folder.startswith('/'):
         raise Usage(f'folder must be an absolute path: {folder!r}')
     target = clean_path(folder)
@@ -488,6 +551,32 @@ def panel_plan(nodes, folder, button='Grant Access'):
     window = windows[0]
     button_path = next(path for title, path in window.buttons if title == nfc(button))
     inside = [n for n in nodes if n['path'][:1] == (window.index,)]
+    shown = sorted({nfc(n['value']) for n in inside if n['role'] == 'AXPopUpButton' and isinstance(n.get('value'), str)
+                    and n['value']})
+    columns = browser_columns(inside)
+    if columns is not None:
+        location = browser_location(columns)
+        # The pop-up named the deepest column's folder on the device; whether it follows an entry selected in that
+        # column or keeps naming its parent is UNVERIFIED, so either of the last two folders of the chain is
+        # accepted (the chain itself is proven by AXURL).
+        names = {basename(column.folder) for column in columns[-2:]}
+        if shown and not names & set(shown):
+            raise Refused(f'the location pop-up shows {shown[0]!r} but the deepest column lists {location!r}')
+        entries = columns[-1].entries
+        selected = [name for name, _, _, marked in entries if marked]
+        matches = [path for _, url, path, _ in entries if url == target]
+        if len(matches) > 1:
+            raise Refused(f'{len(matches)} entries have the path {target!r}')
+        if matches:
+            return PanelPlan('row', window.index, matches[0], button_path, location,
+                             'verified: full path from AXURL, then the browser opened it', 'browser', 'AXGroup')
+        if target == location:
+            if selected:
+                raise Refused(f'entry {selected[0]!r} is selected: the panel would return it, not {target!r}')
+            return PanelPlan('current', window.index, None, button_path, location,
+                             'verified: full location from the browser columns, no entry selected', 'browser')
+        raise Refused(f'panel shows {basename(location)!r} ({location!r}): no entry is {target!r} and it is not the '
+                      'shown folder')
     by_path = {n['path']: n for n in inside}
     rows = list_rows(inside)
     urls = [element_url(by_path[row.path], inside) for row in rows]
@@ -498,8 +587,6 @@ def panel_plan(nodes, folder, button='Grant Access'):
     location = urls[0].rsplit('/', 1)[0] or '/'
     if any(not url.startswith(location.rstrip('/') + '/') for url in urls):
         raise Refused(f'the panel lists rows outside {location!r}; collapse expanded folders')
-    shown = sorted({nfc(n['value']) for n in inside if n['role'] == 'AXPopUpButton' and isinstance(n.get('value'), str)
-                    and n['value']})
     if shown and basename(location) not in shown:
         raise Refused(f'the location pop-up shows {shown[0]!r} but the rows are in {location!r}')
     selected = [row for row in rows if by_path[row.path].get('selected') is True]
@@ -520,10 +607,26 @@ def panel_plan(nodes, folder, button='Grant Access'):
                   'folder')
 
 
-def panel_ready(nodes, folder, button='Grant Access'):
-    """The plan again, right before the button is pressed: in row mode the target row must now be the ONE selected
-    row, in current mode no row may be selected. Refused otherwise (nothing pressed)."""
-    plan = panel_plan(nodes, folder, button)
+def panel_ready(nodes, folder, button='Grant Access', plan=None):
+    """The panel read again right before the button is pressed; Refused (nothing pressed) unless it still grants
+    exactly `folder` the way `plan` (the panel_plan made before selecting) said:
+    - list view, row mode: the target row is now the ONE selected row; current mode: no row selected;
+    - column view, row mode: selecting the entry made the browser open it, so the deepest column now lists the
+      target's own contents (panel_plan reads 'current' for the target); a target folder that is empty shows no
+      entries and cannot be proven; current mode: unchanged.
+    The window and the button must be the ones the plan found."""
+    now = panel_plan(nodes, folder, button)
+    if plan is None:
+        plan = now
+    if (now.window, now.button_path, now.kind) != (plan.window, plan.button_path, plan.kind):
+        raise Refused('the panel changed after selecting; nothing pressed')
+    if plan.kind == 'browser':
+        if now.mode != 'current':
+            raise Refused(f'the panel does not show {clean_path(folder)!r} after selecting it (it shows '
+                          f'{now.location!r}; an empty folder cannot be proven): nothing pressed')
+        return plan
+    if now.mode != plan.mode or now.row_path != plan.row_path:
+        raise Refused('the panel changed after selecting the row; nothing pressed')
     if plan.mode == 'row':
         inside = [n for n in nodes if n['path'][:1] == (plan.window,)]
         by_path = {n['path']: n for n in inside}

@@ -139,11 +139,10 @@ effects in `finderdrive.py` and `calibration.py`.
 
 ### 2026-11-18 — not yet proven on a real run (first calibration decides)
 
-- The file list of the folder panel: its element shape (outline rows in list view, or a column browser) and its
-  `AXURL` attributes were not in any recorded dump. `ui.sh grant` assumes rows (`AXRow`) whose `AXURL` is the full
-  path (#32 fix round 1: never a basename). Calibration steps `panel-grant-row` and `panel-grant-current` prove or
-  refute it on an `osascript choose folder` panel, and save the dumps (`calibration/panel-*.jsonl`). RClick's own
-  sandboxed panel is NOT covered by calibration: PERM-01 proves it.
+- The file list of the folder panel: settled for the osascript panel by the device run, 2026-11-18 (a column
+  browser, see the entry "the open panel is a column browser" below). Still not proven: that `AXSelected` on an
+  entry's `AXGroup` makes the browser open it (`panel-grant-row`), and the shape of RClick's own sandboxed panel
+  (PERM-01 proves it; calibration does not cover it).
 - `ui.sh open-menu --background` clicks the middle of the empty list below the rows (`finderui.background_point`);
   that this opens the background menu, and that axprobe's `menu-session` re-check holds on a live menu, are proven
   by calibration steps `background-menu`, `background-choose` and `choose`.

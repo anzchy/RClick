@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -763,7 +764,7 @@ class GrantByFullPath(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.run_dir = Path(temp.name)
         (self.run_dir / 'rclick.pid').write_text('28075\n')
-        self.panel = fixture('panel-grant.jsonl')
+        self.panel = fixture('panel-grant-listview-assumed.jsonl')
 
     def with_selected(self, *paths):
         lines = []
@@ -807,14 +808,73 @@ class GrantByFullPath(unittest.TestCase):
         self.assertEqual(desktop.acted, [])
 
 
+class GrantOnTheColumnBrowser(unittest.TestCase):
+    """`grant` through finderdrive.main on the REAL panel shape (fix r3 item 3; device run, 2026-11-18): a column
+    browser of AXGroup entries, where the old code refused "rows expose no AXURL" and would have selected an AXRow.
+    What the panel shows after the AX select is constructed (test_finderui.opened) and UNVERIFIED on a device."""
+    FOLDER = '/Users/tester/work/runs/run-1/phase2/fixtures/calibration-x1y2z3'
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='rclick-run-')
+        self.addCleanup(temp.cleanup)
+        self.run_dir = Path(temp.name)
+        (self.run_dir / 'rclick.pid').write_text('28075\n')
+        self.panel = fixture('panel-browser-row.jsonl')
+
+    def opened(self, folder, names):
+        import test_finderui
+        nodes = test_finderui.opened(finderui.parse_dump(self.panel), folder, names)
+        return ''.join(json.dumps(dict(n, path=list(n['path'])), ensure_ascii=False) + '\n' for n in nodes)
+
+    def grant(self, desktop, folder):
+        desktop.windows = self.panel
+        with mock.patch.dict(os.environ, RUN_DIR=str(self.run_dir)):
+            return drive(desktop, 'grant', '28075', folder, '--button', 'Choose')
+
+    def test_the_shown_folder_is_granted_without_selecting(self):
+        desktop = FakeDesktop('', [])
+        desktop.after_act = ['']  # the press closes the panel
+        code, out, err = self.grant(desktop, self.FOLDER)
+        self.assertEqual(code, 0, err)
+        self.assertEqual([call[2:4] for call in desktop.acted], [['press', 'AXButton']])
+        self.assertIn('current mode', out)
+
+    def test_an_entry_is_selected_as_its_group_and_pressed_once_the_browser_opened_it(self):
+        target = self.FOLDER + '/folder a'
+        desktop = FakeDesktop('', [])
+        desktop.after_act = [self.opened(target, ['inner.txt']), '']
+        code, out, err = self.grant(desktop, target)
+        self.assertEqual(code, 0, err)
+        self.assertEqual([call[1:] for call in desktop.acted],
+                         [['0.0.2.0.0.6.0.4', 'select', 'AXGroup', 'folder a'], ['0.0.11', 'press', 'AXButton', 'Choose']])
+        self.assertIn('row mode', out)
+
+    def test_a_select_that_opens_nothing_presses_nothing(self):
+        target = self.FOLDER + '/folder a'
+        for after in (None, self.opened(target, [])):
+            desktop = FakeDesktop('', [])
+            desktop.after_act = [after or self.panel]
+            with self.subTest(empty=after is not None):
+                code, _, err = self.grant(desktop, target)
+                self.assertEqual(code, 65, err)
+                self.assertEqual([call[2] for call in desktop.acted], ['select'])
+
+    def test_an_equal_basename_elsewhere_selects_and_presses_nothing(self):
+        desktop = FakeDesktop('', [])
+        code, _, err = self.grant(desktop, '/Users/tester/other/calibration-x1y2z3/folder a')
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.acted, [])
+
+
 class Source(unittest.TestCase):
     def test_no_personal_path_in_the_skill(self):
         marker = '/' + 'Users' + '/'  # split so this file does not match itself
-        placeholder = marker + 'tester/'  # the one home allowed: real dumps are sanitised to it (fixtures/README.md)
+        # the one home allowed: dumps are sanitised to /Users/tester (fixtures/README.md); testerX is not it
+        placeholder = re.compile(re.escape(marker + 'tester') + r'(?![\w.-])')
         home = str(Path.home())
         for path in SKILL.rglob('*'):
             if path.is_file() and '__pycache__' not in path.parts:
-                text = path.read_text(encoding='utf-8', errors='replace').replace(placeholder, '')
+                text = placeholder.sub('', path.read_text(encoding='utf-8', errors='replace'))
                 with self.subTest(path=path.relative_to(SKILL)):
                     self.assertNotIn(marker, text)
                     if len(home) > 1:
