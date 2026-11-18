@@ -189,6 +189,8 @@ nonisolated final class Messager: NSObject, Sendable {
         var ext: [ExtensionToMainAction: @Sendable (VerifiedMessage) -> Void] = [:]
         var key: Data?
         var configVersion = 0
+        var lastConfig: Data?
+        var invalidated: (@Sendable () -> Void)?
         var failures = IPCFailurePolicy()
     }
     private let state: Mutex<State>
@@ -198,7 +200,6 @@ nonisolated final class Messager: NSObject, Sendable {
     private let clock: any IPCClock
     private let random: any IPCRandom
     private let receiver: IPCReceiver
-    private let session: String
     private let logger = Logger(subsystem: "cn.anzchy.RClick", category: "Messager")
 
     init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default(),
@@ -211,7 +212,6 @@ nonisolated final class Messager: NSObject, Sendable {
         self.clock = clock
         self.random = random
         let launchSession = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
-        self.session = launchSession
         self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock, session: launchSession)
         self.state = Mutex(State(key: try? keyProvider.key(createIfMissing: !ext)))
         super.init()
@@ -237,23 +237,41 @@ nonisolated final class Messager: NSObject, Sendable {
     func onExtensionMessage(_ action: ExtensionToMainAction, handler: @escaping @Sendable (VerifiedMessage) -> Void) {
         state.withLock { $0.ext[action] = handler }
     }
+    func onSessionInvalidated(_ handler: @escaping @Sendable () -> Void) {
+        state.withLock { $0.invalidated = handler }
+    }
+    private func resynchronize() {
+        receiver.resetSession(isExtension ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? ""))
+        state.withLock { $0.invalidated }?()
+        if isExtension {
+            requestMenuConfig()
+        } else {
+            sendRunningNotification()
+            if let config = state.withLock({ $0.lastConfig }) {
+                sendRaw("menu-config", direction: .toExtension, payload: config, id: UUID().uuidString)
+            }
+        }
+    }
     @objc private func receiveNotification(_ notification: NSNotification) {
-        guard let wire = notification.object as? String, wire.utf8.count <= IPCEnvelope.maximumWireBytes, let key = key(),
-              let message = try? receiver.receive(wire, key: key) else {
+        do {
+            guard let wire = notification.object as? String, wire.utf8.count <= IPCEnvelope.maximumWireBytes else { throw IPCSecurityError.malformed }
+            guard let key = key() else { throw IPCSecurityError.noKey }
+            let message = try receiver.receive(wire, key: key)
+            if isExtension, let action = MainToExtensionAction(rawValue: message.action) {
+                let handler = state.withLock { $0.main[action] }
+                handler?(message)
+            } else if !isExtension, let action = ExtensionToMainAction(rawValue: message.action) {
+                let handler = state.withLock { $0.ext[action] }
+                handler?(message)
+            }
+        } catch {
+            if case IPCSecurityError.clockDiscontinuity = error { resynchronize() }
             let report = state.withLock { state in
                 let decision = state.failures.reject(now: clock.monotonicTime)
                 return (decision.log, decision.notice, state.failures.rejectedCount)
             }
             if report.0 { logger.error("Rejected IPC messages: \(report.2, privacy: .public)") }
             if !isExtension, report.1 { Task { @MainActor in IPCRejectionNotice.shared.record() } }
-            return
-        }
-        if isExtension, let action = MainToExtensionAction(rawValue: message.action) {
-            let handler = state.withLock { $0.main[action] }
-            handler?(message)
-        } else if !isExtension, let action = ExtensionToMainAction(rawValue: message.action) {
-            let handler = state.withLock { $0.ext[action] }
-            handler?(message)
         }
     }
     private func send<T: Encodable>(_ action: String, direction: IPCDirection, data: T?, id: String, inReplyTo: String = "") {
@@ -261,7 +279,8 @@ nonisolated final class Messager: NSObject, Sendable {
         sendRaw(action, direction: direction, payload: payload, id: id, inReplyTo: inReplyTo)
     }
     private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "") {
-        guard let key = key(), let nonce = try? random.bytes(count: 16), isExtension || !session.isEmpty else { return }
+        if receiver.checkClock() { resynchronize(); return }
+        guard let key = key(), let nonce = try? random.bytes(count: 16), isExtension || !currentSession.isEmpty else { return }
         let envelope = IPCEnvelope(direction: direction, action: action, id: id, inReplyTo: inReplyTo,
                                    session: receiver.currentSession, timestamp: clock.wallTime, nonce: nonce, payload: payload)
         let wire = MessageSecurity.sign(envelope, key: key).wireString()
@@ -290,6 +309,7 @@ nonisolated final class Messager: NSObject, Sendable {
                                           newFilesCollapsed: config.newFilesCollapsed, commonDirsCollapsed: config.commonDirsCollapsed,
                                           iconStyle: config.iconStyle)
         guard let payload = try? JSONEncoder().encode(versioned) else { return }
+        state.withLock { $0.lastConfig = payload }
         sendRaw(MainToExtensionAction.menuConfig.rawValue, direction: .toExtension, payload: payload, id: UUID().uuidString)
     }
     func sendRunningNotification(directories: [String] = []) { sendToExtension(.running, data: RunningPayload(directories: directories)) }

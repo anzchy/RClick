@@ -118,6 +118,13 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     /// 注册消息处理器
     private func setupMessageHandlers() {
+        messager.onSessionInvalidated { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                self?.cachedMenuConfig = nil
+                self?.cachedMenuSession = nil
+                self?.mainActivity.disconnect()
+            }
+        }
         // 处理主程序发送的菜单配置
         messager.onMainMessage(.menuConfig) { [weak self] data in
             guard let self = self else { return }

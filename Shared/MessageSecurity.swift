@@ -4,6 +4,7 @@ import Synchronization
 
 nonisolated enum IPCSecurityError: Error {
     case noKey, malformed, unauthenticated, direction, session, freshness, replay, capacity, configVersion
+    case clockDiscontinuity
     case keychain(Int32)
 }
 
@@ -107,6 +108,8 @@ nonisolated final class IPCReceiver: Sendable {
     private struct State {
         var session: String
         var configVersion: Int?
+        var wall: TimeInterval
+        var monotonic: TimeInterval
         var nonces: [Data: TimeInterval] = [:]
     }
     private let state: Mutex<State>
@@ -115,12 +118,35 @@ nonisolated final class IPCReceiver: Sendable {
         self.direction = direction
         self.clock = clock
         self.capacity = capacity
-        self.state = Mutex(State(session: session))
+        self.state = Mutex(State(session: session, wall: clock.wallTime, monotonic: clock.monotonicTime))
+    }
+    /// A one-second delta tolerance allows small clock corrections and sampling
+    /// skew. Larger forward/backward steps retire the entire session BEFORE any
+    /// nonce can expire. Normal retention is safe only inside this clock epoch.
+    func checkClock() -> Bool {
+        state.withLock { state in
+            let wall = clock.wallTime, monotonic = clock.monotonicTime
+            let discontinuity = abs((wall - state.wall) - (monotonic - state.monotonic)) > 1
+                || monotonic < state.monotonic
+            // Keep the epoch anchor: repeated sub-tolerance corrections must
+            // not accumulate into a rollback larger than nonce retention.
+            if discontinuity {
+                state.wall = wall
+                state.monotonic = monotonic
+                state.session = ""
+                state.configVersion = nil
+            }
+            return discontinuity
+        }
+    }
+    func resetSession(_ session: String) {
+        state.withLock { $0.session = session; $0.configVersion = nil }
     }
     func receive(_ wire: String, key: Data) throws -> VerifiedMessage {
         let envelope = try IPCEnvelope.parse(wire)
         guard MessageSecurity.verify(envelope, key: key) else { throw IPCSecurityError.unauthenticated }
         guard envelope.direction == direction else { throw IPCSecurityError.direction }
+        guard !checkClock() else { throw IPCSecurityError.clockDiscontinuity }
         try state.withLock { state in
             let announcesSession = direction == .toExtension && ["running", "menu-config"].contains(envelope.action)
             if direction == .toMain {
