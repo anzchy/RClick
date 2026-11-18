@@ -187,6 +187,7 @@ nonisolated final class Messager: NSObject, Sendable {
         var main: [MainToExtensionAction: @Sendable (VerifiedMessage) -> Void] = [:]
         var ext: [ExtensionToMainAction: @Sendable (VerifiedMessage) -> Void] = [:]
         var key: Data?
+        var configVersion = 0
     }
     private let state: Mutex<State>
     private let isExtension: Bool
@@ -267,7 +268,14 @@ nonisolated final class Messager: NSObject, Sendable {
         send(action.rawValue, direction: .toMain, data: data, id: id)
     }
     @MainActor func sendMenuConfig(_ config: MenuConfigPayload) {
-        guard !isExtension, let payload = try? JSONEncoder().encode(config) else { return }
+        guard !isExtension else { return }
+        let version = state.withLock { $0.configVersion += 1; return $0.configVersion }
+        let versioned = MenuConfigPayload(version: version, actions: config.actions, apps: config.apps,
+                                          newFiles: config.newFiles, commonDirs: config.commonDirs,
+                                          actionsCollapsed: config.actionsCollapsed, appsCollapsed: config.appsCollapsed,
+                                          newFilesCollapsed: config.newFilesCollapsed, commonDirsCollapsed: config.commonDirsCollapsed,
+                                          iconStyle: config.iconStyle)
+        guard let payload = try? JSONEncoder().encode(versioned) else { return }
         sendRaw(MainToExtensionAction.menuConfig.rawValue, direction: .toExtension, payload: payload, id: UUID().uuidString)
     }
     func sendRunningNotification(directories: [String] = []) { sendToExtension(.running, data: RunningPayload(directories: directories)) }
