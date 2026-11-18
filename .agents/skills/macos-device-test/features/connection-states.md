@@ -24,16 +24,16 @@ Quit RClick from its menu bar item, then right-click in Finder. Click the grey h
 Preconditions: baseline; doctor PASS.
 
 1. `CONN-04` first, while the app is up: `pause.sh "$RUN_DIR"`; within 30 s of the last heartbeat, right-click
-   `alpha.txt` → Copy File Name. Result: after about 3 s an alert **RClick did not respond** (`axdump.sh FinderSyncExt`);
+   `alpha.txt` → Copy File Name. Result: after about 3 s an alert **RClick did not respond** (`ui.sh dialog $(pgrep -x FinderSyncExt)`);
    capture `CONN-04-alert`; OK. `resume.sh "$RUN_DIR"`. Disclose the SIGSTOP. Check `pbpaste` after resume: the
    delayed click may still run once the app resumes; record what happened.
 2. Quit RClick through its own UI (menu bar item → Quit), not cleanup. Confirm the recorded PID exited. Then run
    `cleanup.sh "$RUN_DIR"` (reports already exited and retires the record).
-3. `CONN-01`: right-click `alpha.txt`. Result: the two grey hint lines; `finder-menu.sh` shows actions other than Copy
+3. `CONN-01`: right-click `alpha.txt`. Result: the two grey hint lines; `ui.sh menu` shows actions other than Copy
    Path disabled. Capture `CONN-01-offline-menu`.
 4. `CONN-02`: choose Copy Path. Result: `pbpaste` prints the path; no alert.
 5. `CONN-03`: right-click → click **RClick is not running**. Result: a new RClick process from this bundle starts;
-   `adopt.sh "$RUN_DIR-relaunch" --from "$RUN_DIR"`; no Settings window opens (`axdump.sh <new pid>` shows no
+   `adopt.sh "$RUN_DIR-relaunch" --from "$RUN_DIR"`; no Settings window opens (`ui.sh dialog <new pid>` shows no
    Settings window); the app log shows `hintClick=true`. Re-open the menu: the normal items are back (within one
    heartbeat). Then `doctor.sh "$RUN_DIR-relaunch"` and, at the end, `cleanup.sh "$RUN_DIR-relaunch"`.
 6. `CONN-05`: only reachable if an enabled non-Copy-Path item can be chosen while offline; otherwise NOT VERIFIED
