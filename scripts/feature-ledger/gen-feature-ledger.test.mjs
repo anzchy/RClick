@@ -664,3 +664,41 @@ test("a brace inside a string or a comment does not end or extend a filtered cas
   assert.equal(row(r.text, "picked")["Test cases"], "1");
   assert.equal(row(r.text, "picked")["Test lines"], "5", "declaration through its own closing brace, comments not counted");
 });
+
+/** A fixture whose table was generated at its input commit and committed alone, 200 days later; then an unrelated commit. */
+function committedTableFixture(t) {
+  const root = fixture(t,
+    { "App/Copier.swift": SWIFT_SOURCE, "Notes/Unrelated.md": "notes\n" },
+    [{ id: "copy", name: "Copy", area: "Menu", process: ["app"], paths: ["App/Copier.swift"] }],
+  );
+  const input = git(root, ["rev-parse", "HEAD"]);
+  const first = generate(root);
+  assert.equal(first.status, 0, first.stderr);
+  git(root, ["add", "out/feature-metrics.md"]);
+  git(root, ["commit", "-q", "-m", "metrics"], T0 + 200 * DAY);
+  put(root, "Notes/Unrelated.md", "more notes\n");
+  commitAll(root, "unrelated", T0 + 300 * DAY);
+  return { root, input, committed: git(root, ["show", "HEAD:out/feature-metrics.md"]) + "\n" };
+}
+
+test("freshness: regenerating at the commit the provenance line names reproduces the committed table byte for byte", (t) => {
+  const { root, input, committed } = committedTableFixture(t);
+  const named = /Generated from commit `([0-9a-f]{40})`/.exec(committed);
+  assert.ok(named, committed);
+  assert.equal(named[1], input, "the line names the input commit");
+  git(root, ["checkout", "-q", named[1]]);
+  const again = generate(root);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(again.text, committed);
+});
+
+test("the Commits column moves with the anchor commit's date, even when no measured path changed", (t) => {
+  const { root, committed } = committedTableFixture(t);
+  const atHead = generate(root); // HEAD is 300 days after the input commit; only Notes/Unrelated.md changed
+  assert.equal(atHead.status, 0, atHead.stderr);
+  const before = row(committed, "copy");
+  const after = row(atHead.text, "copy");
+  assert.equal(before["Commits (90 d)"], "1", "the fixture commit is inside the window of the input commit");
+  assert.equal(after["Commits (90 d)"], "0", "and outside the window of HEAD");
+  for (const k of Object.keys(before)) if (k !== "Commits (90 d)") assert.equal(after[k], before[k], k);
+});
