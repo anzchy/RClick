@@ -103,10 +103,12 @@ nonisolated struct VerifiedMessage: Sendable {
 nonisolated final class IPCReceiver: Sendable {
     let direction: IPCDirection
     let clock: any IPCClock
+    private let capacity: Int
     private let nonces = Mutex<[Data: TimeInterval]>([:])
-    init(direction: IPCDirection, clock: any IPCClock = SystemIPCClock()) {
+    init(direction: IPCDirection, clock: any IPCClock = SystemIPCClock(), capacity: Int = 1024) {
         self.direction = direction
         self.clock = clock
+        self.capacity = capacity
     }
     func receive(_ wire: String, key: Data) throws -> VerifiedMessage {
         let envelope = try IPCEnvelope.parse(wire)
@@ -116,6 +118,7 @@ nonisolated final class IPCReceiver: Sendable {
             let now = clock.monotonicTime
             cache = cache.filter { now - $0.value < 15 }
             guard cache[envelope.nonce] == nil else { throw IPCSecurityError.replay }
+            guard cache.count < capacity else { throw IPCSecurityError.capacity }
             cache[envelope.nonce] = now
         }
         return VerifiedMessage(envelope: envelope)
