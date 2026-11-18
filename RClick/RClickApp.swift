@@ -185,15 +185,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Register message handlers using type-safe API
             logger.info("Registering message handlers")
-            messager.onExtensionMessage(.click) { [weak self] message in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if let event = self.messager.decodeSignedData(message, as: ClickEventPayload.self) {
-                        // Receipt acknowledgement, independent of operation success.
-                        self.messager.sendActionAck(inReplyTo: message.id)
-                        await self.handleClickEvent(event)
-                    }
-                }
+            messager.onClickEvent { [weak self] event in
+                await self?.handleClickEvent(event)
             }
 
             messager.onExtensionMessage(.heartbeat) { [weak self] _ in

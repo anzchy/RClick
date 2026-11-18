@@ -196,6 +196,8 @@ nonisolated final class Messager: NSObject, Sendable {
         var lastConfig: Data?
         var invalidated: (@Sendable () -> Void)?
         var failures = IPCFailurePolicy()
+        var decodeDrops = IPCFailurePolicy()
+        var outgoingDrops = IPCFailurePolicy()
     }
     private let state: Mutex<State>
     private let isExtension: Bool
@@ -204,12 +206,13 @@ nonisolated final class Messager: NSObject, Sendable {
     private let clock: any IPCClock
     private let random: any IPCRandom
     private let rejectionNotice: IPCRejectionNotice?
+    private let diagnosticLog: (@Sendable (IPCDiagnostic) -> Void)?
     private let receiver: IPCReceiver
     private let logger = Logger(subsystem: "cn.anzchy.RClick", category: "Messager")
 
     init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default(),
          keyProvider: any KeyProvider, clock: any IPCClock = SystemIPCClock(),
-         random: any IPCRandom = SystemIPCRandom(), rejectionNotice: IPCRejectionNotice? = nil) {
+         random: any IPCRandom = SystemIPCRandom(), rejectionNotice: IPCRejectionNotice? = nil, diagnosticLog: (@Sendable (IPCDiagnostic) -> Void)? = nil) {
         let ext = isExtension ?? (Bundle.main.bundleIdentifier ?? "").hasSuffix(".FinderSyncExt")
         self.isExtension = ext
         self.center = center
@@ -217,6 +220,7 @@ nonisolated final class Messager: NSObject, Sendable {
         self.clock = clock
         self.random = random
         self.rejectionNotice = rejectionNotice
+        self.diagnosticLog = diagnosticLog
         let launchSession = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
         self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock, session: launchSession)
         let initialKey = try? keyProvider.key(createIfMissing: !ext)
@@ -268,6 +272,20 @@ nonisolated final class Messager: NSObject, Sendable {
     func onExtensionMessage(_ action: ExtensionToMainAction, handler: @escaping @Sendable (VerifiedMessage) -> Void) {
         state.withLock { $0.ext[action] = handler }
     }
+    /// The app's actual receive/decode/ack/action boundary, shared with tests.
+    func onClickEvent(_ handler: @escaping @MainActor @Sendable (ClickEventPayload) async -> Void) {
+        onExtensionMessage(.click) { [weak self] message in
+            Task { @MainActor in
+                guard let self else { return }
+                if let event = message.decode(ClickEventPayload.self) {
+                    self.sendActionAck(inReplyTo: message.id)
+                    await handler(event)
+                } else {
+                    self.recordDrop(.undecodableClick)
+                }
+            }
+        }
+    }
     func onSessionInvalidated(_ handler: @escaping @Sendable () -> Void) {
         state.withLock { $0.invalidated = handler }
     }
@@ -312,6 +330,24 @@ nonisolated final class Messager: NSObject, Sendable {
             if !isExtension, report.1 { Task { @MainActor in (self.rejectionNotice ?? IPCRejectionNotice.shared).record() } }
         }
     }
+    private func recordDrop(_ kind: IPCDiagnostic.Kind) {
+        let report = state.withLock { state -> (Bool, Int) in
+            switch kind {
+            case .undecodableClick:
+                let decision = state.decodeDrops.reject(now: clock.monotonicTime, authenticationFailure: false)
+                return (decision.log, state.decodeDrops.rejectedCount)
+            case .oversizedOutgoing:
+                let decision = state.outgoingDrops.reject(now: clock.monotonicTime, authenticationFailure: false)
+                return (decision.log, state.outgoingDrops.rejectedCount)
+            }
+        }
+        guard report.0 else { return }
+        switch kind {
+        case .undecodableClick: logger.error("Undecodable IPC clicks dropped: \(report.1, privacy: .public)")
+        case .oversizedOutgoing: logger.error("Oversized outgoing IPC messages dropped: \(report.1, privacy: .public)")
+        }
+        diagnosticLog?(IPCDiagnostic(kind: kind, count: report.1))
+    }
     private func send<T: Encodable>(_ action: String, direction: IPCDirection, data: T?, id: String, inReplyTo: String = "") {
         guard let payload = try? data.map({ try JSONEncoder().encode($0) }) ?? Data() else { return }
         sendRaw(action, direction: direction, payload: payload, id: id, inReplyTo: inReplyTo)
@@ -322,7 +358,7 @@ nonisolated final class Messager: NSObject, Sendable {
         let envelope = IPCEnvelope(direction: direction, action: action, id: id, inReplyTo: inReplyTo,
                                    session: receiver.currentSession, timestamp: clock.wallTime, nonce: nonce, payload: payload)
         let wire = MessageSecurity.sign(envelope, key: key).wireString()
-        guard wire.utf8.count <= IPCEnvelope.maximumWireBytes else { return }
+        guard wire.utf8.count <= IPCEnvelope.maximumWireBytes else { recordDrop(.oversizedOutgoing); return }
         let name = Notification.Name(direction == .toMain ? Self.extensionToMainNotification : Self.mainToExtensionNotification)
         if let distributed = center as? DistributedNotificationCenter {
             distributed.postNotificationName(name, object: wire, userInfo: nil, deliverImmediately: true)
@@ -457,4 +493,10 @@ nonisolated final class IPCExtensionDelivery: Sendable {
     var isHostAppRunning: Bool { messager.canUseCachedMenus && state.withLock { $0.activity.isActive() } }
     func registerClick(_ id: String) { state.withLock { $0.pending.register(id) } }
     func expireClick(_ id: String) -> Bool { state.withLock { $0.pending.expire(id) } }
+}
+
+nonisolated struct IPCDiagnostic: Sendable {
+    enum Kind: Sendable { case undecodableClick, oversizedOutgoing }
+    let kind: Kind
+    let count: Int
 }

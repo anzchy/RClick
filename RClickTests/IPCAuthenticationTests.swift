@@ -229,6 +229,35 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertTrue(notice.wasRejected)
     }
 
+    func testUndecodableClickAndOversizeOutgoingEmitOnlyRateLimitedCounts() async throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let logs = Mutex<[IPCDiagnostic]>([])
+        let recorded = expectation(description: "both silent-drop paths emit a diagnostic")
+        recorded.expectedFulfillmentCount = 2
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock, diagnosticLog: { event in
+            logs.withLock { $0.append(event) }
+            recorded.fulfill()
+        })
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let acknowledgements = Mutex(0)
+        ext.onMainMessage(.actionAck) { _ in acknowledgements.withLock { $0 += 1 } }
+        app.onClickEvent { _ in XCTFail("undecodable clicks must never reach handleClickEvent") }
+        app.sendRunningNotification()
+        for nonce in UInt8(1)...2 {
+            let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "bad", session: app.currentSession,
+                timestamp: 100, nonce: Data(repeating: nonce, count: 16), payload: Data("{".utf8)), key: key).wireString()
+            center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+            app.sendToExtension(.running, data: String(repeating: "x", count: 300_000))
+        }
+        await fulfillment(of: [recorded], timeout: 1)
+        XCTAssertEqual(logs.withLock { $0.count }, 2)
+        XCTAssertEqual(logs.withLock { $0.filter { $0.kind == .undecodableClick }.map(\.count) }, [1])
+        XCTAssertEqual(logs.withLock { $0.filter { $0.kind == .oversizedOutgoing }.map(\.count) }, [1])
+        XCTAssertEqual(acknowledgements.withLock { $0 }, 0)
+    }
+
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
         let key = Data(repeating: 0x42, count: 32)
         let original = ClickEventPayload(itemId: "delete", itemType: .action, target: ["/tmp/selected"], trigger: .contextualItems, optionKeyPressed: false)
