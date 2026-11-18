@@ -216,5 +216,35 @@ class Dialogs(unittest.TestCase):
             finderui.find_button(self.nodes, 'Manage…', window_text='Permanently delete')
 
 
+class PanelGrant(unittest.TestCase):
+    # The panel shows /tmp/run/fixtures (location pop-up `fixtures`); the sidebar also lists a `rclick-cal` favourite.
+    def setUp(self):
+        self.nodes = dump('panel-grant.jsonl')
+
+    def test_target_row_in_the_file_list_is_selected_not_the_sidebar_favourite(self):
+        plan = finderui.panel_plan(self.nodes, '/tmp/run/fixtures/rclick-cal')
+        self.assertEqual((plan.mode, plan.row_path, plan.button_path), ('row', (0, 0, 1, 0, 0), (0, 4)))
+
+    def test_the_folder_the_panel_already_shows_is_granted_without_a_row(self):
+        plan = finderui.panel_plan(self.nodes, '/tmp/run/fixtures/')
+        self.assertEqual((plan.mode, plan.row_path, plan.button_path), ('current', None, (0, 4)))
+
+    def test_a_same_named_folder_under_another_parent_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, "panel shows 'fixtures'"):
+            finderui.panel_plan(self.nodes, '/tmp/elsewhere/rclick-cal')
+
+    def test_a_folder_that_is_not_listed_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, 'no row'):
+            finderui.panel_plan(self.nodes, '/tmp/run/fixtures/missing')
+
+    def test_a_panel_without_the_button_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, "button titled 'Choose'"):
+            finderui.panel_plan(self.nodes, '/tmp/run/fixtures/rclick-cal', button='Choose')
+
+    def test_relative_folder_is_refused(self):
+        with self.assertRaisesRegex(finderui.Usage, 'absolute'):
+            finderui.panel_plan(self.nodes, 'fixtures/rclick-cal')
+
+
 if __name__ == '__main__':
     unittest.main()

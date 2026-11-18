@@ -328,3 +328,44 @@ def find_button(nodes, title, window_text=None):
     if len(candidates) > 1:
         raise Refused(f'{len(candidates)} windows have a button titled {title!r}; pass --window-text')
     return candidates[0]
+
+
+class PanelPlan:
+    def __init__(self, mode, window, row_path, button_path, note):
+        self.mode, self.window, self.row_path, self.button_path, self.note = mode, window, row_path, button_path, note
+
+
+def panel_plan(nodes, folder, button='Grant Access'):
+    """How to grant `folder` in an open folder panel (NSOpenPanel) without typing: no keyboard, so the input source
+    does not matter (panel-choose.sh failed under a pinyin IME, i22-device-20261116e).
+
+    mode 'row': the panel lists `folder` as a row of its file list (not the sidebar): select that row, press the
+    button. mode 'current': the panel already shows `folder` itself (location pop-up): press the button. The
+    location pop-up must name the folder's parent ('row') or the folder ('current'); a panel with no pop-up is
+    refused for 'current', and 'row' then carries a note that the location was not verified."""
+    if not folder.startswith('/'):
+        raise Usage(f'folder must be an absolute path: {folder!r}')
+    target = clean_path(folder)
+    name, parent = basename(target), basename(target.rsplit('/', 1)[0] or '/')
+    windows = [w for w in dialog_windows(nodes) if any(title == nfc(button) for title, _ in w.buttons)]
+    if len(windows) != 1:
+        raise Refused(f'{len(windows)} windows have a button titled {button!r}; expected one open panel')
+    window = windows[0]
+    button_path = next(path for title, path in window.buttons if title == nfc(button))
+    inside = [n for n in nodes if n['path'][:1] == (window.index,)]
+    shown = sorted({nfc(n['value']) for n in inside if n['role'] == 'AXPopUpButton' and isinstance(n.get('value'), str)
+                    and n['value']})
+    matches = [row for row in list_rows(inside) if row.name == name]
+    if len(matches) > 1:
+        raise Refused(f'{len(matches)} rows named {name!r} in the panel')
+    if matches:
+        row = matches[0]
+        if shown and parent not in shown:
+            raise Refused(f'panel shows {shown[0]!r}, not the parent {parent!r} of {target!r}')
+        if not row.visible:
+            raise Refused(f'row {name!r} is not visible in the panel')
+        note = '' if shown else 'no location pop-up: the parent folder was not verified'
+        return PanelPlan('row', window.index, row.path, button_path, note)
+    if name in shown:
+        return PanelPlan('current', window.index, None, button_path, '')
+    raise Refused(f'no row named {name!r} in the panel, and the panel shows {shown[0] if shown else "an unknown folder"!r}')
