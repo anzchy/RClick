@@ -207,8 +207,9 @@ nonisolated final class Messager: NSObject, Sendable {
         self.keyProvider = keyProvider
         self.clock = clock
         self.random = random
-        self.session = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
-        self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock)
+        let launchSession = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
+        self.session = launchSession
+        self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock, session: launchSession)
         self.state = Mutex(State(key: try? keyProvider.key(createIfMissing: !ext)))
         super.init()
         center.addObserver(self, selector: #selector(receiveNotification(_:)),
@@ -245,9 +246,9 @@ nonisolated final class Messager: NSObject, Sendable {
         sendRaw(action, direction: direction, payload: payload, id: id, inReplyTo: inReplyTo)
     }
     private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "") {
-        guard let key = key(), let nonce = try? random.bytes(count: 16) else { return }
+        guard let key = key(), let nonce = try? random.bytes(count: 16), isExtension || !session.isEmpty else { return }
         let envelope = IPCEnvelope(direction: direction, action: action, id: id, inReplyTo: inReplyTo,
-                                   session: session, timestamp: clock.wallTime, nonce: nonce, payload: payload)
+                                   session: receiver.currentSession, timestamp: clock.wallTime, nonce: nonce, payload: payload)
         let wire = MessageSecurity.sign(envelope, key: key).wireString()
         guard wire.utf8.count <= IPCEnvelope.maximumWireBytes else { return }
         let name = Notification.Name(direction == .toMain ? Self.extensionToMainNotification : Self.mainToExtensionNotification)

@@ -104,24 +104,42 @@ nonisolated final class IPCReceiver: Sendable {
     let direction: IPCDirection
     let clock: any IPCClock
     private let capacity: Int
-    private let nonces = Mutex<[Data: TimeInterval]>([:])
-    init(direction: IPCDirection, clock: any IPCClock = SystemIPCClock(), capacity: Int = 1024) {
+    private struct State {
+        var session: String
+        var nonces: [Data: TimeInterval] = [:]
+    }
+    private let state: Mutex<State>
+    var currentSession: String { state.withLock { $0.session } }
+    init(direction: IPCDirection, clock: any IPCClock = SystemIPCClock(), capacity: Int = 1024, session: String = "") {
         self.direction = direction
         self.clock = clock
         self.capacity = capacity
+        self.state = Mutex(State(session: session))
     }
     func receive(_ wire: String, key: Data) throws -> VerifiedMessage {
         let envelope = try IPCEnvelope.parse(wire)
         guard MessageSecurity.verify(envelope, key: key) else { throw IPCSecurityError.unauthenticated }
         guard envelope.direction == direction else { throw IPCSecurityError.direction }
-        let age = clock.wallTime - envelope.timestamp
-        guard age <= 5, age >= -1 else { throw IPCSecurityError.freshness }
-        try nonces.withLock { cache in
+        try state.withLock { state in
+            let announcesSession = direction == .toExtension && ["running", "menu-config"].contains(envelope.action)
+            if direction == .toMain {
+                let bootstrap = envelope.session.isEmpty && ["heartbeat", "request-config"].contains(envelope.action)
+                guard bootstrap || (!state.session.isEmpty && envelope.session == state.session) else { throw IPCSecurityError.session }
+            } else if announcesSession {
+                guard !envelope.session.isEmpty else { throw IPCSecurityError.session }
+            } else {
+                guard !state.session.isEmpty, envelope.session == state.session else { throw IPCSecurityError.session }
+            }
+            let age = clock.wallTime - envelope.timestamp
+            guard age <= 5, age >= -1 else { throw IPCSecurityError.freshness }
+            var cache = state.nonces
+            defer { state.nonces = cache }
             let now = clock.monotonicTime
             cache = cache.filter { now - $0.value < 15 }
             guard cache[envelope.nonce] == nil else { throw IPCSecurityError.replay }
             guard cache.count < capacity else { throw IPCSecurityError.capacity }
             cache[envelope.nonce] = now
+            if announcesSession { state.session = envelope.session }
         }
         return VerifiedMessage(envelope: envelope)
     }
