@@ -7668,42 +7668,41 @@
         }
       }
     },
-      "Unverifiable Finder messages were rejected. If you just updated RClick, relaunch Finder.": {
-        "extractionState": "manual",
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Unverifiable Finder messages were rejected. If you just updated RClick, relaunch Finder."
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "已拒绝无法验证的 Finder 消息。如果您刚更新了 RClick，请重新启动 Finder。"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "検証できない Finder メッセージを拒否しました。RClick を更新した直後の場合は、Finder を再起動してください。"
-            }
-          },
-          "es": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Se rechazaron mensajes de Finder que no se pudieron verificar. Si acaba de actualizar RClick, reinicie Finder."
-            }
-          },
-          "fr": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Des messages Finder non vérifiables ont été rejetés. Si vous venez de mettre à jour RClick, relancez Finder."
-            }
+    "Unverifiable Finder messages were rejected. If you just updated RClick, relaunch Finder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unverifiable Finder messages were rejected. If you just updated RClick, relaunch Finder."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拒绝无法验证的 Finder 消息。如果您刚更新了 RClick，请重新启动 Finder。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検証できない Finder メッセージを拒否しました。RClick を更新した直後の場合は、Finder を再起動してください。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se rechazaron mensajes de Finder que no se pudieron verificar. Si acaba de actualizar RClick, reinicie Finder."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Des messages Finder non vérifiables ont été rejetés. Si vous venez de mettre à jour RClick, relancez Finder."
           }
         }
       }
-,
+    },
     "Up to Date" : {
       "extractionState" : "manual",
       "localizations" : {
