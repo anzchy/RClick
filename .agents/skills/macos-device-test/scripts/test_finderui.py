@@ -57,6 +57,12 @@ class FindRow(unittest.TestCase):
                 node['value'] = unicodedata.normalize('NFD', 'café.txt')
         rows = finderui.list_rows(nodes)
         self.assertEqual(finderui.find_row(rows, unicodedata.normalize('NFC', 'café.txt')).index, 5)
+        self.assertEqual(finderui.find_row(rows, unicodedata.normalize('NFD', 'café.txt')).index, 5)
+        for node in nodes:
+            if node.get('value') == unicodedata.normalize('NFD', 'café.txt'):
+                node['value'] = unicodedata.normalize('NFC', 'café.txt')
+        rows = finderui.list_rows(nodes)
+        self.assertEqual(finderui.find_row(rows, unicodedata.normalize('NFD', 'café.txt')).index, 5)
 
     def test_a_duplicate_name_is_refused(self):
         rows = finderui.list_rows(dump('finder-window-duplicate-name.jsonl'))
@@ -187,24 +193,26 @@ class Guard(unittest.TestCase):
 
 
 class Choose(unittest.TestCase):
+    GROUP = Menu.RCLICK
+
     def setUp(self):
         self.items = finderui.menu_items(dump('menu-file-alpha.jsonl'))
 
     def test_item_is_taken_from_rclicks_group_not_from_another_extension(self):
-        item, sub = finderui.find_group_item(self.items, 'Copy Path')
+        item, sub = finderui.find_group_item(self.items, 'Copy Path', group=self.GROUP)
         # Another extension's `Copy Path` sits further down (y 982); RClick's is the one after Quick Actions.
         self.assertEqual((item.index, item.point, sub), (27, (565, 598), None))
 
     def test_submenu_item_is_addressed_inside_rclicks_new_file(self):
-        item, sub = finderui.find_group_item(self.items, 'New File', sub='TXT')
+        item, sub = finderui.find_group_item(self.items, 'New File', sub='TXT', group=self.GROUP)
         self.assertEqual((item.index, sub), (31, (31, 0, 0)))
         with self.assertRaisesRegex(finderui.Refused, 'no submenu item'):
-            finderui.find_group_item(self.items, 'New File', sub='RTF')  # only the other extension's New File has RTF
+            finderui.find_group_item(self.items, 'New File', sub='RTF', group=self.GROUP)  # only the other extension's New File has RTF
 
     def test_a_title_outside_the_group_is_refused(self):
         for title in ('Move file to...', 'Compress “alpha.txt”', 'Hide'):
             with self.subTest(title=title), self.assertRaisesRegex(finderui.Refused, "not in RClick's group"):
-                finderui.find_group_item(self.items, title)
+                finderui.find_group_item(self.items, title, group=self.GROUP)
 
     def test_a_disabled_item_is_refused(self):
         nodes = dump('menu-file-alpha.jsonl')
@@ -212,7 +220,51 @@ class Choose(unittest.TestCase):
             if node.get('title') == 'Copy File Name':
                 node['enabled'] = False
         with self.assertRaisesRegex(finderui.Refused, 'disabled'):
-            finderui.find_group_item(finderui.menu_items(nodes), 'Copy File Name')
+            finderui.find_group_item(finderui.menu_items(nodes), 'Copy File Name', group=self.GROUP)
+
+
+class GroupIdentity(unittest.TestCase):
+    """RClick's group is identified by positive evidence: the run of exactly the expected titles (`--group`, RClick's
+    configured top-level items in order) after the last `Quick Actions`, found once (audit r1 M3, opus L2)."""
+    GROUP = Menu.RCLICK
+
+    def setUp(self):
+        self.items = finderui.menu_items(dump('menu-file-alpha.jsonl'))
+        self.other_copy = next(item for item in self.items if item.title == 'Copy Path' and item.point[1] > 900)
+
+    def test_another_extensions_copy_path_before_rclicks_group_is_not_taken(self):
+        quick = [item.title for item in self.items].index('Quick Actions')
+        items = self.items[:quick + 1] + [self.other_copy] + [i for i in self.items[quick + 1:] if i is not self.other_copy]
+        item, _ = finderui.find_group_item(items, 'Copy Path', group=self.GROUP)
+        self.assertEqual(item.point, (565, 598))  # RClick's, not the other extension's (565, 982)
+        self.assertEqual([i.title for i in finderui.rclick_group(items, expected=self.GROUP)], self.GROUP)
+
+    def test_without_the_expected_group_choose_has_no_positive_evidence(self):
+        with self.assertRaisesRegex(finderui.Usage, '--group'):
+            finderui.find_group_item(self.items, 'Copy Path')
+
+    def test_the_expected_group_twice_is_ambiguous(self):
+        twice = self.items + [item for item in self.items if item.title in self.GROUP and item.point[1] < 700]
+        with self.assertRaisesRegex(finderui.Refused, '2 runs'):
+            finderui.find_group_item(twice, 'Copy Path', group=self.GROUP)
+
+    def test_an_expected_group_that_is_not_in_the_menu_is_refused(self):
+        with self.assertRaisesRegex(finderui.Refused, 'not found'):
+            finderui.find_group_item(self.items, 'Copy Path', group=['Copy Path', 'Hide', 'New File'])
+
+    def test_the_skip_confirmation_title_matches_its_base_title_in_the_group(self):
+        items = finderui.menu_items(dump('menu-file-sibling-option.jsonl'))
+        item, _ = finderui.find_group_item(items, 'Delete Direct (skip confirmation)', group=self.GROUP)
+        self.assertEqual(item.title, 'Delete Direct (skip confirmation)')
+
+    def test_the_group_follows_the_last_quick_actions(self):
+        # A second `Quick Actions` (e.g. another extension's submenu) with a look-alike run before Finder's own.
+        decoy = finderui.MenuItem(90, 'Quick Actions', True, (565, 100), (90,), [])
+        fakes = [finderui.MenuItem(91 + i, title, True, (565, 120 + i), (91 + i,), [])
+                 for i, title in enumerate(self.GROUP)]
+        items = [decoy] + fakes + self.items
+        self.assertEqual(finderui.find_group_item(items, 'Copy Path', group=self.GROUP)[0].point, (565, 598))
+        self.assertEqual(finderui.rclick_group(items)[0].point, (565, 598))
 
 
 class Dialogs(unittest.TestCase):
@@ -277,8 +329,10 @@ class Arguments(unittest.TestCase):
     def test_commands_parse_into_their_options(self):
         args = finderui.parse_args(['open-menu', '%2541.txt', '--option'])
         self.assertEqual((args.command, args.name, args.option), ('open-menu', '%2541.txt', True))
-        args = finderui.parse_args(['choose', '620,225', 'New File', '--sub', 'TXT', '--target', '/tmp/a b.txt'])
+        args = finderui.parse_args(['choose', '620,225', 'New File', '--sub', 'TXT', '--target', '/tmp/a b.txt',
+                                    '--group', 'Copy Path', '--group', 'New File'])
         self.assertEqual((args.point, args.title, args.sub, args.target), ((620, 225), 'New File', 'TXT', ['/tmp/a b.txt']))
+        self.assertEqual(args.group, ['Copy Path', 'New File'])
         args = finderui.parse_args(['guard', '620,225', '--background', '/tmp/rclick-cal'])
         self.assertEqual((args.targets, args.background), ([], '/tmp/rclick-cal'))
         args = finderui.parse_args(['press-button', '4242', 'Delete', '--window-text', 'Permanently delete'])
@@ -287,7 +341,8 @@ class Arguments(unittest.TestCase):
     def test_bad_arguments_are_usage_errors(self):
         for argv in ([], ['bogus'], ['menu', 'a,b'], ['menu', '620'], ['select', 'alpha.txt'],
                      ['guard', '620,225'], ['guard', '620,225', '/tmp/a', '--background', '/tmp'],
-                     ['choose', '620,225', 'Copy Path'], ['dialog', 'Finder'], ['grant', '4242', 'fixtures'],
+                     ['choose', '620,225', 'Copy Path'], ['choose', '620,225', 'Copy Path', '--target', '/tmp/a'],
+                     ['dialog', 'Finder'], ['grant', '4242', 'fixtures'],
                      ['open-menu'], ['calibrate', 'relative/run']):
             with self.subTest(argv=argv), self.assertRaises(finderui.Usage):
                 finderui.parse_args(argv)

@@ -24,6 +24,8 @@ LOCK_ENV = {'RCLICK_GUI_LOCK_BATCH': 'i32-cal', 'RCLICK_GUI_LOCK_ACQUISITION_ID'
 HELD = ('HELD:\n  project=rclick\n  session=rclick-delegator\n  batch=i32-cal\n  start=2026-11-18T01:00:00+0800\n'
         '  pid=4242\n  expected_minutes=30\n  purpose=device run\n  acquisition_id=' + ACQUISITION + '\n')
 FINDER = 415
+GROUP = ('--group', 'Copy Path', '--group', 'Copy File Name', '--group', 'Delete Direct', '--group', 'Terminal',
+         '--group', 'New File')
 
 
 def fixture(name):
@@ -126,7 +128,7 @@ class ChooseAtTheActingBoundary(unittest.TestCase):
 
     def test_a_verified_menu_is_pressed_with_its_identity(self):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 0, err)
         self.assertEqual(len(desktop.pressed), 1)
         request = desktop.pressed[0]
@@ -137,7 +139,7 @@ class ChooseAtTheActingBoundary(unittest.TestCase):
     def test_a_menu_replaced_by_the_siblings_before_the_press_is_not_pressed(self):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
         desktop.menu_at_press = fixture('menu-file-sibling-option.jsonl')  # same Copy Path at the same index
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
         self.assertIn('nothing pressed', err)
@@ -146,21 +148,21 @@ class ChooseAtTheActingBoundary(unittest.TestCase):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
         self.assertEqual(drive(desktop, 'guard', '660,237', self.ALPHA)[0], 0)
         desktop.menu = fixture('menu-file-sibling-option.jsonl')  # another row's menu now at the point
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
 
     def test_a_selection_changed_inside_the_session_is_not_pressed(self):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
         desktop.selection_at_check = [DIR + '/%41.txt']
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
         self.assertIn('selection', err)
 
     def test_a_menu_owned_by_another_process_is_not_pressed(self):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA], menu_pid=999)
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
         self.assertIn('not Finder', err)
@@ -204,14 +206,14 @@ class CommandLine(unittest.TestCase):
 
     def test_acting_without_the_rclick_gui_lock_exits_70_and_acts_on_nothing(self):
         for args in (('select', '/tmp/a.txt'), ('open-menu', 'alpha.txt'), ('guard', '1,2', '/tmp/a'),
-                     ('choose', '1,2', 'Copy Path', '--target', '/tmp/a'), ('press-button', '42', 'OK'),
+                     ('choose', '1,2', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path'), ('press-button', '42', 'OK'),
                      ('grant', '42', '/tmp/x')):
             with self.subTest(args=args):
                 result = self.run_script('ui.sh', *args)
                 self.assertEqual(result.returncode, 70, result.stderr)
                 self.assertIn('GUI lock', result.stderr)
         run = Path(self.temp.name) / 'run'
-        result = self.run_script('calibrate.sh', str(run))
+        result = self.run_script('calibrate.sh', str(run), '--group', 'Copy Path')
         self.assertEqual(result.returncode, 70, result.stderr)
         self.assertFalse(run.exists())
         self.assert_no_desktop_call()
@@ -238,7 +240,7 @@ class WhitespaceIsIdentity(unittest.TestCase):
 
     def test_choose_with_the_spaced_target_on_the_unspaced_selection_presses_nothing(self):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
-        code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED, *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
         self.assertEqual(desktop.requests, [{'abort': True}])
@@ -246,7 +248,7 @@ class WhitespaceIsIdentity(unittest.TestCase):
     def test_choose_with_n_targets_compares_each_path_exactly(self):
         desktop = FakeDesktop(self.two_items_menu(), [self.ALPHA, DIR + '/b.txt'])
         code, _, err = drive(desktop, 'choose', '660,237', 'Delete Direct', '--target', self.SPACED,
-                             '--target', DIR + '/b.txt')
+                             '--target', DIR + '/b.txt', *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
 
@@ -258,14 +260,14 @@ class WhitespaceIsIdentity(unittest.TestCase):
     def test_a_spaced_name_round_trips_and_is_pressed(self):
         menu = fixture('menu-file-alpha.jsonl').replace('Compress “alpha.txt”', 'Compress “alpha.txt ”')
         desktop = FakeDesktop(menu, [self.SPACED])
-        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.SPACED)
+        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.SPACED, *GROUP)
         self.assertEqual(code, 0, err)
         self.assertIn("'/tmp/rclick-cal/alpha.txt '", out)
         self.assertEqual(len(desktop.pressed), 1)
 
     def test_a_selected_path_with_a_line_break_is_refused(self):
         desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [DIR + '/alpha\n.txt'])
-        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA, *GROUP)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
 

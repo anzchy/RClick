@@ -28,7 +28,8 @@ def plan_lines(run_dir):
 
 
 class Run:
-    def __init__(self, run_dir):
+    def __init__(self, run_dir, group):
+        self.group = group
         self.run = device.run_dir(str(run_dir))
         stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         self.folder = self.run / 'fixtures' / f'calibration-{stamp}'
@@ -144,10 +145,8 @@ class Run:
         return f'{len(self.items)} items, {titles[0]}'
 
     def rclick_group(self):
-        group = ui.rclick_group(self.items)
-        if not group:
-            raise ui.Refused("no RClick group after Quick Actions: extension not loaded (doctor extension-*)?")
-        return ', '.join(item.title for item in group)
+        group = ui.rclick_group(self.items, expected=self.group)
+        return f'found once at items {group[0].index}..{group[-1].index}: ' + ', '.join(item.title for item in group)
 
     def guard(self):
         reason = ui.check_guard([self.path('%2541.txt')], drive.selection(), self.items)
@@ -161,10 +160,10 @@ class Run:
         return f'accepted {reason}; refused the sibling: {refused}'
 
     def choose(self):
-        if 'Copy Path' not in [item.title for item in ui.rclick_group(self.items)]:
-            raise ui.Refused("RClick's group has no Copy Path")
+        if 'Copy Path' not in self.group:
+            raise ui.Refused("the --group has no Copy Path: calibration chooses Copy Path")
         _, point = drive.open_menu('alpha.txt')
-        drive.choose(point, 'Copy Path', targets=[self.path('alpha.txt')])
+        drive.choose(point, 'Copy Path', self.group, targets=[self.path('alpha.txt')])
         time.sleep(0.8)
         pasted = drive.run(['pbpaste'], timeout=5).stdout.strip()
         if pasted != self.path('alpha.txt'):
@@ -229,11 +228,11 @@ class Run:
                     print(f'note: calibration osascript {process.pid} did not exit')
 
 
-def calibrate(run_dir, dry_run=False):
+def calibrate(run_dir, dry_run=False, group=()):
     if dry_run:
         print('\n'.join(plan_lines(run_dir)))
         return ui.OK
-    run = Run(run_dir)
+    run = Run(run_dir, list(group))
     if run.environment():
         try:
             try:

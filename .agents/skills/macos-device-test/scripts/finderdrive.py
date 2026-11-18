@@ -270,7 +270,7 @@ class MenuSession:
             raise ui.Environment(err or f'axprobe menu-session exited {self.process.returncode}')
 
 
-def choose(point, title, sub=None, targets=(), background=None, also=()):
+def choose(point, title, group, sub=None, targets=(), background=None):
     """The guard and the press at ONE boundary: the menu session's dump must belong to Finder, pass the guard
     against a selection read now (inside the session), and hold `title` in RClick's group; the same axprobe
     process then re-checks the held menu and presses. Any refusal aborts the session, closes the menu, presses
@@ -283,7 +283,7 @@ def choose(point, title, sub=None, targets=(), background=None, also=()):
         items = ui.menu_items(session.nodes)
         front = ui.one_line(osascript(FRONT_SCRIPT)) if background else None
         reason = ui.check_guard(targets, selection(), items, background=background, front=front)
-        item, sub_path = ui.find_group_item(items, title, sub, also)
+        item, sub_path = ui.find_group_item(items, title, sub, group)
     except (ui.Refused, ui.Environment):
         session.abort()
         escape()
@@ -296,13 +296,16 @@ def choose(point, title, sub=None, targets=(), background=None, also=()):
     return reason, item
 
 
-def print_menu(items, also=()):
+def print_menu(items, also=(), expected=()):
     for item in items:
         x, y = item.point or ('?', '?')
         print(f'{item.index}|{item.title}|{str(item.enabled).lower()}|{x},{y}|{len(item.sub)}')
     print('compress: ' + (' / '.join(ui.compress_titles(items)) or '(none)'))
     group = ui.rclick_group(items, also)
-    print('rclick-group: ' + (', '.join(item.title for item in group) or '(none)'))
+    print('rclick-group (heuristic, never used to choose): ' + (', '.join(item.title for item in group) or '(none)'))
+    if expected:
+        group = ui.rclick_group(items, expected=expected)
+        print(f'rclick-group (expected): found once at items {group[0].index}..{group[-1].index}')
     for item in group:
         if item.sub:
             print(f'  {item.title}: ' + ', '.join(name for name, _ in item.sub))
@@ -340,7 +343,7 @@ def command(args):
         require_lock()
     if args.command == 'calibrate':
         import calibration
-        return calibration.calibrate(Path(args.run_dir), args.dry_run)
+        return calibration.calibrate(Path(args.run_dir), args.dry_run, args.group)
     require_trust()
     if args.command == 'rows':
         nodes = finder_nodes()
@@ -358,12 +361,12 @@ def command(args):
         print(f'row: {row.index} {row.name} {row.point[0]},{row.point[1]}')
         print(f'menu-point {point[0]},{point[1]}')
     elif args.command == 'menu':
-        print_menu(read_menu(args.point), args.also)
+        print_menu(read_menu(args.point), args.also, args.group)
     elif args.command == 'guard':
         _, reason = guard(args.point, args.targets, args.background)
         print('GUARD PASS — ' + reason)
     elif args.command == 'choose':
-        reason, item = choose(args.point, args.title, args.sub, args.target, args.background, args.also)
+        reason, item = choose(args.point, args.title, args.group, args.sub, args.target, args.background)
         print('GUARD PASS — ' + reason)
         print('chose: ' + item.title + (f' → {args.sub}' if args.sub else ''))
     elif args.command == 'dialog':

@@ -191,19 +191,35 @@ def base_title(title):
     return title[:-len(SKIP_SUFFIX)] if title.endswith(SKIP_SUFFIX) else title
 
 
-def rclick_group(items, also=()):
-    """RClick's section: Finder lists extension items after its own `Quick Actions` item with no separator between
-    extensions (i22-device-20261116e). The group starts after the last `Quick Actions` (or at the first known
-    RClick title when there is none) and ends at the first title that is not an RClick title or repeats one, so
-    another extension's `New File` or `Copy Path` right after it is not taken for RClick's."""
-    known = set(RCLICK_TITLES) | {nfc(title) for title in also}
+def extension_area(items):
+    """Items after the LAST `Quick Actions` (Finder lists extension items there, no separator between extensions,
+    i22-device-20261116e), or the whole menu when there is none."""
     quick = [i for i, item in enumerate(items) if item.title == 'Quick Actions']
-    if quick:
-        start = quick[-1] + 1
-    else:
-        start = next((i for i, item in enumerate(items) if base_title(item.title) in known), len(items))
+    return items[quick[-1] + 1:] if quick else items
+
+
+def rclick_group(items, also=(), expected=None):
+    """RClick's section. With `expected` (RClick's configured top-level titles in order, `--group`): positive
+    evidence, the ONE run of exactly those titles in the extension area (a skip-confirmation title matches its base
+    title); none or two such runs are Refused. Without it, a heuristic for reading only (`ui.sh menu`): known RClick
+    titles from the start of the extension area up to the first unknown or repeated title; it cannot tell RClick's
+    items from another extension's same-titled ones and is never used to choose."""
+    area = extension_area(items)
+    if expected is not None:
+        want = [nfc(title) for title in expected]
+        runs = [area[i:i + len(want)] for i in range(len(area) - len(want) + 1)
+                if [base_title(item.title) for item in area[i:i + len(want)]] == want]
+        if not runs:
+            raise Refused(f"RClick's group {want} not found after Quick Actions: another configuration, the "
+                          'extension not loaded, or a localized menu')
+        if len(runs) > 1:
+            raise Refused(f"{len(runs)} runs of RClick's group {want} in the menu: ambiguous, nothing chosen")
+        return runs[0]
+    known = set(RCLICK_TITLES) | {nfc(title) for title in also}
+    start = 0 if len(area) < len(items) else next(
+        (i for i, item in enumerate(area) if base_title(item.title) in known), len(area))
     group, seen = [], set()
-    for item in items[start:]:
+    for item in area[start:]:
         if not item.title:
             if group:
                 break
@@ -283,14 +299,16 @@ def check_guard(targets, selection, items, background=None, front=None):
     return f'{expected} and selection {wanted}'
 
 
-def find_group_item(items, title, sub=None, also=()):
-    """The enabled item titled exactly `title` inside RClick's group (and its submenu item `sub`), else Refused.
-    Returns (item, submenu item path or None)."""
-    group = rclick_group(items, also)
+def find_group_item(items, title, sub=None, group=()):
+    """The enabled item titled exactly `title` inside RClick's group, identified by the expected titles `group`
+    (positive evidence, see rclick_group), and its submenu item `sub`; else Refused. Returns (item, submenu item path
+    or None)."""
+    if not group:
+        raise Usage("choosing needs RClick's expected group (--group TITLE, repeated in menu order)")
+    group = rclick_group(items, expected=group)
     matches = [item for item in group if item.title == nfc(title)]
     if not matches:
-        raise Refused(f"{title!r} is not in RClick's group ({', '.join(item.title for item in group) or 'empty'}); "
-                      'is the extension loaded, or is it a user-added title (pass --also)?')
+        raise Refused(f"{title!r} is not in RClick's group ({', '.join(item.title for item in group)})")
     item = matches[0]
     if not item.enabled:
         raise Refused(f'{title!r} is disabled in the menu')
@@ -401,17 +419,21 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   selection                              print Finder's selection (POSIX paths, read back through AppleScript)
   open-menu NAME [--option]              AXSelected on the one row named NAME, right-click its AX centre; prints
                                          `menu-point X,Y` (pass it to menu/guard/choose)
-  menu X,Y [--also TITLE]...             list the open menu (element at position): Compress title, RClick group
+  menu X,Y [--also TITLE]... [--group TITLE]...
+                                         list the open menu (element at position): Compress title, RClick group
+                                         (heuristic; with --group: where the expected group is, or refused)
   guard X,Y (TARGET... | --background DIR)
                                          refuse (close the menu, exit 65) unless the menu and the selection are the target's
-  choose X,Y TITLE [--sub ITEM] [--also TITLE]... (--target PATH... | --background DIR)
-                                         guard, then AXPress TITLE (and ITEM in its submenu) inside RClick's group
+  choose X,Y TITLE [--sub ITEM] --group TITLE... (--target PATH... | --background DIR)
+                                         guard, then AXPress TITLE (and ITEM in its submenu) inside RClick's group,
+                                         the one run of exactly the --group titles (RClick's configured items in order)
   dialog PID                             texts and buttons of every window of PID (alerts, confirmations, panels)
   press-button PID TITLE [--window-text TEXT]
                                          AXPress the one button titled TITLE (in the window containing TEXT)
   grant PID FOLDER [--button TITLE]      in PID's open folder panel select FOLDER's row (or the shown folder) and
                                          press TITLE (default `Grant Access`); no typing, any input source
-  calibrate RUN_DIR [--dry-run]          the calibration run (calibrate.sh)"""
+  calibrate RUN_DIR --group TITLE... [--dry-run]
+                                         the calibration run (calibrate.sh)"""
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -451,6 +473,7 @@ def parse_args(argv):
     command = commands.add_parser('menu')
     command.add_argument('point', type=point_arg)
     command.add_argument('--also', action='append', default=[])
+    command.add_argument('--group', action='append', default=[])
     command = commands.add_parser('guard')
     command.add_argument('point', type=point_arg)
     command.add_argument('targets', nargs='*', type=absolute)
@@ -459,7 +482,7 @@ def parse_args(argv):
     command.add_argument('point', type=point_arg)
     command.add_argument('title')
     command.add_argument('--sub')
-    command.add_argument('--also', action='append', default=[])
+    command.add_argument('--group', action='append', default=[])
     command.add_argument('--target', action='append', default=[], type=absolute)
     command.add_argument('--background', type=absolute)
     commands.add_parser('dialog').add_argument('pid', type=pid_arg)
@@ -474,6 +497,7 @@ def parse_args(argv):
     command = commands.add_parser('calibrate')
     command.add_argument('run_dir', type=absolute)
     command.add_argument('--dry-run', action='store_true')
+    command.add_argument('--group', action='append', default=[])
     args = parser.parse_args(argv)
     if args.command is None:
         raise Usage('a command is required')
@@ -481,6 +505,10 @@ def parse_args(argv):
         raise Usage('guard needs TARGET paths or --background DIR, not both')
     if args.command == 'choose' and bool(args.target) == bool(args.background):
         raise Usage('choose needs --target PATH (repeatable) or --background DIR, not both')
+    if args.command == 'calibrate' and not args.dry_run and not args.group:
+        raise Usage("calibrate needs --group TITLE (repeated): RClick's configured top-level items of a file menu")
+    if args.command == 'choose' and not args.group:
+        raise Usage("choose needs --group TITLE (repeated): RClick's configured top-level items in menu order")
     return args
 
 
