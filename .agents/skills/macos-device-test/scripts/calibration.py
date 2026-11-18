@@ -107,6 +107,7 @@ class Run:
         for name in FILES:
             (self.folder / name).unlink(missing_ok=True)
         for directory in (self.folder / 'folder a', self.folder):
+            (directory / '.DS_Store').unlink(missing_ok=True)  # Finder writes it into the fixture folder
             try:
                 directory.rmdir()
             except OSError:
@@ -237,11 +238,11 @@ def calibrate(run_dir, dry_run=False):
     run = Run(run_dir)
     if run.environment():
         try:
-            run.make_fixture()
-        except (ui.Environment, OSError) as error:
-            run.record('row-order', 'FAIL', f'fixture window: {error}')
-        else:
             try:
+                run.make_fixture()
+            except Exception as error:  # noqa: BLE001
+                run.record('row-order', 'FAIL', f'fixture window: {error}')
+            else:
                 run.step('row-order', run.row_order)
                 run.step('select-readback', run.select_readback)
                 run.step('context-menu', run.context_menu)
@@ -253,9 +254,9 @@ def calibrate(run_dir, dry_run=False):
                 run.step('press-button', run.press_button, needs=('dialog-read',))
                 run.step('panel-grant-row', lambda: run.panel(run.path('folder a'), 'row'))
                 run.step('panel-grant-current', lambda: run.panel(str(run.folder), 'current'))
-            finally:
-                run.stop_started()
-                run.remove_fixture()
+        finally:
+            run.stop_started()
+            run.remove_fixture()
     lines, code = ui.calibration_report(run.results)
     print('---')
     print('\n'.join(lines))
