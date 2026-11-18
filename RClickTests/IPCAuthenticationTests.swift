@@ -709,6 +709,10 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertTrue(provider.contains("kSecUseDataProtectionKeychain as String: true"))
         XCTAssertTrue(provider.contains("kSecAttrAccessGroup as String: SharedAppGroup.identifier"))
         XCTAssertTrue(provider.contains("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"))
+        let messaging = try String(contentsOf: root.appendingPathComponent("Shared/Messager.swift"), encoding: .utf8)
+        XCTAssertFalse(messaging.contains("keyProvider: any KeyProvider ="))
+        XCTAssertFalse(messaging.contains("center: NotificationCenter ="))
+        XCTAssertTrue(messaging.contains("center: testHost ? NotificationCenter() : DistributedNotificationCenter.default()"))
     }
 
     func testRendererRejectsReorderedVerifiedCallbacksAndRetiredSessions() {
