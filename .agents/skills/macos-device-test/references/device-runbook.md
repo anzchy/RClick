@@ -186,12 +186,15 @@ an rclick run, axprobe build failed, no single Finder process).
 - **Press a button:** `$DT/ui.sh press-button <pid> "<title>" [--window-text "<text in that window>"]` presses the one
   button with that exact title; two candidates are refused. The PID must be Finder, RClick's FinderSyncExt or this
   run's RClick (`$RUN_DIR/rclick.pid`): a system prompt is refused. Prefer it to `kc.sh "$RUN_DIR" 36` (Return).
-- **Folder permission panel:** `$DT/ui.sh grant <rclick pid> <abs folder> [--button "Grant Access"]` selects the
-  folder's row in the panel's file list (never the sidebar) and presses the button, all through AX: no typing, so
-  the input source does not matter. Rows and the shown folder are matched by full path (`AXURL`), never by name. If
-  the panel already shows that folder it presses the button directly. Before pressing it re-reads the panel: the
-  target must be the only selected row (none in current-folder mode). It fails if the panel is still open
-  afterwards. Check the grant through a second view (Settings → Folder Permissions, the app log).
+- **Folder permission panel:** `$DT/ui.sh grant <rclick pid> <abs folder> [--button "Grant Access"]` presses the
+  button through AX, no typing, so the input source does not matter. The open panel seen on the device (device run,
+  2026-11-18) is a column browser: the folder it shows is the folder of its deepest column, proven by each entry's
+  full path (`AXURL`) and by each column listing an entry of the column before it; the `Where:` pop-up must agree.
+  If the panel shows the folder itself (RClick opens the panel there) it presses the button directly; if the folder
+  is an entry of the deepest column it selects that entry, re-reads the panel and presses only when the browser now
+  shows the folder (an empty folder lists nothing and is refused). A list-view panel (rows with `AXURL`) is handled
+  the old way: the target must then be the only selected row. Never matched by name, never the sidebar. It fails
+  if the panel is still open afterwards. Check the grant through a second view (Settings → Folder Permissions, the app log).
 - **Keys to RClick:** `$DT/key.sh "$RUN_DIR" <char> [mods]` (one printable character), `$DT/kc.sh "$RUN_DIR" <code>`
   (Esc 53, Return 36, Tab 48). Typed characters pass through the input method: switch the input source to ABC by
   hand before key checks; never from a script. Key codes (Esc, Return) do not depend on it.

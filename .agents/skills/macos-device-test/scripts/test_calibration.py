@@ -213,7 +213,7 @@ class StepsDriveTheRealCli(unittest.TestCase):
 
     def test_background_choose_that_raises_rclicks_folder_panel_cancels_it(self):
         (self.run.run / 'rclick.pid').write_text('4242\n')
-        panel = finderui.parse_dump((HERE / 'fixtures' / 'panel-grant.jsonl').read_text(encoding='utf-8'))
+        panel = finderui.parse_dump((HERE / 'fixtures' / 'panel-grant-listview-assumed.jsonl').read_text(encoding='utf-8'))
         cli = FakeCli({'choose': (0, 'chose: New File\n', '')})
         with mock.patch.object(finderdrive, 'app_nodes', return_value=panel) as nodes, \
                 mock.patch.object(finderdrive, 'app_dump', return_value=''), \

@@ -504,16 +504,15 @@ def press_button(pid, title, window_text=None, extra_pids=()):
 
 
 def grant(pid, folder, button='Grant Access', extra_pids=()):
-    """finderui.panel_plan from full paths, select the target row (row mode), re-read the panel and require
-    finderui.panel_ready (the target the only selected row; none in current mode), press, wait for it to close."""
+    """finderui.panel_plan from full paths, select the target (row mode: an AXRow in list view, the entry's AXGroup
+    in column view), re-read the panel and require finderui.panel_ready (list view: the target the only selected
+    row; column view: the browser now shows the target; current mode: unchanged), press, wait for it to close."""
     allowed_process(pid, extra_pids)
     plan = ui.panel_plan(app_nodes(pid, 20), folder, button)
     if plan.mode == 'row':
-        probe('act', pid, dotted(plan.row_path), 'select', 'AXRow', ui.basename(folder))
+        probe('act', pid, dotted(plan.row_path), 'select', plan.row_role, ui.basename(folder))
         time.sleep(0.4)
-    again = ui.panel_ready(app_nodes(pid, 20), folder, button)
-    if (again.mode, again.row_path, again.button_path) != (plan.mode, plan.row_path, plan.button_path):
-        raise ui.Refused('the panel changed after selecting the row; nothing pressed')
+    ui.panel_ready(app_nodes(pid, 20), folder, button, plan)
     probe('act', pid, dotted(plan.button_path), 'press', 'AXButton', button)
     for _ in range(20):
         time.sleep(0.25)
