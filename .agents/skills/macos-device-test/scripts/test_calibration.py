@@ -239,7 +239,7 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.run_dir = Path(temp.name).resolve()  # device.run_dir resolves /var → /private/var
         self.fail_on = set()
-        self.calls = []
+        self.calls, self.scripts = [], []
         patches = [mock.patch.dict(os.environ, {}, clear=False),
                    mock.patch.object(calibration.time, 'sleep', lambda seconds: None),
                    mock.patch.object(finderdrive, 'require_lock', lambda: None),
@@ -255,6 +255,8 @@ class TeardownAlwaysCleans(unittest.TestCase):
             self.addCleanup(patch.stop)
         os.environ.pop('RUN_DIR', None)
 
+    WINDOW = 4217  # the fixture window's id as FRONT_WINDOW_SCRIPT answers it
+
     def transport(self, what):
         self.calls.append(what)
         if what in self.fail_on:
@@ -265,8 +267,9 @@ class TeardownAlwaysCleans(unittest.TestCase):
         return subprocess.CompletedProcess([str(a) for a in argv], 0, '', '')
 
     def fake_osascript(self, script, *args, timeout=20):
-        if script == finderdrive.FRONT_SCRIPT:
-            return str(self.fixture_folders()[0]) + '\n'
+        if script == calibration.FRONT_WINDOW_SCRIPT:
+            return f'{self.WINDOW}\n{self.fixture_folders()[0]}/\n'
+        self.scripts.append((script, args))
         self.transport('close-window' if 'close' in script else 'osascript')
         return ''
 
@@ -293,6 +296,25 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.assertTrue((self.run_dir / 'calibration' / 'calibration.txt').is_file())
         self.assertRegex(out, r'(?m)^note: .*' + note)
         self.assertIn(code, (finderui.OK, finderui.REFUSED, finderui.ENVIRONMENT))
+
+    def test_the_fixture_window_is_closed_by_the_id_read_when_it_opened(self):
+        """Fix r3 item 6: the device run, 2026-11-18, showed `close (every Finder window whose target is <alias>)`
+        failing with -1708; the window is closed by the id read together with its folder, and only that window."""
+        code, out = self.calibrate()
+        self.assertEqual(code, finderui.OK, out)
+        closes = [(script, args) for script, args in self.scripts if 'close' in script]
+        self.assertEqual(len(closes), 1, self.scripts)
+        script, args = closes[0]
+        self.assertIn('Finder window id', script)
+        self.assertNotIn('whose target', script)
+        self.assertEqual(args, (str(self.WINDOW),))
+        self.assertNotIn('front Finder window', next(s for s, _ in self.scripts if 'list view' in s))
+
+    def test_a_front_window_reply_of_another_shape_is_refused(self):
+        self.assertEqual(calibration.front_window('4217\n/Users/tester/x/\n'), (4217, '/Users/tester/x'))
+        for reply in ('/Users/tester/x\n', 'missing value\n/Users/tester/x\n', '1\n2\n3\n'):
+            with self.subTest(reply=reply), self.assertRaises(finderui.Refused):
+                calibration.front_window(reply)
 
     def test_without_a_failure_the_fixture_is_removed_and_the_report_passes(self):
         code, out = self.calibrate()
