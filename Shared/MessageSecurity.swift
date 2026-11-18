@@ -152,25 +152,26 @@ nonisolated final class IPCReceiver: Sendable {
     /// nonce can expire. Normal retention is safe only inside this clock epoch.
     func checkClock() -> Bool {
         state.withLock { state in
-            let wall = clock.wallTime, monotonic = clock.monotonicTime
-            let discontinuity = abs((wall - state.wall) - (monotonic - state.monotonic)) > 1
-                || monotonic < state.monotonic
-            // Keep the epoch anchor: repeated sub-tolerance corrections must
-            // not accumulate into a rollback larger than nonce retention.
-            if discontinuity {
-                state.wall = wall
-                state.monotonic = monotonic
-                if !state.lastAdoptedSession.isEmpty {
-                    if state.retired.count < 1024 { state.retired.insert(state.lastAdoptedSession) }
-                    else { state.discoveryExhausted = true }
-                }
-                state.lastAdoptedSession = ""
-                state.adoptedAt = nil // New clock epoch; retired ids remain dead.
-                state.session = ""
-                state.configVersion = nil
-            }
-            return discontinuity
+            Self.observeClock(&state, wall: clock.wallTime, monotonic: clock.monotonicTime)
         }
+    }
+    private static func observeClock(_ state: inout State, wall: TimeInterval, monotonic: TimeInterval) -> Bool {
+        let discontinuity = abs((wall - state.wall) - (monotonic - state.monotonic)) > 1
+            || monotonic < state.monotonic
+        // Keep the epoch anchor so small corrections cannot accumulate.
+        if discontinuity {
+            state.wall = wall
+            state.monotonic = monotonic
+            if !state.lastAdoptedSession.isEmpty {
+                if state.retired.count < 1024 { state.retired.insert(state.lastAdoptedSession) }
+                else { state.discoveryExhausted = true }
+            }
+            state.lastAdoptedSession = ""
+            state.adoptedAt = nil
+            state.session = ""
+            state.configVersion = nil
+        }
+        return discontinuity
     }
     func resetSession(_ session: String) {
         state.withLock { $0.session = session; $0.configVersion = nil }
@@ -182,8 +183,11 @@ nonisolated final class IPCReceiver: Sendable {
         let envelope = received.envelope
         guard MessageSecurity.verify(received, key: key) else { throw IPCSecurityError.unauthenticated }
         guard envelope.direction == direction else { throw IPCSecurityError.direction }
-        guard !checkClock() else { throw IPCSecurityError.clockDiscontinuity }
         try state.withLock { state in
+            // One observation governs the barrier, freshness and nonce expiry.
+            // A clock step between separate observations must not reopen replay.
+            let wall = clock.wallTime, now = clock.monotonicTime
+            guard !Self.observeClock(&state, wall: wall, monotonic: now) else { throw IPCSecurityError.clockDiscontinuity }
             let announcesSession = direction == .toExtension && ["running", "menu-config"].contains(envelope.action)
             if direction == .toMain {
                 let bootstrap = envelope.session.isEmpty && ["heartbeat", "request-config"].contains(envelope.action)
@@ -200,11 +204,10 @@ nonisolated final class IPCReceiver: Sendable {
             } else {
                 guard !state.session.isEmpty, envelope.session == state.session else { throw IPCSecurityError.session }
             }
-            let age = clock.wallTime - envelope.timestamp
+            let age = wall - envelope.timestamp
             guard age <= 5, age >= -1 else { throw IPCSecurityError.freshness }
             var cache = state.nonces
             defer { state.nonces = cache }
-            let now = clock.monotonicTime
             cache = cache.filter { now - $0.value < 15 }
             guard cache[envelope.nonce] == nil else { throw IPCSecurityError.replay }
             guard cache.count < capacity else { throw IPCSecurityError.capacity }
@@ -224,7 +227,7 @@ nonisolated final class IPCReceiver: Sendable {
                 if envelope.session != state.lastAdoptedSession {
                     if !state.lastAdoptedSession.isEmpty { state.retired.insert(state.lastAdoptedSession) }
                     state.lastAdoptedSession = envelope.session
-                    state.adoptedAt = max(clock.wallTime, envelope.timestamp)
+                    state.adoptedAt = max(wall, envelope.timestamp)
                 }
                 state.session = envelope.session
             }
