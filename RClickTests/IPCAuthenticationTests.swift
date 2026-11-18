@@ -51,4 +51,16 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertThrowsError(try IPCReceiver(direction: .toMain).receive(original.wireString(), key: Data(repeating: 7, count: 32)))
     }
 
+    func testReplayIsRejectedAtomically() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let receiver = IPCReceiver(direction: .toMain)
+        let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "id", session: "",
+                                                   timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16)), key: key).wireString()
+        let accepted = Mutex(0)
+        DispatchQueue.concurrentPerform(iterations: 64) { _ in
+            if (try? receiver.receive(wire, key: key)) != nil { accepted.withLock { $0 += 1 } }
+        }
+        XCTAssertEqual(accepted.withLock { $0 }, 1)
+    }
+
 }
