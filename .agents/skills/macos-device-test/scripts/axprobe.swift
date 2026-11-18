@@ -2,7 +2,7 @@
 // exactly the element it is told to, and decides nothing: finderui.py decides from the JSON it prints.
 // Harvested from the AX helpers the independent device tester compiled during runs i5/i13/i22 (2026-11-17), which
 // saw Finder's context menu where System Events (the removed finder-menu.sh / axdump.sh) did not.
-// finderdrive.py compiles it once per source hash with `xcrun swiftc` into $TMPDIR (never into the repo).
+// finderdrive.py compiles it once per source hash with `xcrun swiftc` into ~/Library/Caches/rclick-axprobe/ (0700).
 //
 // usage:
 //   axprobe trusted                                   exit 0 if this process (its host terminal) is AX-trusted, else 70
