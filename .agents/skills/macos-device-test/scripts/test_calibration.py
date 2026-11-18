@@ -224,6 +224,83 @@ class StepsDriveTheRealCli(unittest.TestCase):
         self.assertIn('Cancel', detail)
 
 
+class CalibrationThroughTheRealDriver(unittest.TestCase):
+    """The calibration's Finder steps run through the REAL finderdrive (its `ui.sh` command lines dispatched in
+    process to finderdrive.main) against test_finderdrive's FakeDesktop, which times out every Finder AppleScript
+    while a context menu is open, as the device did (device run, 2026-11-18). The two halves were only ever tested
+    apart (FakeCli above), which let `ui.sh guard` hang on a real menu. Only the process boundary is fake: axprobe,
+    osascript, rightclick.sh, pbpaste. The dialog, press-button and panel steps are covered by their own tests."""
+    FINDER_STEPS_SKIPPED = {'gui-lock', 'axprobe', 'accessibility', 'dialog-read', 'press-button', 'panel-grant-row',
+                            'panel-grant-current'}
+    BACKGROUND = ['Copy Path', 'Copy File Name', 'Delete Direct', 'Terminal', 'New File']
+
+    def setUp(self):
+        import test_finderdrive as fake
+        temp = tempfile.TemporaryDirectory(prefix='rclick-cal-run-')
+        self.addCleanup(temp.cleanup)
+        self.run = calibration.Run(temp.name, GROUP, self.BACKGROUND)
+        self.run.fixture = calibration.Fixture(self.run.run)
+        self.run.folder = self.run.fixture.folder
+        self.run.fixture.create(calibration.FILES)
+        self.addCleanup(self.run.fixture.remove)
+        self.desktop = desktop = fake.FakeDesktop(folder=str(self.run.folder))
+        desktop.pasteboard = ''
+        folder = self.run.folder
+
+        class Session(fake.FakeSession):
+            def communicate(self, input=None, timeout=None):
+                pressed = len(desktop.pressed)
+                out, err = super().communicate(input, timeout)
+                if len(desktop.pressed) > pressed:  # what the pressed item does, as RClick would
+                    request = desktop.pressed[-1]
+                    if request['title'] == 'Copy Path':
+                        desktop.pasteboard = '\n'.join(desktop.selection)
+                    elif request['title'] == 'New File' and request.get('sub') == 'TXT':
+                        (folder / 'untitled.txt').write_text('')
+                return out, err
+
+        def run(argv, timeout=20):
+            argv = [str(a) for a in argv]
+            name = Path(argv[0]).name
+            if name == 'ui.sh':
+                out, err = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = finderdrive.main(argv[1:])
+                self.ui_calls.append((argv[1:], code, err.getvalue()))
+                return subprocess.CompletedProcess(argv, code, out.getvalue(), err.getvalue())
+            if name == 'pbpaste':
+                return subprocess.CompletedProcess(argv, 0, desktop.pasteboard, '')
+            return desktop.run(argv, timeout)
+
+        self.ui_calls = []
+        patches = [mock.patch.dict(os.environ, fake.LOCK_ENV),
+                   mock.patch.object(finderdrive, 'run', run),
+                   mock.patch.object(finderdrive, 'spawn', lambda argv: Session(desktop, [str(a) for a in argv]),
+                                     create=True),
+                   mock.patch.object(finderdrive, 'executable_of', desktop.executable_of, create=True),
+                   mock.patch.object(finderdrive, 'probe_binary', lambda: Path('/fake/axprobe')),
+                   mock.patch.object(finderdrive.time, 'sleep', lambda seconds: None),
+                   mock.patch.object(calibration.time, 'sleep', lambda seconds: None)]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_every_finder_menu_step_passes_with_no_finder_applescript_while_a_menu_is_open(self):
+        steps = [name for name, _ in finderui.CALIBRATION_STEPS if name not in self.FINDER_STEPS_SKIPPED]
+        with contextlib.redirect_stdout(io.StringIO()):
+            for name in steps:
+                self.run.step(name, getattr(self.run, name.replace('-', '_')))
+            self.run.close_menus('at the end of the test')  # the teardown's own menu close
+        results = {name: (status, detail) for name, status, detail in self.run.results}
+        failed = {name: result for name, result in results.items() if result[0] != 'PASS'}
+        self.assertEqual(failed, {}, self.ui_calls)
+        self.assertEqual(self.desktop.timeouts, [], 'a Finder AppleScript was sent while a menu was open')
+        self.assertIsNone(self.desktop.menu, 'a menu was left open')
+        self.assertEqual([request['title'] for request in self.desktop.pressed], ['Copy Path', 'Copy Path', 'New File'])
+        self.assertIn('Compress 2 Items', results['choose-multi'][1])
+        self.assertTrue((self.run.folder / 'untitled.txt').exists())
+
+
 STEP_METHODS = ('row_order', 'select_readback', 'context_menu', 'menu_read', 'rclick_group', 'close_menu', 'choose',
                 'choose_multi', 'option_menu', 'background_menu', 'background_choose', 'dialog_read', 'press_button')
 
