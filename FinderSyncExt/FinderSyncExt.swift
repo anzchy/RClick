@@ -9,6 +9,7 @@ import Cocoa
 import FinderSync
 import OSLog
 import AppKit
+import Synchronization
 
 // MARK: - Logger
 
@@ -62,7 +63,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     }
 
     /// 待确认的点击事件 ack 计时器
-    private var pendingAckWorkItem: DispatchWorkItem?
+    private let pendingClicks = Mutex(PendingClicks())
 
     // MARK: - Option 键状态
 
@@ -148,9 +149,9 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         }
 
         // 点击事件确认：主程序已收到 click，取消 ack 超时提示
-        messager.onMainMessage(.actionAck) { [weak self] _ in
+        messager.onMainMessage(.actionAck) { [weak self] message in
             DispatchQueue.main.async {
-                self?.handleAck()
+                self?.pendingClicks.withLock { $0.acknowledge(message.inReplyTo) }
             }
         }
     }
@@ -182,29 +183,19 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             }
             return
         }
-        messager.sendClickEvent(event)
-        awaitAck()
-    }
-
-    /// 启动 ack 等待：主程序收到 click 后回 actionAck，超时未收到则提示操作可能未执行
-    private func awaitAck() {
-        pendingAckWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
+        // Register before sending so even an immediate matching ack is safe.
+        let id = UUID().uuidString
+        pendingClicks.withLock { $0.register(id) }
+        messager.sendClickEvent(event, id: id)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self, self.pendingClicks.withLock({ $0.expire(id) }) else { return }
             Task { @MainActor in
-                self?.showAlert(
+                self.showAlert(
                     title: AppLocalization.localized("RClick did not respond"),
                     message: AppLocalization.localized("The operation may not have been executed. Please check that RClick is running.")
                 )
             }
         }
-        pendingAckWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
-    }
-
-    /// 收到 ack，取消超时提示
-    private func handleAck() {
-        pendingAckWorkItem?.cancel()
-        pendingAckWorkItem = nil
     }
 
     @MainActor private func showAlert(title: String, message: String) {
