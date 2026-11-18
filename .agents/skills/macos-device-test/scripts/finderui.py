@@ -432,6 +432,7 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
                                          AXPress the one button titled TITLE (in the window containing TEXT)
   grant PID FOLDER [--button TITLE]      in PID's open folder panel select FOLDER's row (or the shown folder) and
                                          press TITLE (default `Grant Access`); no typing, any input source
+  lock-check                             exit 0 only if the GUI lock is this run's (axprobe runs it before acting)
   calibrate RUN_DIR --group TITLE... [--dry-run]
                                          the calibration run (calibrate.sh)"""
 
@@ -494,6 +495,7 @@ def parse_args(argv):
     command.add_argument('pid', type=pid_arg)
     command.add_argument('folder', type=absolute)
     command.add_argument('--button', default='Grant Access')
+    commands.add_parser('lock-check')
     command = commands.add_parser('calibrate')
     command.add_argument('run_dir', type=absolute)
     command.add_argument('--dry-run', action='store_true')

@@ -15,7 +15,9 @@
 //                                                     "titles":[every top-level title],"pid":N}. Before pressing it
 //                                                     re-reads the menu it HOLDS: same owner pid, same top-level titles,
 //                                                     item i titled T (and j titled S), else exit 65 and nothing pressed.
-// exit: 0 ok, 64 usage, 65 no such element or it does not match (nothing done), 70 AX error / not trusted
+// exit: 0 ok, 64 usage, 65 no such element or it does not match (nothing done), 70 AX error / not trusted / no lock
+// `act` and `menu-session` first run the driver's GUI-lock check (`python3 finderdrive.py lock-check`, its path is
+// compiled in by finderdrive.probe_binary as `driverScript`) and act on nothing unless it exits 0.
 import ApplicationServices
 import Foundation
 
@@ -137,6 +139,17 @@ func perform(_ target: AXUIElement, _ action: String) {
     print("\(action) ok")
 }
 
+func requireLock() {
+    let check = Process()
+    check.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    check.arguments = [driverScript, "lock-check"]
+    do { try check.run() } catch { fail(70, "cannot run the GUI lock check: \(error)") }
+    check.waitUntilExit()
+    guard check.terminationReason == .exit, check.terminationStatus == 0 else {
+        fail(70, "the GUI lock is not held by this rclick run (finderdrive.py lock-check): nothing done")
+    }
+}
+
 let arguments = CommandLine.arguments
 func argument(_ index: Int) -> String {
     guard index < arguments.count else { fail(64, "missing argument; see the usage at the top of axprobe.swift") }
@@ -162,6 +175,7 @@ case "dump":
 case "menu-at":
     walk(menu(at: Float(number(2)), Float(number(3))), [], 0, number(4))
 case "act":
+    requireLock()
     let steps = path(argument(3))
     let all = windows(pid_t(number(2)))
     guard steps[0] < all.count else { fail(65, "no window \(steps[0])") }
@@ -170,6 +184,7 @@ case "act":
     guard names(target, 3).contains(where: { same($0, argument(6)) }) else { fail(65, "element does not show \(argument(6))") }
     perform(target, argument(4))
 case "menu-session":
+    requireLock()
     let root = menu(at: Float(number(2)), Float(number(3)))
     var owner: pid_t = 0
     guard AXUIElementGetPid(root, &owner) == .success else { fail(70, "cannot read the menu's owner pid") }
