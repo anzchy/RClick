@@ -353,12 +353,26 @@ def print_menu(items, also=(), expected=()):
             print(f'  {item.title}: ' + ', '.join(name for name, _ in item.sub))
 
 
-def press_button(pid, title, window_text=None):
+def allowed_process(pid, extra_pids=()):
+    """finderui.allowed_process on the live process table; the RClick pid is this run's $RUN_DIR/rclick.pid."""
+    table = ui.parse_process_table(run(['ps', '-p', pid, '-o', 'pid=,comm='], timeout=5).stdout)
+    rclick_pid = None
+    if os.environ.get('RUN_DIR'):
+        try:
+            rclick_pid = int((Path(os.environ['RUN_DIR']) / 'rclick.pid').read_text().strip())
+        except (OSError, ValueError):
+            rclick_pid = None
+    return ui.allowed_process(pid, table, rclick_pid, extra_pids)
+
+
+def press_button(pid, title, window_text=None, extra_pids=()):
+    allowed_process(pid, extra_pids)
     path = ui.find_button(app_nodes(pid), title, window_text)
     probe('act', pid, dotted(path), 'press', 'AXButton', title)
 
 
-def grant(pid, folder, button='Grant Access'):
+def grant(pid, folder, button='Grant Access', extra_pids=()):
+    allowed_process(pid, extra_pids)
     plan = ui.panel_plan(app_nodes(pid, 20), folder, button)
     if plan.row_path is not None:
         probe('act', pid, dotted(plan.row_path), 'select', 'AXRow', ui.basename(folder))

@@ -200,7 +200,7 @@ class Run:
         return f'texts {texts}'
 
     def press_button(self):
-        drive.press_button(self.alert.pid, 'OK', window_text=ALERT)
+        drive.press_button(self.alert.pid, 'OK', window_text=ALERT, extra_pids=self.own_pids())
         out, _ = self.alert.communicate(timeout=10)
         if 'OK' not in out:
             raise ui.Refused(f'osascript returned {out.strip()!r}, not OK')
@@ -211,12 +211,15 @@ class Run:
                              'default location ((POSIX file (item 1 of argv)) as alias))\nend run', str(self.folder))
         self.wait_window(process, 'Choose')
         self.save(f'panel-{mode}.jsonl', drive.app_dump(process.pid, 20))
-        plan = drive.grant(process.pid, target, button='Choose')
+        plan = drive.grant(process.pid, target, button='Choose', extra_pids=self.own_pids())
         out, _ = process.communicate(timeout=10)
         chosen = ui.clean_path(ui.one_line(out))
         if plan.mode != mode or chosen != ui.clean_path(target):
             raise ui.Refused(f'{plan.mode} mode chose {chosen!r}; expected {mode} mode and {target!r}')
         return f'{mode} mode chose {chosen}' + (f' ({plan.note})' if plan.note else '')
+
+    def own_pids(self):
+        return {process.pid for process in self.started if process.poll() is None}
 
     def stop_started(self):
         for process in self.started:

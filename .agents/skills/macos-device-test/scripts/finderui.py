@@ -413,6 +413,41 @@ def panel_plan(nodes, folder, button='Grant Access'):
     raise Refused(f'no row named {name!r} in the panel, and the panel shows {shown[0] if shown else "an unknown folder"!r}')
 
 
+def parse_process_table(text):
+    """{pid: executable path} from `ps -o pid=,comm=` lines (macOS prints the full executable path as comm)."""
+    table = {}
+    for line in text.split('\n'):
+        pid, _, executable = line.strip().partition(' ')
+        if pid.isdecimal() and executable.strip():
+            table[int(pid)] = executable.strip()
+    return table
+
+
+FINDER_EXECUTABLE = '/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder'
+RCLICK_EXECUTABLE = '/RClick.app/Contents/MacOS/RClick'
+EXTENSION_EXECUTABLE = '/RClick.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt'
+
+
+def allowed_process(pid, table, rclick_pid=None, extra_pids=()):
+    """The process `press-button`/`grant` may press in, by its executable: Finder, an RClick build's FinderSyncExt,
+    the RClick process of this run (`rclick_pid`, from $RUN_DIR/rclick.pid, and an RClick executable), or an
+    osascript the calibration started (`extra_pids`). Anything else, above all a system or privacy prompt (TCC,
+    UserNotificationCenter, System Settings, the open-panel service), is Refused."""
+    executable = table.get(pid)
+    if executable is None:
+        raise Refused(f'pid {pid} is not running')
+    if executable == FINDER_EXECUTABLE:
+        return 'Finder'
+    if executable.endswith(EXTENSION_EXECUTABLE):
+        return 'FinderSyncExt'
+    if rclick_pid is not None and pid == rclick_pid and executable.endswith(RCLICK_EXECUTABLE):
+        return 'RClick'
+    if pid in extra_pids and executable == '/usr/bin/osascript':
+        return 'calibration osascript'
+    raise Refused(f'pid {pid} is {executable}: press-button and grant act only in RClick ($RUN_DIR/rclick.pid), '
+                  "RClick's FinderSyncExt, Finder or the calibration's own osascript, never in a system prompt")
+
+
 USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: target missing/ambiguous/mismatched, 70 environment)
   rows                                   rows of the front Finder window in display order: index, name, centre x y
   select PATH...                         select these items through AppleScript, read the selection back, compare

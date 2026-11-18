@@ -1,0 +1,10 @@
+  415 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  562 /System/Applications/System Settings.app/Contents/MacOS/System Settings
+ 2087 /private/tmp/rclick-build/Debug/RClick.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt
+ 3610 /System/Library/PrivateFrameworks/UniversalAccess.framework/Versions/A/Resources/universalAccessAuthWarn.app/Contents/MacOS/universalAccessAuthWarn
+27725 /System/Library/CoreServices/UserNotificationCenter.app/Contents/MacOS/UserNotificationCenter
+28075 /private/tmp/rclick-build/Debug/RClick.app/Contents/MacOS/RClick
+50001 /usr/bin/osascript
+60606 /private/tmp/other/Debug/Other.app/Contents/PlugIns/FinderSyncExt.appex/Contents/MacOS/FinderSyncExt
+85839 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService
+92997 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd
