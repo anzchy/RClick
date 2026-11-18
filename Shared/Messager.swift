@@ -60,6 +60,8 @@ struct MenuConfigPayload: Codable {
     let commonDirsCollapsed: Bool
     /// 应用图标样式：0=无图标 1=简单图标（单色 template） 2=原始图标（默认）
     let iconStyle: Int
+    let cutChangeCount: Int?
+    let cutItemCount: Int
 
     init(
         version: Int = 1,
@@ -71,7 +73,9 @@ struct MenuConfigPayload: Codable {
         appsCollapsed: Bool = false,
         newFilesCollapsed: Bool = true,
         commonDirsCollapsed: Bool = true,
-        iconStyle: Int = RCAppIconStyle.simple.rawValue
+        iconStyle: Int = RCAppIconStyle.simple.rawValue,
+        cutChangeCount: Int? = nil,
+        cutItemCount: Int = 0
     ) {
         self.version = version
         self.actions = actions
@@ -83,12 +87,14 @@ struct MenuConfigPayload: Codable {
         self.newFilesCollapsed = newFilesCollapsed
         self.commonDirsCollapsed = commonDirsCollapsed
         self.iconStyle = iconStyle
+        self.cutChangeCount = cutChangeCount
+        self.cutItemCount = cutItemCount
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, actions, apps, newFiles, commonDirs
         case actionsCollapsed, appsCollapsed, newFilesCollapsed, commonDirsCollapsed
-        case iconStyle
+        case iconStyle, cutChangeCount, cutItemCount
     }
 
     init(from decoder: Decoder) throws {
@@ -104,6 +110,8 @@ struct MenuConfigPayload: Codable {
         commonDirsCollapsed = try values.decode(Bool.self, forKey: .commonDirsCollapsed)
         // Payloads produced before icon styles existed used original app icons.
         iconStyle = try values.decodeIfPresent(Int.self, forKey: .iconStyle) ?? RCAppIconStyle.original.rawValue
+        cutChangeCount = try values.decodeIfPresent(Int.self, forKey: .cutChangeCount)
+        cutItemCount = try values.decodeIfPresent(Int.self, forKey: .cutItemCount) ?? 0
     }
 
 }
