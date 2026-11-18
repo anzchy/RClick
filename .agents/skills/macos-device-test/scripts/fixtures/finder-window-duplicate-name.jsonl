@@ -1,0 +1,18 @@
+{"path": [0], "role": "AXWindow", "subrole": "", "title": "rclick-calibration", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [300, 100, 900, 600]}
+{"path": [0, 0], "role": "AXScrollArea", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 160, 720, 540]}
+{"path": [0, 0, 0], "role": "AXOutline", "subrole": "", "title": "", "value": null, "desc": "list view", "enabled": null, "selected": null, "frame": [480, 160, 720, 540]}
+{"path": [0, 0, 0, 0], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 175, 720, 20]}
+{"path": [0, 0, 0, 0, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 175, 300, 20]}
+{"path": [0, 0, 0, 0, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "folder a", "desc": "", "enabled": null, "selected": null, "frame": [520, 177, 200, 16]}
+{"path": [0, 0, 0, 1], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 195, 720, 20]}
+{"path": [0, 0, 0, 1, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 195, 300, 20]}
+{"path": [0, 0, 0, 1, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "inner.txt", "desc": "", "enabled": null, "selected": null, "frame": [520, 197, 200, 16]}
+{"path": [0, 0, 0, 2], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 215, 720, 20]}
+{"path": [0, 0, 0, 2, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 215, 300, 20]}
+{"path": [0, 0, 0, 2, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "folder b", "desc": "", "enabled": null, "selected": null, "frame": [520, 217, 200, 16]}
+{"path": [0, 0, 0, 3], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 235, 720, 20]}
+{"path": [0, 0, 0, 3, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 235, 300, 20]}
+{"path": [0, 0, 0, 3, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "inner.txt", "desc": "", "enabled": null, "selected": null, "frame": [520, 237, 200, 16]}
+{"path": [0, 0, 0, 4], "role": "AXRow", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 255, 720, 20]}
+{"path": [0, 0, 0, 4, 0], "role": "AXCell", "subrole": "", "title": "", "value": null, "desc": "", "enabled": null, "selected": null, "frame": [480, 255, 300, 20]}
+{"path": [0, 0, 0, 4, 0, 0], "role": "AXTextField", "subrole": "", "title": "", "value": "alpha.txt", "desc": "", "enabled": null, "selected": null, "frame": [520, 257, 200, 16]}
