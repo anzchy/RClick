@@ -1,70 +1,64 @@
 import Foundation
 import XCTest
+import Synchronization
 @testable import RClick
 
 @MainActor
 final class MessagerIsolationTests: XCTestCase {
     func testForkAndLegacyChannelsAreIsolatedInBothDirections() throws {
-        // A private center is mandatory: the installed app must never see test clicks.
         let center = NotificationCenter()
-        let app = Messager(isExtension: false, center: center)
-        let ext = Messager(isExtension: true, center: center)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key)
         let legacyMain = "RClick.MainToExtension"
         let legacyExtension = "RClick.ExtensionToMain"
         XCTAssertEqual(Messager.mainToExtensionNotification, "cn.anzchy.RClick.MainToExtension")
         XCTAssertEqual(Messager.extensionToMainNotification, "cn.anzchy.RClick.ExtensionToMain")
-        var clicks: [String] = []
-        var directories: [[String]] = []
-        var acknowledgements = 0
+        let clicks = Mutex<[String]>([])
+        let directories = Mutex<[[String]]>([])
+        let acknowledgements = Mutex(0)
         app.onExtensionMessage(.click) { [weak app] data in
             guard let app else { return }
             if let event = app.decodeSignedData(data, as: ClickEventPayload.self) {
-                clicks.append(event.itemId)
-                app.sendActionAck()
+                clicks.withLock { $0.append(event.itemId) }
+                app.sendActionAck(inReplyTo: data.id)
             }
         }
         ext.onMainMessage(.running) { [weak ext] data in
             guard let ext else { return }
             if let running = ext.decodeSignedData(data, as: RunningPayload.self) {
-                directories.append(running.directories)
+                directories.withLock { $0.append(running.directories) }
             }
         }
-        ext.onMainMessage(.actionAck) { _ in acknowledgements += 1 }
+        ext.onMainMessage(.actionAck) { _ in acknowledgements.withLock { $0 += 1 } }
         let event = ClickEventPayload(itemId: "test-click", itemType: .newFile, trigger: .contextualItems)
-        let legacyClick = try JSONEncoder().encode(ExtensionToMainMessage(action: .click, data: event))
-        let legacyRunning = try JSONEncoder().encode(MainToExtensionMessage(action: .running, data: RunningPayload(directories: ["legacy"])))
-        center.post(name: Notification.Name(legacyExtension), object: String(decoding: legacyClick, as: UTF8.self))
-        center.post(name: Notification.Name(legacyMain), object: String(decoding: legacyRunning, as: UTF8.self))
-        XCTAssertEqual(clicks, [])
-        XCTAssertEqual(directories, [])
-        XCTAssertEqual(acknowledgements, 0)
-
-        // Reject any fork traffic at legacy observers, including the click's ack.
-        let oldMain = center.addObserver(forName: Notification.Name(legacyMain), object: nil, queue: nil) { _ in
-            XCTFail("Fork app reached a legacy extension")
-        }
-        let oldExtension = center.addObserver(forName: Notification.Name(legacyExtension), object: nil, queue: nil) { _ in
-            XCTFail("Fork extension reached a legacy app")
-        }
+        // Legacy-format objects and names remain isolated in both directions.
+        center.post(name: Notification.Name(legacyExtension), object: "{\"action\":\"click\"}")
+        center.post(name: Notification.Name(legacyMain), object: "{\"action\":\"running\"}")
+        XCTAssertEqual(clicks.withLock { $0 }, [])
+        XCTAssertEqual(directories.withLock { $0 }, [])
+        XCTAssertEqual(acknowledgements.withLock { $0 }, 0)
+        let oldMain = center.addObserver(forName: Notification.Name(legacyMain), object: nil, queue: nil) { _ in XCTFail("Fork app reached a legacy extension") }
+        let oldExtension = center.addObserver(forName: Notification.Name(legacyExtension), object: nil, queue: nil) { _ in XCTFail("Fork extension reached a legacy app") }
         defer { center.removeObserver(oldMain); center.removeObserver(oldExtension) }
-        ext.sendClickEvent(event)
         app.sendRunningNotification(directories: ["fork"])
-        XCTAssertEqual(clicks, ["test-click"])
-        XCTAssertEqual(directories, [["fork"]])
-        XCTAssertEqual(acknowledgements, 1)
+        ext.sendClickEvent(event)
+        XCTAssertEqual(clicks.withLock { $0 }, ["test-click"])
+        XCTAssertEqual(directories.withLock { $0 }, [["fork"]])
+        XCTAssertEqual(acknowledgements.withLock { $0 }, 1)
     }
 
     func testSignedPayloadRejectsTamperingAndUnsignedData() throws {
-        let messager = Messager(isExtension: false, center: NotificationCenter())
-        let message = MainToExtensionMessage(action: .running, data: RunningPayload(directories: ["original"]))
-        let signed = try XCTUnwrap(message.signedData)
-        XCTAssertEqual(messager.decodeSignedData(signed, as: RunningPayload.self)?.directories, ["original"])
-        let envelope = try JSONDecoder().decode(SignedPayload<RunningPayload>.self, from: signed)
-        let tampered = try JSONEncoder().encode(SignedPayload(
-            payload: envelope.payload, signature: Data(repeating: 0, count: 32).base64EncodedString(),
-            jsonData: envelope.jsonData
-        ))
-        XCTAssertNil(messager.decodeSignedData(tampered, as: RunningPayload.self))
-        XCTAssertNil(messager.decodeSignedData(try JSONEncoder().encode(RunningPayload()), as: RunningPayload.self))
+        let key = Data(repeating: 0x42, count: 32)
+        let envelope = IPCEnvelope(direction: .toExtension, action: "running", id: "id", session: "session",
+                                   timestamp: Date().timeIntervalSince1970, nonce: Data(repeating: 1, count: 16),
+                                   payload: try JSONEncoder().encode(RunningPayload(directories: ["original"])))
+        let signed = MessageSecurity.sign(envelope, key: key)
+        let receiver = IPCReceiver(direction: .toExtension)
+        XCTAssertEqual(try receiver.receive(signed.wireString(), key: key).decode(RunningPayload.self)?.directories, ["original"])
+        var tampered = signed
+        tampered.mac = Data(repeating: 0, count: 32)
+        XCTAssertThrowsError(try receiver.receive(tampered.wireString(), key: key))
+        XCTAssertThrowsError(try receiver.receive(String(decoding: JSONEncoder().encode(RunningPayload()), as: UTF8.self), key: key))
     }
 }

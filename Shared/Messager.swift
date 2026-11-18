@@ -9,7 +9,7 @@
 import Foundation
 import OSLog
 import AppKit
-import CryptoKit
+import Synchronization
 
 // MARK: - 消息类型枚举
 
@@ -108,7 +108,7 @@ struct MenuConfigPayload: Codable {
 }
 
 /// 点击事件消息载荷
-struct ClickEventPayload: Codable {
+nonisolated struct ClickEventPayload: Codable, Sendable {
     /// 点击的菜单项 ID
     let itemId: String
     /// 菜单项类型
@@ -138,7 +138,7 @@ struct ClickEventPayload: Codable {
 // MARK: - 辅助类型
 
 /// 运行状态消息载荷（用于通知 Extension 主程序运行状态）
-struct RunningPayload: Codable {
+nonisolated struct RunningPayload: Codable, Sendable {
     /// 监听目录列表
     let directories: [String]
 
@@ -148,7 +148,7 @@ struct RunningPayload: Codable {
 }
 
 /// 菜单项类型
-enum MenuItemType: String, Codable {
+nonisolated enum MenuItemType: String, Codable, Sendable {
     case action = "action"  // 动作菜单
     case app = "app"  // 应用菜单
     case newFile = "new-file"  // 新建文件
@@ -156,7 +156,7 @@ enum MenuItemType: String, Codable {
 }
 
 /// 触发来源
-enum MenuTrigger: String, Codable {
+nonisolated enum MenuTrigger: String, Codable, Sendable {
     /// 选中文件/文件夹右键
     case contextualItems = "ctx-items"
     /// 空白处右键
@@ -168,309 +168,115 @@ enum MenuTrigger: String, Codable {
 }
 
 /// 项目类型（文件/文件夹）
-enum ItemType: String, Codable {
+nonisolated enum ItemType: String, Codable, Sendable {
     case file = "file"
     case folder = "folder"
     case unknown = "unknown"
 }
 
-// MARK: - 消息结构
-
-/// 主程序发送给 Extension 的消息（带签名）
-struct MainToExtensionMessage: Codable {
-    /// 消息 ID，用于追踪和去重
-    let id: UUID
-    /// 消息类型
-    let action: MainToExtensionAction
-    /// JSON 编码的签名载荷数据（SignedPayload）
-    let signedData: Data?
-
-    init<T: Codable>(
-        id: UUID = UUID(),
-        action: MainToExtensionAction,
-        data: T? = nil
-    ) {
-        self.id = id
-        self.action = action
-
-        // 对 payload 进行签名
-        if let data = data {
-            do {
-                let signedPayload = try MessageSecurity.sign(data)
-                self.signedData = try? JSONEncoder().encode(signedPayload)
-            } catch {
-                self.signedData = nil
-            }
-        } else {
-            self.signedData = nil
-        }
-    }
-}
-
-/// Extension 发送给主程序的消息（带签名）
-struct ExtensionToMainMessage: Codable {
-    /// 消息 ID，用于追踪和去重
-    let id: UUID
-    /// 消息类型
-    let action: ExtensionToMainAction
-    /// JSON 编码的签名载荷数据（SignedPayload）
-    let signedData: Data?
-
-    init<T: Codable>(
-        id: UUID = UUID(),
-        action: ExtensionToMainAction,
-        data: T? = nil
-    ) {
-        self.id = id
-        self.action = action
-
-        // 对 payload 进行签名
-        if let data = data {
-            do {
-                let signedPayload = try MessageSecurity.sign(data)
-                self.signedData = try? JSONEncoder().encode(signedPayload)
-            } catch {
-                self.signedData = nil
-            }
-        } else {
-            self.signedData = nil
-        }
-    }
-}
-
-// MARK: - Logger
-
-/// Logger for Messager operations
-private let logger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "RClick",
-    category: "Messager"
-)
-
-// MARK: - 消息管理器
-
-/// 消息管理器 - 处理主程序和 Extension 之间的通信
-class Messager: @unchecked Sendable {
-    static let shared = Messager()
-
-    // 消息处理器存储
-    // 写入：启动阶段主线程注册；读取：DistributedNotificationCenter 回调线程。
-    // Swift 6 严格并发下用锁保护，避免数据竞争（原 nonisolated(unsafe) 无同步）。
-    private let handlersLock = NSLock()
-    nonisolated(unsafe) private var mainToExtensionHandlers: [MainToExtensionAction: (Data?) -> Void] = [:]
-    nonisolated(unsafe) private var extensionToMainHandlers: [ExtensionToMainAction: (Data?) -> Void] = [:]
-
-    // 通知名称
+// Handlers see only authenticated envelope bytes, including payload-free actions.
+nonisolated final class Messager: NSObject, Sendable {
+    static let shared: Messager = {
+        // A hosted test must never create/read a production Keychain item.
+        let testHost = ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("XCTest") }
+        return Messager(keyProvider: testHost ? InMemoryKeyProvider(data: nil) : KeychainKeyProvider())
+    }()
     static let mainToExtensionNotification = "cn.anzchy.RClick.MainToExtension"
     static let extensionToMainNotification = "cn.anzchy.RClick.ExtensionToMain"
-
+    private struct State {
+        var main: [MainToExtensionAction: @Sendable (VerifiedMessage) -> Void] = [:]
+        var ext: [ExtensionToMainAction: @Sendable (VerifiedMessage) -> Void] = [:]
+        var key: Data?
+    }
+    private let state: Mutex<State>
     private let isExtension: Bool
     private let center: NotificationCenter
+    private let keyProvider: any KeyProvider
+    private let clock: any IPCClock
+    private let random: any IPCRandom
+    private let receiver: IPCReceiver
+    private let session: String
+    private let logger = Logger(subsystem: "cn.anzchy.RClick", category: "Messager")
 
-    // Inject a private in-process center in tests; never post test traffic globally.
-    init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default()) {
-        // 判断当前是否为 Extension 进程
-        let bundleId = Bundle.main.bundleIdentifier ?? ""
-        self.isExtension = isExtension ?? bundleId.hasSuffix(".FinderSyncExt")
+    init(isExtension: Bool? = nil, center: NotificationCenter = DistributedNotificationCenter.default(),
+         keyProvider: any KeyProvider = KeychainKeyProvider(), clock: any IPCClock = SystemIPCClock(),
+         random: any IPCRandom = SystemIPCRandom()) {
+        let ext = isExtension ?? (Bundle.main.bundleIdentifier ?? "").hasSuffix(".FinderSyncExt")
+        self.isExtension = ext
         self.center = center
+        self.keyProvider = keyProvider
+        self.clock = clock
+        self.random = random
+        self.session = ext ? "" : ((try? random.bytes(count: 16).base64EncodedString()) ?? "")
+        self.receiver = IPCReceiver(direction: ext ? .toExtension : .toMain, clock: clock)
+        self.state = Mutex(State(key: try? keyProvider.key(createIfMissing: !ext)))
+        super.init()
+        center.addObserver(self, selector: #selector(receiveNotification(_:)),
+                           name: Notification.Name(ext ? Self.mainToExtensionNotification : Self.extensionToMainNotification), object: nil)
+    }
+    deinit { center.removeObserver(self) }
+    var hasReadableKey: Bool { state.withLock { $0.key != nil } }
 
-        // Danger note: DistributedNotificationCenter 初始化线程安全
-        if self.isExtension {
-            center.addObserver(
-                self,
-                selector: #selector(handleMainToExtensionMessage(_:)),
-                name: NSNotification.Name(Self.mainToExtensionNotification),
-                object: nil
-            )
+    private func key() -> Data? {
+        if let key = state.withLock({ $0.key }) { return key }
+        guard let key = try? keyProvider.key(createIfMissing: !isExtension) else { return nil }
+        state.withLock { $0.key = key }
+        return key
+    }
+    func onMainMessage(_ action: MainToExtensionAction, handler: @escaping @Sendable (VerifiedMessage) -> Void) {
+        state.withLock { $0.main[action] = handler }
+    }
+    func onExtensionMessage(_ action: ExtensionToMainAction, handler: @escaping @Sendable (VerifiedMessage) -> Void) {
+        state.withLock { $0.ext[action] = handler }
+    }
+    @objc private func receiveNotification(_ notification: NSNotification) {
+        guard let wire = notification.object as? String, let key = key(),
+              let message = try? receiver.receive(wire, key: key) else { return }
+        if isExtension, let action = MainToExtensionAction(rawValue: message.action) {
+            let handler = state.withLock { $0.main[action] }
+            handler?(message)
+        } else if !isExtension, let action = ExtensionToMainAction(rawValue: message.action) {
+            let handler = state.withLock { $0.ext[action] }
+            handler?(message)
+        }
+    }
+    private func send<T: Encodable>(_ action: String, direction: IPCDirection, data: T?, id: String, inReplyTo: String = "") {
+        guard let payload = try? data.map({ try JSONEncoder().encode($0) }) ?? Data() else { return }
+        sendRaw(action, direction: direction, payload: payload, id: id, inReplyTo: inReplyTo)
+    }
+    private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "") {
+        guard let key = key(), let nonce = try? random.bytes(count: 16) else { return }
+        let envelope = IPCEnvelope(direction: direction, action: action, id: id, inReplyTo: inReplyTo,
+                                   session: session, timestamp: clock.wallTime, nonce: nonce, payload: payload)
+        let wire = MessageSecurity.sign(envelope, key: key).wireString()
+        guard wire.utf8.count <= IPCEnvelope.maximumWireBytes else { return }
+        let name = Notification.Name(direction == .toMain ? Self.extensionToMainNotification : Self.mainToExtensionNotification)
+        if let distributed = center as? DistributedNotificationCenter {
+            distributed.postNotificationName(name, object: wire, userInfo: nil, deliverImmediately: true)
         } else {
-            center.addObserver(
-                self,
-                selector: #selector(handleExtensionToMainMessage(_:)),
-                name: NSNotification.Name(Self.extensionToMainNotification),
-                object: nil
-            )
+            center.post(name: name, object: wire)
         }
     }
-
-    deinit {
-        center.removeObserver(self)
+    func sendToExtension<T: Encodable>(_ action: MainToExtensionAction, data: T? = nil, inReplyTo: String = "") {
+        guard !isExtension else { return }
+        send(action.rawValue, direction: .toExtension, data: data, id: UUID().uuidString, inReplyTo: inReplyTo)
     }
-
-    // MARK: - 发送消息（nonisolated，不访问 @MainActor 状态）
-
-    /// 主程序发送消息给 Extension
-    func sendToExtension<T: Codable>(_ action: MainToExtensionAction, data: T? = nil) {
-        let message = MainToExtensionMessage(action: action, data: data)
-        sendMessage(message, via: Self.mainToExtensionNotification)
-        logger.debug("Sent to extension: \(action.rawValue)")
+    func sendToMain<T: Encodable>(_ action: ExtensionToMainAction, data: T? = nil, id: String = UUID().uuidString) {
+        guard isExtension else { return }
+        send(action.rawValue, direction: .toMain, data: data, id: id)
     }
-
-    /// Extension 发送消息给主程序
-    func sendToMain<T: Codable>(_ action: ExtensionToMainAction, data: T? = nil) {
-        let message = ExtensionToMainMessage(action: action, data: data)
-        sendMessage(message, via: Self.extensionToMainNotification)
-        logger.debug("Sent to main: \(action.rawValue)")
+    @MainActor func sendMenuConfig(_ config: MenuConfigPayload) {
+        guard !isExtension, let payload = try? JSONEncoder().encode(config) else { return }
+        sendRaw(MainToExtensionAction.menuConfig.rawValue, direction: .toExtension, payload: payload, id: UUID().uuidString)
     }
-
-    /// 发送消息到通知中心
-    private func sendMessage(_ message: some Encodable, via notificationName: String) {
-        guard let jsonData = try? JSONEncoder().encode(message) else {
-            logger.error("Failed to encode message")
-            return
-        }
-
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-            logger.error("Failed to convert message to string")
-            return
-        }
-
-        logger.debug("Sending message via \(notificationName)")
-        if let distributedCenter = center as? DistributedNotificationCenter {
-            distributedCenter.postNotificationName(
-                NSNotification.Name(notificationName),
-                object: jsonString,
-                userInfo: nil,
-                deliverImmediately: true
-            )
-        } else {
-            center.post(name: NSNotification.Name(notificationName), object: jsonString)
-        }
+    func sendRunningNotification(directories: [String] = []) { sendToExtension(.running, data: RunningPayload(directories: directories)) }
+    func sendQuitNotification() { sendToExtension(.quit, data: Optional<Int>.none) }
+    func sendActionAck(inReplyTo: String) { sendToExtension(.actionAck, data: Optional<Int>.none, inReplyTo: inReplyTo) }
+    func sendHeartbeat() { sendToMain(.heartbeat, data: Optional<Int>.none) }
+    func requestMenuConfig() { sendToMain(.requestConfig, data: Optional<Int>.none) }
+    @discardableResult func sendClickEvent(_ event: ClickEventPayload, id: String = UUID().uuidString) -> String {
+        sendToMain(.click, data: event, id: id)
+        return id
     }
-
-    // MARK: - 注册处理器
-
-    /// Extension 注册主程序消息处理器
-    func onMainMessage(_ action: MainToExtensionAction, handler: @escaping (Data?) -> Void) {
-        handlersLock.lock()
-        mainToExtensionHandlers[action] = handler
-        handlersLock.unlock()
-    }
-
-    /// 主程序注册 Extension 消息处理器
-    func onExtensionMessage(_ action: ExtensionToMainAction, handler: @escaping (Data?) -> Void) {
-        handlersLock.lock()
-        extensionToMainHandlers[action] = handler
-        handlersLock.unlock()
-    }
-
-    // MARK: - 处理消息
-
-    @objc private func handleMainToExtensionMessage(_ notification: NSNotification) {
-        guard let jsonString = notification.object as? String,
-              let jsonData = jsonString.data(using: .utf8) else {
-            logger.error("Invalid message format")
-            return
-        }
-
-        do {
-            let message = try JSONDecoder().decode(MainToExtensionMessage.self, from: jsonData)
-            logger.debug("Received main-to-extension message: \(message.action.rawValue)")
-
-            handlersLock.lock()
-            let handler = mainToExtensionHandlers[message.action]
-            handlersLock.unlock()
-
-            if let handler {
-                handler(message.signedData)
-            } else {
-                logger.warning("No handler registered for action: \(message.action.rawValue)")
-            }
-        } catch {
-            logger.error("Failed to decode message: \(error)")
-        }
-    }
-
-    @objc private func handleExtensionToMainMessage(_ notification: NSNotification) {
-        guard let jsonString = notification.object as? String,
-              let jsonData = jsonString.data(using: .utf8) else {
-            logger.error("Invalid message format")
-            return
-        }
-
-        do {
-            let message = try JSONDecoder().decode(ExtensionToMainMessage.self, from: jsonData)
-            logger.debug("Received extension-to-main message: \(message.action.rawValue)")
-
-            handlersLock.lock()
-            let handler = extensionToMainHandlers[message.action]
-            handlersLock.unlock()
-
-            if let handler {
-                handler(message.signedData)
-            } else {
-                logger.warning("No handler registered for action: \(message.action.rawValue)")
-            }
-        } catch {
-            logger.error("Failed to decode message: \(error)")
-        }
-    }
-
-    // MARK: - 便捷方法
-
-    /// 主程序发送菜单配置给 Extension
-    func sendMenuConfig(_ config: MenuConfigPayload) {
-        sendToExtension(.menuConfig, data: config)
-    }
-
-    /// 发送主程序启动通知
-    func sendRunningNotification(directories: [String] = []) {
-        let payload = RunningPayload(directories: directories)
-        sendToExtension(.running, data: payload)
-    }
-
-    /// 发送主程序退出通知
-    func sendQuitNotification() {
-        sendToExtension(.quit, data: Optional<Int>.none)
-    }
-
-    /// 发送点击事件确认（主程序已收到 click，供扩展判断可通信性）
-    func sendActionAck() {
-        sendToExtension(.actionAck, data: Optional<Int>.none)
-    }
-
-    /// Extension 发送心跳
-    func sendHeartbeat() {
-        sendToMain(.heartbeat, data: Optional<Int>.none)
-    }
-
-    /// 请求菜单配置
-    func requestMenuConfig() {
-        sendToMain(.requestConfig, data: Optional<Int>.none)
-    }
-
-    /// Extension 发送点击事件
-    func sendClickEvent(_ event: ClickEventPayload) {
-        sendToMain(.click, data: event)
-    }
-
-    // MARK: - 解码辅助
-
-    /// 解码数据为指定类型
-    func decode<T: Codable>(_ data: Data?) -> T? {
-        guard let data = data else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
-    }
-
-    /// 解码并验证签名的数据为指定类型
-    func decodeSignedData<T: Codable>(_ signedData: Data?, as type: T.Type = T.self) -> T? {
-        guard let signedData = signedData else { return nil }
-
-        do {
-            let signedPayload = try JSONDecoder().decode(SignedPayload<T>.self, from: signedData)
-
-            if MessageSecurity.verify(signedPayload),
-               let authenticated = Data(base64Encoded: signedPayload.jsonData),
-               let payload = try? JSONDecoder().decode(T.self, from: authenticated) {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = .sortedKeys
-                guard try encoder.encode(payload) == encoder.encode(signedPayload.payload) else { return nil }
-                return payload
-            } else {
-                logger.warning("Message signature verification failed, dropping message")
-                return nil
-            }
-        } catch {
-            logger.error("Failed to decode signed data: \(error)")
-            return nil
-        }
-    }
+    func decodeSignedData<T: Decodable>(_ message: VerifiedMessage, as type: T.Type = T.self) -> T? { message.decode(type) }
 }
