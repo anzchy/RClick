@@ -30,7 +30,8 @@ Preconditions: baseline; doctor PASS including `extension-registered`, `extensio
    the **Actions** submenu), Open With apps, **New File**, Common Dirs. Esc.
 3. `EXT-03`: right-click `folder a`; then select `alpha.txt` and `folder a` (⌘-click) and right-click the selection.
    Result: the items appear both times. Esc.
-4. `EXT-04`: right-click empty space below the last row. Result: the items for the container trigger. Esc.
+4. `EXT-04`: right-click empty space below the last row (`ui.sh open-menu --background`, then `ui.sh menu X,Y`).
+   Result: the items for the container trigger. `ui.sh close-menu`.
 5. `EXT-05`: right-click the fixture folder's entry in the sidebar (drag it into Favorites only with the owner's
    consent; otherwise use an existing sidebar entry such as Desktop and only read the menu, never choose an action).
    Result: the items for the sidebar trigger. Esc.

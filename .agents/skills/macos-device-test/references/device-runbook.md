@@ -73,7 +73,8 @@ RCLICK_DEVICE_SIGNING=team:<TEAMID> $DT/build.sh "$RUN_DIR"     # or RCLICK_DEVI
 ## 5. Launch and app state
 
 ```bash
-$DT/gui-lock.sh acquire "$RUN_ID" 45 "RClick device run"     # keep acquisition_id=<uuid>
+$DT/gui-lock.sh acquire "$RUN_ID" 45 "RClick device run"     # prints acquisition_id=<uuid>
+export RCLICK_GUI_LOCK_BATCH="$RUN_ID" RCLICK_GUI_LOCK_ACQUISITION_ID=<uuid> RUN_DIR   # ui.sh acts only under this lock
 $DT/launch.sh "$RUN_DIR"
 ```
 
@@ -128,13 +129,20 @@ folder once, Esc, then rerun doctor. Offline contract tests: `doctor.sh --fixtur
 ## 7. Drive
 
 Every Finder action goes through `$DT/ui.sh` (`ui.sh --help`), which needs the GUI lock held by this run and an
-AX-trusted host terminal. Its pure logic is `finderui.py` (tested offline), its AX calls are `axprobe.swift`
-(compiled into `$TMPDIR` on first use), and the pitfalls it avoids are in [ui-driver-notes.md](ui-driver-notes.md).
+AX-trusted host terminal: `RCLICK_GUI_LOCK_BATCH`, `RCLICK_GUI_LOCK_ACQUISITION_ID` and `RUN_DIR` exported (§5).
+Its pure logic is `finderui.py` (tested offline), its AX calls are `axprobe.swift` (compiled into the private cache
+`~/Library/Caches/rclick-axprobe/` on first use), and the pitfalls it avoids are in
+[ui-driver-notes.md](ui-driver-notes.md). The checks each acting command makes are on one page:
+[ui-driver-safety.md](ui-driver-safety.md).
 Exit codes of `ui.sh` and `calibrate.sh`: **0** ok, **64** usage, **65** refused (target missing, ambiguous or
 mismatched: nothing was done and an open menu was closed), **70** environment (no Accessibility, GUI lock not held by
 an rclick run, axprobe build failed, no single Finder process).
 
-- **Calibrate first:** `$DT/calibrate.sh "$RUN_DIR"` after doctor, before any recipe (§7a).
+- **Calibrate first:** `$DT/calibrate.sh "$RUN_DIR" --group "<title>"... --background-group "<title>"...` after
+  doctor, before any recipe (§7a).
+- **RClick's group:** `--group "<title>"`, repeated in menu order, names RClick's configured top-level items for the
+  menu at hand (file menu or background menu; read them once with `ui.sh menu X,Y`). `choose` needs it and acts only
+  inside the ONE exact run of those titles after the last `Quick Actions`.
 - **Open the fixtures in Finder:** `open "$RUN_DIR/fixtures"` (under the lock), list view. Keep fixture names unique
   (expanded folders can show a name twice: `ui.sh` refuses duplicates).
 - **Rows in display order:** `$DT/ui.sh rows` prints `index<TAB>name<TAB>x<TAB>y<TAB>visible|hidden` for the front
@@ -146,30 +154,36 @@ an rclick run, axprobe build failed, no single Finder process).
   that exact name (case, spaces and percent signs significant), sets `AXSelected` on it and right-clicks the centre
   of its name cell (`rightclick.sh`; `--option` sets the Option flag, for Delete Direct's skip title). It prints
   `row: <index> <name> <x>,<y>` and `menu-point X,Y`. `AXShowMenu` does not work on Finder rows. Synthetic input:
-  disclose it. For the window background or a sidebar entry, right-click with `$DT/rightclick.sh X Y` at a point read
-  from `ui.sh rows`/a dump, then probe the menu with `ui.sh menu`.
+  disclose it. For the window background: `$DT/ui.sh open-menu --background [--option]` deselects, reads the empty
+  selection back and right-clicks the empty list below the rows (refused if the list has no empty space). For a
+  sidebar entry, right-click with `$DT/rightclick.sh X Y` at a point read from a dump, then probe with `ui.sh menu`.
 - **Read the menu:** `$DT/ui.sh menu X,Y` (the `menu-point`) prints every item as
   `<index>|<title>|<enabled>|<x>,<y>|<submenu count>`, then `compress: <Finder's Compress title>` and
-  `rclick-group: <titles>` (RClick's items after `Quick Actions`, with their submenus). A user-added Open With app or
-  common folder in RClick's section needs `--also "<title>"`.
+  `rclick-group (heuristic, never used to choose): <titles>`; with `--group` it also prints where that exact group
+  is, or refuses (65). For the heuristic only, a user-added Open With app or common folder needs `--also "<title>"`.
 - **Pre-action guard:** `$DT/ui.sh guard X,Y <target abs path>...` (or `--background <dir>` for a window-background
   menu) passes only when Finder's `Compress “<name>”` title (`Compress N Items` for N targets) names the target and
   the selection read back is exactly the target set; otherwise it closes the menu and exits 65. The system language
   must be English for the Compress title.
-- **Choose an RClick item:** `$DT/ui.sh choose X,Y "<title>" [--sub "<submenu item>"] --target <abs path>...` (or
-  `--background <dir>`) runs the guard, then presses the item with `AXPress` inside RClick's group only (another
-  extension's same-titled item is never taken). Example: `ui.sh choose 660,237 "New File" --sub TXT --background
-  "$RUN_DIR/fixtures"`. Close a menu with `$DT/finder-kc.sh 53`.
+- **Choose an RClick item:** `$DT/ui.sh choose X,Y "<title>" [--sub "<submenu item>"] --group "<title>"...
+  --target <abs path>...` (or `--background <dir>`) runs the guard and the press inside one `axprobe` menu session:
+  the menu must be Finder's, the item inside RClick's `--group` (another extension's same-titled item is never
+  taken), and axprobe re-checks the menu it holds right before `AXPress`. Example: `ui.sh choose 660,237 "New File"
+  --sub TXT --group Terminal --group "New File" --background "$RUN_DIR/fixtures"`.
+- **Close a menu:** `$DT/ui.sh close-menu` sends Esc only while Finder is frontmost (65 otherwise, no key sent).
+  Do not use `finder-kc.sh 53` for it: it has no frontmost check.
 - **Read alerts and dialogs:** `$DT/ui.sh dialog <pid>` prints each window's `text:` and `button:` lines: the RClick
   PID (`rclick.pid`) for the Delete Direct confirmation, the folder panel and the auto-rename alert; the
   `FinderSyncExt` PID (`pgrep -x FinderSyncExt`) for "RClick is not running" / "RClick did not respond".
 - **Press a button:** `$DT/ui.sh press-button <pid> "<title>" [--window-text "<text in that window>"]` presses the one
-  button with that exact title; two candidates are refused. Prefer it to `kc.sh "$RUN_DIR" 36` (Return).
+  button with that exact title; two candidates are refused. The PID must be Finder, RClick's FinderSyncExt or this
+  run's RClick (`$RUN_DIR/rclick.pid`): a system prompt is refused. Prefer it to `kc.sh "$RUN_DIR" 36` (Return).
 - **Folder permission panel:** `$DT/ui.sh grant <rclick pid> <abs folder> [--button "Grant Access"]` selects the
   folder's row in the panel's file list (never the sidebar) and presses the button, all through AX: no typing, so
-  the input source does not matter. If the panel already shows that folder it presses the button directly. It
-  refuses when the panel's location pop-up does not show the folder's parent (or the folder), and fails if the panel
-  is still open afterwards. Check the grant through a second view (Settings → Folder Permissions, the app log).
+  the input source does not matter. Rows and the shown folder are matched by full path (`AXURL`), never by name. If
+  the panel already shows that folder it presses the button directly. Before pressing it re-reads the panel: the
+  target must be the only selected row (none in current-folder mode). It fails if the panel is still open
+  afterwards. Check the grant through a second view (Settings → Folder Permissions, the app log).
 - **Keys to RClick:** `$DT/key.sh "$RUN_DIR" <char> [mods]` (one printable character), `$DT/kc.sh "$RUN_DIR" <code>`
   (Esc 53, Return 36, Tab 48). Typed characters pass through the input method: switch the input source to ABC by
   hand before key checks; never from a script. Key codes (Esc, Return) do not depend on it.
@@ -184,12 +198,16 @@ an rclick run, axprobe build failed, no single Finder process).
 
 ### 7a. Calibration
 
-`$DT/calibrate.sh "$RUN_DIR"` (under the lock, after doctor) proves each helper on this Mac's macOS and Finder before
-the run relies on it. It creates `$RUN_DIR/fixtures/calibration-<time>/` (`%41.txt`, `%2541.txt`, `alpha.txt`,
-`beta.txt`, `中文 名称.txt`, `folder a/inner.txt`), opens it in a Finder window in list view, and removes both at the
-end. It overwrites the pasteboard once (Copy Path on a fixture) and shows one alert and two folder panels from
-`osascript` processes it starts itself (only those may be terminated). `--dry-run` prints the plan and touches
-nothing. Output, one line per step in this order, then a summary:
+`$DT/calibrate.sh "$RUN_DIR" --group "<title>"... --background-group "<title>"...` (under the lock, after doctor)
+proves each helper on this Mac's macOS and Finder before the run relies on it. `--group` is RClick's top-level items
+of a file menu (must hold Copy Path and Delete Direct), `--background-group` those of a window-background menu (must
+hold New File). It creates its own folder `$RUN_DIR/fixtures/calibration-<random>/` (`%41.txt`, `%2541.txt`,
+`alpha.txt`, `beta.txt`, `中文 名称.txt`, `folder a/inner.txt`), opens it in a Finder window in list view, and at the
+end removes only what it created (a file left by anything else stays, with a note). It overwrites the pasteboard
+once (Copy Path on a fixture), chooses New File → TXT once on the fixture's background, and shows one alert and two
+folder panels from `osascript` processes it starts itself (only those may be terminated). The menu steps run the
+`ui.sh` command lines a recipe uses. `--dry-run` prints the plan and touches nothing. Output, one line per step in
+this order, then a summary:
 
 | Step | PASS means | Distrust on FAIL/SKIP |
 |---|---|---|
@@ -199,17 +217,23 @@ nothing. Output, one line per step in this order, then a summary:
 | `context-menu` | `open-menu %2541.txt` opened a menu that the element-at-position probe finds | `ui.sh open-menu` |
 | `menu-read` | that menu's Compress title is `Compress “%2541.txt”` | `ui.sh menu` |
 | `rclick-group` | RClick's group is present (else: the extension is not loaded, §6) | `ui.sh menu` (RClick's group) |
-| `guard` | the guard accepts `%2541.txt` and refuses the sibling `%41.txt` | `ui.sh guard` |
-| `choose` | `choose … Copy Path` on `alpha.txt` puts that fixture path on the pasteboard | `ui.sh choose` |
+| `guard` | `ui.sh guard` accepts `%2541.txt` and refuses (65) the sibling `%41.txt` | `ui.sh guard` |
+| `choose` | `ui.sh choose … Copy Path --group …` on `alpha.txt` puts that fixture path on the pasteboard | `ui.sh choose` |
+| `option-menu` | `ui.sh open-menu %2541.txt --option`: the menu shows `Delete Direct (skip confirmation)` | `ui.sh open-menu --option` |
+| `background-menu` | `ui.sh open-menu --background` on the fixture window; `ui.sh guard --background` accepts it; `--background-group` found | `ui.sh open-menu --background`, `ui.sh guard --background` |
+| `close-menu` | `ui.sh close-menu` closes that menu (none left at its point) | `ui.sh close-menu` |
+| `background-choose` | `ui.sh choose … "New File" --sub TXT --background <fixture>` creates one new file in the fixture, or opens RClick's folder panel (saved, then Cancel) | `ui.sh choose --background --sub` |
 | `dialog-read` | the calibration alert's text is read through AX | `ui.sh dialog` |
 | `press-button` | pressing `OK` by title returns `OK` to its osascript | `ui.sh press-button` |
 | `panel-grant-row` | an `osascript choose folder` panel showing the fixture: `grant … "folder a" --button Choose` returns that folder | `ui.sh grant` (row mode) |
 | `panel-grant-current` | the same panel: `grant <fixture folder>` returns the shown folder | `ui.sh grant` (current-folder mode) |
 
-Summary: `CALIBRATION PASS (14 steps)` → exit 0; `CALIBRATION FAIL — distrust: <commands>` → exit 65; `CALIBRATION
+Summary: `CALIBRATION PASS (18 steps) — NOT covered: RClick's own sandboxed folder panel (the grant steps use an
+osascript panel); PERM-01 on the device proves it` → exit 0; `CALIBRATION FAIL — distrust: <commands>` → exit 65; `CALIBRATION
 FAIL — environment (<step>): fix it and rerun; distrust: every ui.sh command` → exit 70. A step whose prerequisite
 failed is `SKIP` and counts as not proven. The output is saved to `$RUN_DIR/calibration/calibration.txt` with the AX
-dumps (`finder-window.jsonl`, `menu.jsonl`, `alert.jsonl`, `panel-*.jsonl`): cite them in "Script problems".
+dumps (`finder-window.jsonl`, `menu.jsonl`, `alert.jsonl`, `panel-*.jsonl`, `rclick-panel.jsonl`): cite them in
+"Script problems". Calibration does NOT prove `grant` on RClick's own sandboxed panel: PERM-01 does.
 
 ## 8. Fixtures
 

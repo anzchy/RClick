@@ -10,8 +10,8 @@ the run the delegator collects those rows into this ledger and fixes the scripts
 failing offline test first where the logic is testable; a calibration dump in `$RUN_DIR/calibration/` can become a
 fixture in `scripts/fixtures/` once personal paths are removed).
 
-Helpers: `scripts/ui.sh` (rows, select, selection, open-menu, menu, guard, choose, dialog, press-button, grant),
-`scripts/calibrate.sh`. Logic in `finderui.py` (unit-tested with `fixtures/`), AX calls in `axprobe.swift`, side
+Helpers: `scripts/ui.sh` (rows, select, selection, open-menu, close-menu, menu, guard, choose, dialog, press-button,
+grant, lock-check), `scripts/calibrate.sh`. The checks each acting command makes: [ui-driver-safety.md](ui-driver-safety.md). Logic in `finderui.py` (unit-tested with `fixtures/`), AX calls in `axprobe.swift`, side
 effects in `finderdrive.py` and `calibration.py`.
 
 ## Entries
@@ -116,6 +116,10 @@ effects in `finderdrive.py` and `calibration.py`.
 - Fix: `ui.sh menu`/`choose` take RClick's group as the run of known RClick titles after `Quick Actions`, ending at
   the first unknown or repeated title; `choose` refuses a title outside that group. A user-added Open With app or
   common folder needs `--also "<title>"`. Test: `test_finderui.Menu`, `test_finderui.Choose`.
+- Superseded 2026-11-18 (#32 fix round 1): the known-titles run cannot tell RClick's items from another extension's
+  same-titled ones. `choose` now needs `--group` (RClick's configured titles in order) and acts only in the ONE exact
+  run of them after the LAST `Quick Actions`; the heuristic stays for reading (`ui.sh menu`). Test:
+  `test_finderui.GroupIdentity`.
 - Evidence: i22-device-20261116e.
 
 ### 2026-11-17 — Finder's Compress title names the raw file name
@@ -135,9 +139,13 @@ effects in `finderdrive.py` and `calibration.py`.
 
 ### 2026-11-18 — not yet proven on a real run (first calibration decides)
 
-- The file list of the folder panel: its element shape (outline rows in list view, or a column browser) and the value
-  of its location pop-up were not in any recorded dump. `ui.sh grant` assumes rows (`AXRow`) and a pop-up whose value
-  is the shown folder's name. Calibration steps `panel-grant-row` and `panel-grant-current` prove or refute it on
-  an `osascript choose folder` panel, and save the dumps (`calibration/panel-*.jsonl`).
+- The file list of the folder panel: its element shape (outline rows in list view, or a column browser) and its
+  `AXURL` attributes were not in any recorded dump. `ui.sh grant` assumes rows (`AXRow`) whose `AXURL` is the full
+  path (#32 fix round 1: never a basename). Calibration steps `panel-grant-row` and `panel-grant-current` prove or
+  refute it on an `osascript choose folder` panel, and save the dumps (`calibration/panel-*.jsonl`). RClick's own
+  sandboxed panel is NOT covered by calibration: PERM-01 proves it.
+- `ui.sh open-menu --background` clicks the middle of the empty list below the rows (`finderui.background_point`);
+  that this opens the background menu, and that axprobe's `menu-session` re-check holds on a live menu, are proven
+  by calibration steps `background-menu`, `background-choose` and `choose`.
 - The osascript `display alert` stands in for RClick's alerts in `dialog-read`/`press-button`; the real Delete Direct
   confirmation was read through AX the same way (i5-device-20261117d).
