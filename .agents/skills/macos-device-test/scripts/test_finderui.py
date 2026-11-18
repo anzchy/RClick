@@ -68,5 +68,39 @@ class FindRow(unittest.TestCase):
             finderui.find_row(self.rows, 'zeta.txt')
 
 
+class Menu(unittest.TestCase):
+    RCLICK = ['Copy Path', 'Copy File Name', 'Delete Direct', 'Terminal', 'New File']
+
+    def test_compress_title_is_finders_own_item_only(self):
+        items = finderui.menu_items(dump('menu-file-alpha.jsonl'))
+        # The alternate item repeats the title; another extension's `Compress to "alpha.txt.zip"` is not Finder's.
+        self.assertEqual(finderui.compress_titles(items), ['Compress “alpha.txt”'])
+
+    def test_rclick_group_follows_quick_actions_and_stops_at_the_next_extension(self):
+        items = finderui.menu_items(dump('menu-file-alpha.jsonl'))
+        group = finderui.rclick_group(items)
+        self.assertEqual([item.title for item in group], self.RCLICK)
+        self.assertEqual(group[0].point, (565, 598))
+        new_file = group[-1]
+        self.assertEqual([title for title, _ in new_file.sub],
+                         ['TXT', 'Markdown', 'DOCX', 'PPTX', 'XLSX', 'Pages', 'Keynote', 'Numbers'])
+
+    def test_option_title_belongs_to_the_group(self):
+        items = finderui.menu_items(dump('menu-file-sibling-option.jsonl'))
+        self.assertEqual([item.title for item in finderui.rclick_group(items)],
+                         ['Copy Path', 'Copy File Name', 'Delete Direct (skip confirmation)', 'Terminal', 'New File'])
+
+    def test_a_user_added_open_with_app_needs_also(self):
+        nodes = dump('menu-file-alpha.jsonl')
+        for node in nodes:
+            if node.get('title') == 'Terminal':
+                node['title'] = 'Visual Studio Code'
+        items = finderui.menu_items(nodes)
+        self.assertEqual([item.title for item in finderui.rclick_group(items)],
+                         ['Copy Path', 'Copy File Name', 'Delete Direct'])
+        self.assertEqual([item.title for item in finderui.rclick_group(items, also=['Visual Studio Code'])],
+                         ['Copy Path', 'Copy File Name', 'Delete Direct', 'Visual Studio Code', 'New File'])
+
+
 if __name__ == '__main__':
     unittest.main()
