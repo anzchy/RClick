@@ -223,14 +223,22 @@ def extension_area(items):
     return items[quick[-1] + 1:] if quick else items
 
 
+GROUP_MINIMUM = 2
+GROUP_TOO_SHORT = ("RClick's group needs at least two titles (--group TITLE repeated): pass the full configured run of "
+                   "RClick's top-level items in menu order; one title could be another extension's item")
+
+
 def rclick_group(items, also=(), expected=None):
     """RClick's section. With `expected` (RClick's configured top-level titles in order, `--group`): positive
     evidence, the ONE run of exactly those titles in the extension area (a skip-confirmation title matches its base
-    title); none or two such runs are Refused. Without it, a heuristic for reading only (`ui.sh menu`): known RClick
+    title); none or two such runs are Refused. It must name at least two titles (Usage otherwise): one title such as
+    `Copy Path` could be another extension's lone item when RClick is not loaded. Without it, a heuristic for reading only (`ui.sh menu`): known RClick
     titles from the start of the extension area up to the first unknown or repeated title; it cannot tell RClick's
     items from another extension's same-titled ones and is never used to choose."""
     area = extension_area(items)
     if expected is not None:
+        if len(expected) < GROUP_MINIMUM:
+            raise Usage(GROUP_TOO_SHORT)
         want = [nfc(title) for title in expected]
         runs = [area[i:i + len(want)] for i in range(len(area) - len(want) + 1)
                 if [base_title(item.title) for item in area[i:i + len(want)]] == want]
@@ -522,14 +530,15 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   open-menu --background [--option]      deselect all, read the empty selection back, right-click the empty list
                                          below the rows of the front window; prints `menu-point X,Y`
   close-menu                             Esc (key code 53) only while Finder is frontmost, else refused (65)
-  menu X,Y [--also TITLE]... [--group TITLE]...
+  menu X,Y [--also TITLE]... [--group TITLE --group TITLE...]
                                          list the open menu (element at position): Compress title, RClick group
                                          (heuristic; with --group: where the expected group is, or refused)
   guard X,Y (TARGET... | --background DIR)
                                          refuse (close the menu, exit 65) unless the menu and the selection are the target's
   choose X,Y TITLE [--sub ITEM] --group TITLE... (--target PATH... | --background DIR)
                                          guard, then AXPress TITLE (and ITEM in its submenu) inside RClick's group,
-                                         the one run of exactly the --group titles (RClick's configured items in order)
+                                         the one run of exactly the --group titles (RClick's configured items in order,
+                                         at least two: pass the full configured run)
   dialog PID                             texts and buttons of every window of PID (alerts, confirmations, panels)
   press-button PID TITLE [--window-text TEXT]
                                          AXPress the one button titled TITLE (in the window containing TEXT)
@@ -621,6 +630,9 @@ def parse_args(argv):
                     'top-level items of a file menu and of a window-background menu')
     if args.command == 'choose' and not args.group:
         raise Usage("choose needs --group TITLE (repeated): RClick's configured top-level items in menu order")
+    for titles in (getattr(args, 'group', []), getattr(args, 'background_group', [])):
+        if titles and len(titles) < GROUP_MINIMUM:
+            raise Usage(GROUP_TOO_SHORT)
     return args
 
 

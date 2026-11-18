@@ -266,6 +266,18 @@ class GroupIdentity(unittest.TestCase):
         self.assertEqual(finderui.find_group_item(items, 'Copy Path', group=self.GROUP)[0].point, (565, 598))
         self.assertEqual(finderui.rclick_group(items)[0].point, (565, 598))
 
+    def test_a_single_title_group_is_not_evidence(self):
+        # audit r2 opus L3: RClick not loaded, another extension's lone `Copy Path` after Quick Actions would be "the
+        # one run" of a one-title --group. At least two titles (the full configured run) are required.
+        others = [item for item in self.items if item.title not in self.GROUP or item is self.other_copy]
+        quick = [item.title for item in others].index('Quick Actions')
+        items = others[:quick + 1] + [self.other_copy] + [i for i in others[quick + 1:] if i is not self.other_copy]
+        for group in (['Copy Path'], ['New File']):
+            with self.subTest(group=group), self.assertRaisesRegex(finderui.Usage, 'at least two'):
+                finderui.rclick_group(items, expected=group)
+        with self.assertRaisesRegex(finderui.Usage, 'at least two'):
+            finderui.find_group_item(items, 'Copy Path', group=['Copy Path'])
+
 
 class Dialogs(unittest.TestCase):
     def setUp(self):
@@ -411,7 +423,12 @@ class Arguments(unittest.TestCase):
                      ['guard', '620,225'], ['guard', '620,225', '/tmp/a', '--background', '/tmp'],
                      ['choose', '620,225', 'Copy Path'], ['choose', '620,225', 'Copy Path', '--target', '/tmp/a'],
                      ['dialog', 'Finder'], ['grant', '4242', 'fixtures'],
-                     ['open-menu'], ['calibrate', 'relative/run']):
+                     ['open-menu'], ['calibrate', 'relative/run'],
+                     ['choose', '620,225', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path'],
+                     ['menu', '620,225', '--group', 'Copy Path'],
+                     ['calibrate', '/tmp/run', '--group', 'Copy Path', '--group', 'New File', '--background-group', 'T'],
+                     ['calibrate', '/tmp/run', '--group', 'Copy Path', '--background-group', 'T', '--background-group',
+                      'New File']):
             with self.subTest(argv=argv), self.assertRaises(finderui.Usage):
                 finderui.parse_args(argv)
 

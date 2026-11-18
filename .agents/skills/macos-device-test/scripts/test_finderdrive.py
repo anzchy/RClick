@@ -222,7 +222,8 @@ class CommandLine(unittest.TestCase):
 
     def test_usage_errors_exit_64_without_touching_the_desktop(self):
         for args in ((), ('bogus',), ('select', 'relative.txt'), ('choose', '620,225', 'Copy Path'),
-                     ('grant', 'Finder', '/tmp/x'), ('menu', 'x')):
+                     ('grant', 'Finder', '/tmp/x'), ('menu', 'x'),
+                     ('choose', '620,225', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path')):
             with self.subTest(args=args):
                 result = self.run_script('ui.sh', *args)
                 self.assertEqual(result.returncode, 64, result.stderr)
@@ -231,14 +232,16 @@ class CommandLine(unittest.TestCase):
 
     def test_acting_without_the_rclick_gui_lock_exits_70_and_acts_on_nothing(self):
         for args in (('select', '/tmp/a.txt'), ('open-menu', 'alpha.txt'), ('guard', '1,2', '/tmp/a'),
-                     ('choose', '1,2', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path'), ('press-button', '42', 'OK'),
+                     ('choose', '1,2', 'Copy Path', '--target', '/tmp/a', '--group', 'Copy Path', '--group', 'New File'),
+                     ('press-button', '42', 'OK'),
                      ('grant', '42', '/tmp/x'), ('close-menu',), ('open-menu', '--background')):
             with self.subTest(args=args):
                 result = self.run_script('ui.sh', *args)
                 self.assertEqual(result.returncode, 70, result.stderr)
                 self.assertIn('GUI lock', result.stderr)
         run = Path(self.temp.name) / 'run'
-        result = self.run_script('calibrate.sh', str(run), '--group', 'Copy Path', '--background-group', 'New File')
+        result = self.run_script('calibrate.sh', str(run), '--group', 'Copy Path', '--group', 'New File',
+                                 '--background-group', 'Terminal', '--background-group', 'New File')
         self.assertEqual(result.returncode, 70, result.stderr)
         self.assertFalse(run.exists())
         self.assert_no_desktop_call()

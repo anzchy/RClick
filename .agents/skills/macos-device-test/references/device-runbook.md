@@ -142,7 +142,9 @@ an rclick run, axprobe build failed, no single Finder process).
   doctor, before any recipe (§7a).
 - **RClick's group:** `--group "<title>"`, repeated in menu order, names RClick's configured top-level items for the
   menu at hand (file menu or background menu; read them once with `ui.sh menu X,Y`). `choose` needs it and acts only
-  inside the ONE exact run of those titles after the last `Quick Actions`.
+  inside the ONE exact run of those titles after the last `Quick Actions`. Pass the FULL configured run, never a
+  subset: fewer than two titles is a usage error (64), because one title such as `Copy Path` could be another
+  extension's lone item when RClick is not loaded. The same holds for `menu --group` and both calibration groups.
 - **Open the fixtures in Finder:** `open "$RUN_DIR/fixtures"` (under the lock), list view. Keep fixture names unique
   (expanded folders can show a name twice: `ui.sh` refuses duplicates).
 - **Rows in display order:** `$DT/ui.sh rows` prints `index<TAB>name<TAB>x<TAB>y<TAB>visible|hidden` for the front
