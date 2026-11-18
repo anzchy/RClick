@@ -49,10 +49,21 @@ struct ClipboardTests {
 
     @Test func copyFileNamesWritesOneNamePerLineAndNoFileURLs() {
         let pasteboard = makePasteboard()
+        let paths = [
+            "/tmp/%2544ocuments", "/tmp/%41.txt", "/tmp/100%25 done.txt",
+            "/tmp/a%20b.txt", "/tmp/a b.txt", "/tmp/文档 & #?.txt",
+        ]
+        let names = ["%2544ocuments", "%41.txt", "100%25 done.txt", "a%20b.txt", "a b.txt", "文档 & #?.txt"]
 
-        Clipboard.copyFileNames(["/tmp/a.txt", "/tmp/folder/b%20c.md"], to: pasteboard)
+        for (path, name) in zip(paths, names) {
+            Clipboard.copyFileNames([path], to: pasteboard)
+            #expect(pasteboard.string(forType: .string) == name)
+            #expect(pasteboard.pasteboardItems?.contains { $0.string(forType: .fileURL) != nil } == false)
+        }
 
-        #expect(pasteboard.string(forType: .string) == "a.txt\nb c.md")
+        Clipboard.copyFileNames(paths, to: pasteboard)
+
+        #expect(pasteboard.string(forType: .string) == "%2544ocuments\n%41.txt\n100%25 done.txt\na%20b.txt\na b.txt\n文档 & #?.txt")
         #expect(pasteboard.pasteboardItems?.contains { $0.string(forType: .fileURL) != nil } == false)
     }
 
