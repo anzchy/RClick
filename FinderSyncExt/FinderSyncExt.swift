@@ -374,14 +374,20 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             return menu
         }
 
+        let cutVisibility = PendingCut.menuVisibility(
+            config: config, menuKind: menuKind == .contextualMenuForItems ? .contextualItems : nil,
+            selection: (FIFinderSyncController.default().selectedItemURLs() ?? []).map(\.path),
+            currentChangeCount: NSPasteboard.general.changeCount, hostOnline: !offline
+        )
+        let visibleActions = config.actions.filter { $0.id != "cut" || cutVisibility.cut }
         // 构建动作菜单
-        if !config.actions.isEmpty {
+        if !visibleActions.isEmpty {
             if config.actionsCollapsed {
                 // 折叠：使用子菜单
                 let actionsTitle = AppLocalization.localized("Actions")
                 let actionsSubMenu = NSMenu(title: actionsTitle)
-                for action in config.actions {
-                    let item = makeActionItem(action)
+                for action in visibleActions {
+                    let item = makeActionItem(action, cutEnabled: cutVisibility.cutEnabled)
                     actionsSubMenu.addItem(item)
                 }
                 let actionsItem = NSMenuItem(title: actionsTitle, action: nil, keyEquivalent: "")
@@ -390,8 +396,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
                 menu.addItem(actionsItem)
             } else {
                 // 不折叠：直接显示菜单项
-                for action in config.actions {
-                    let item = makeActionItem(action)
+                for action in visibleActions {
+                    let item = makeActionItem(action, cutEnabled: cutVisibility.cutEnabled)
                     menu.addItem(item)
                 }
             }
@@ -508,12 +514,14 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         }
     }
 
-    private func makeActionItem(_ action: ActionMenuItem) -> NSMenuItem {
+    private func makeActionItem(_ action: ActionMenuItem, cutEnabled: Bool = true) -> NSMenuItem {
         // 菜单打开时按住了 Option：标题标记「（跳过确认）」，本次点击就跳过确认。
         // 标题是用户唯一能看到的契约，handleActionClick 用同一个状态驱动行为，
         // 两者不会分叉。
         let title: String
-        if menuOptionPressed, action.id == Self.deleteDirectActionId {
+        if action.id == "cut" {
+            title = AppLocalization.localized("Cut")
+        } else if menuOptionPressed, action.id == Self.deleteDirectActionId {
             title = String(format: AppLocalization.localized("%@ (skip confirmation)"), action.name)
         } else {
             title = action.name
@@ -525,7 +533,9 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             item.image = icon
         }
         // 主程序离线时只有复制路径是快链路，其余动作需要主程序的授权与执行，置灰
-        if !isHostAppRunning && action.id != Self.copyPathActionId {
+        if action.id == "cut" {
+            item.isEnabled = cutEnabled
+        } else if !isHostAppRunning && action.id != Self.copyPathActionId {
             item.isEnabled = false
         }
         return item

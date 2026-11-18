@@ -42,4 +42,22 @@ struct PendingCut {
               pasteboard.changeCount == count else { return nil }
         return count
     }
+    nonisolated struct MenuVisibility {
+        let cut: Bool
+        let cutEnabled: Bool
+        // Reserved for the later move/undo slices; neither is offered yet.
+        let paste = false
+        let undo = false
+    }
+
+    /// Pure menu policy. The counter parameter is reserved for the Paste slice.
+    nonisolated static func menuVisibility(
+        config: MenuConfigPayload, menuKind: MenuTrigger?, selection: [String],
+        currentChangeCount: Int, hostOnline: Bool
+    ) -> MenuVisibility {
+        let cut = config.actions.contains { $0.id == "cut" }
+            && menuKind == .contextualItems && !selection.isEmpty
+        return MenuVisibility(cut: cut, cutEnabled: cut && hostOnline)
+    }
+
 }

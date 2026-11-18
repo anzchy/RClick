@@ -58,4 +58,43 @@ struct PendingCutTests {
         #expect(board.string(forType: .string) == "keep")
     }
 
+    @Test func menuVisibilityTableIncludesOfflineAndLegacyConfigs() throws {
+        let old = Data(#"{"version":1,"actions":[],"apps":[],"newFiles":[],"commonDirs":[],"actionsCollapsed":false,"appsCollapsed":false,"newFilesCollapsed":true,"commonDirsCollapsed":true}"#.utf8)
+        let legacy = try JSONDecoder().decode(MenuConfigPayload.self, from: old)
+        let action = ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)
+        // Literal policy rows from #8; expected visibility is not derived from the implementation.
+        let rows: [(MenuTrigger?, [String], Bool)] = [
+            (.contextualItems, [], false), (.contextualItems, ["/tmp/a"], true),
+            (.contextualItems, ["/tmp/a", "/tmp/b"], true),
+            (.contextualContainer, [], false), (.contextualContainer, ["/tmp/a"], false),
+            (.contextualContainer, ["/tmp/a", "/tmp/b"], false),
+            (.contextualSidebar, [], false), (.contextualSidebar, ["/tmp/a"], false),
+            (.contextualSidebar, ["/tmp/a", "/tmp/b"], false),
+            (.toolbar, [], false), (.toolbar, ["/tmp/a"], false),
+            (.toolbar, ["/tmp/a", "/tmp/b"], false),
+            (nil, [], false), (nil, ["/tmp/a"], false), (nil, ["/tmp/a", "/tmp/b"], false),
+        ]
+        for (kind, selection, eligible) in rows {
+            for enabled in [false, true] {
+                for online in [false, true] {
+                    for count in [41, 42] {
+                        let configs: [(MenuConfigPayload, Bool)] = [
+                            (legacy, false),
+                            (MenuConfigPayload(actions: enabled ? [action] : []), enabled),
+                            (MenuConfigPayload(actions: enabled ? [action] : [], cutChangeCount: 42, cutItemCount: 2), enabled),
+                        ]
+                        for (config, actionEnabled) in configs {
+                            let result = PendingCut.menuVisibility(config: config, menuKind: kind,
+                                selection: selection, currentChangeCount: count, hostOnline: online)
+                            #expect(result.cut == (eligible && actionEnabled))
+                            #expect(result.cutEnabled == (eligible && actionEnabled && online))
+                            #expect(!result.paste)
+                            #expect(!result.undo)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 }
