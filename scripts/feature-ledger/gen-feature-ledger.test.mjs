@@ -518,3 +518,59 @@ test("a test file the generator cannot parse for cases prints --, not 0", (t) =>
   }
   assert.equal(row(r.text, "mixed")["Test files"], "2");
 });
+
+// Swift string forms whose contents look like code. Each is valid Swift (`xcrun swiftc -frontend -parse`
+// accepts every one). In each, `func testGhost() {}` is inside a string or a comment, never a declaration.
+const SWIFT_STRING_FORMS = {
+  // A quote inside `\( … )` does not end the outer string; the block comment after it is a comment.
+  "interp-quote": String.raw`    let s = "\(d["\""])" /* retired:
+    func testGhost() {}
+    */`,
+  // A comment marker inside an interpolated string literal opens no comment.
+  "interp-comment-marker": String.raw`    let s = "\(f("/*"))"`,
+  "interp-string": String.raw`    let note = "value: \("func testGhost() {}")"`,
+  // In a raw string, \# is the escape introducer: \#" is an escaped quote, not the closer.
+  "raw-escaped-quote": String.raw`    let note = #"escaped \#"# func testGhost() {} "#`,
+  "nested-interp": String.raw`    let n = "a \("b \("func testGhost() {}") c") d"`,
+  "multiline-interp": String.raw`    let m = """
+        \("""
+            func testGhost() {}
+            """)
+        """`,
+  // In a raw string, \#( opens an interpolation, and a raw string inside it closes on its own "#.
+  "raw-interp": String.raw`    let r = #"a \#(#"b"#) func testGhost() {} "#`,
+  "raw-multiline": String.raw`    let r = #"""
+        a \#"""# func testGhost() {}
+        """#`,
+};
+
+const swiftFormFile = (form) => ["import Testing", "struct Tests {", "    @Test func realBefore() {}",
+  form, "    @Test func realAfter() {}", "}", ""].join("\n");
+
+function stringFormsFixture(t, testsFor) {
+  const files = { "App/Copier.swift": SWIFT_SOURCE };
+  for (const [name, form] of Object.entries(SWIFT_STRING_FORMS)) files[`AppTests/${name}.swift`] = swiftFormFile(form);
+  return fixture(t, files, Object.keys(SWIFT_STRING_FORMS).map((name) => ({
+    id: name, name, area: "Menu", process: ["app"], paths: ["App/Copier.swift"], tests: testsFor(name) })));
+}
+
+test("Swift interpolation is code: string and comment text inside it, or after it, is not a test case", (t) => {
+  const root = stringFormsFixture(t, (name) => [`AppTests/${name}.swift`]);
+  const r = generate(root);
+  assert.equal(r.status, 0, r.stderr);
+  for (const name of Object.keys(SWIFT_STRING_FORMS)) {
+    assert.equal(row(r.text, name)["Test cases"], "2", `${name}: realBefore and realAfter only`);
+  }
+});
+
+test("a test filter that matches only text inside an interpolated or raw string is a stale spine entry", (t) => {
+  const forms = Object.keys(SWIFT_STRING_FORMS);
+  const root = stringFormsFixture(t, (name) => [`AppTests/${name}.swift::testGhost`, `AppTests/${name}.swift::realAfter`]);
+  const r = generate(root);
+  assert.equal(r.status, 65, `a ghost filter must fail closed:\n${r.stderr}`);
+  for (const name of forms) {
+    assert.match(r.stderr, new RegExp(`${name}\\.swift::testGhost" matches no test case`), `${name}: ghost reported`);
+    assert.doesNotMatch(r.stderr, new RegExp(`${name}\\.swift::realAfter`), `${name}: a live test is not swallowed`);
+  }
+  assert.equal(r.text, null);
+});
