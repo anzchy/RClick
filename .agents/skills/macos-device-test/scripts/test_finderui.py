@@ -297,11 +297,12 @@ class Calibration(unittest.TestCase):
         self.assertEqual(lines[-1], 'CALIBRATION FAIL — distrust: ui.sh open-menu, ui.sh choose')
 
     def test_an_environment_failure_exits_seventy(self):
-        results = [('accessibility', 'FAIL', 'not trusted')] + [
-            (step, 'SKIP', 'environment') for step, _ in finderui.CALIBRATION_STEPS[1:]]
+        results = [(step, 'FAIL', 'not trusted') if step == 'accessibility' else (step, 'SKIP', 'blocked')
+                   for step, _ in finderui.CALIBRATION_STEPS]
         lines, code = finderui.calibration_report(results)
         self.assertEqual(code, 70)
-        self.assertTrue(lines[-1].startswith('CALIBRATION FAIL'))
+        self.assertEqual(lines[-1], 'CALIBRATION FAIL — environment (accessibility): fix it and rerun; '
+                                    'distrust: every ui.sh command')
 
     def test_a_missing_step_result_is_a_failure_not_a_pass(self):
         lines, code = finderui.calibration_report(self.all_pass()[:-1])
