@@ -31,6 +31,7 @@ struct RClickApp: App {
     @AppLog(category: "main")
     private var logger
     let messager = Messager.shared
+    private lazy var runningCycle = IPCRunningCycle(messager: messager)
 
     @StateObject var appState = AppState.shared
 
@@ -79,6 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var heartBeatCount = 0
 
     let messager = Messager.shared
+    private lazy var runningCycle = IPCRunningCycle(messager: messager)
     var showMenuBarExtra = UserDefaults.group.bool(forKey: Key.showMenuBarExtra)
     var settingsWindow: NSWindow!
 
@@ -259,14 +261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Message Handlers
 
     func sendObserveDirMessage() {
-        let directories: [String] = []
-        messager.sendRunningNotification(directories: directories)
-        if !pluginRunning {
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(3))
-                sendObserveDirMessage()
-            }
-        }
+        runningCycle.start()
     }
 
     func sendMenuConfigurationUpdate() {
