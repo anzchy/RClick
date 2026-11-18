@@ -123,8 +123,19 @@ def dotted(path):
     return '.'.join(str(step) for step in path)
 
 
+ESCAPE_SCRIPT = '''tell application "System Events"
+  if name of first process whose frontmost is true is "Finder" then
+    key code 53
+    return "escaped"
+  end if
+end tell
+return "skipped: Finder is not frontmost"'''
+
+
 def escape():
-    run([HERE / 'finder-kc.sh', '53'], timeout=10)
+    """Esc (key code 53, not text: no input method involved) to close Finder's open menu, sent ONLY when Finder is
+    frontmost, so it never lands in another app (the terminal running the tester, an RClick dialog)."""
+    run(['osascript', '-e', ESCAPE_SCRIPT], timeout=10)
 
 
 def activate_finder():
