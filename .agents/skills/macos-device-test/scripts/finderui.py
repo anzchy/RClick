@@ -467,10 +467,43 @@ def probe_points(point):
     return [(x + 40, y + 12), (x + 40, y - 12), (x - 40, y + 12), (x - 40, y - 12)]
 
 
-def lock_held_by_rclick(status_text):
-    """True only when `gui-lock.sh status` reports the shared desktop lock HELD with project=rclick."""
-    lines = [line.strip() for line in status_text.splitlines()]
-    return bool(lines) and lines[0] == 'HELD:' and 'project=rclick' in lines[1:]
+LOCK_FIELDS = ('project', 'session', 'batch', 'start', 'pid', 'expected_minutes', 'purpose', 'acquisition_id')
+UUID4 = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}')
+
+
+def check_lock(status_text, batch, acquisition_id):
+    """Raise Environment unless `gui-lock.sh status` shows ONE complete owner record (`HELD:` then exactly the eight
+    indented key=value fields of gui-lock.sh, each once) with project=rclick, this run's batch and this run's
+    acquisition id (the caller exports both from `gui-lock.sh acquire`). The record's pid is the acquire process,
+    which has exited by design, so it is checked for form only. A lock that is not this acquisition is never removed:
+    report it."""
+    if not batch or not acquisition_id:
+        raise Environment('the GUI lock is not bound to this run: export RCLICK_GUI_LOCK_BATCH=<run-id> and '
+                          'RCLICK_GUI_LOCK_ACQUISITION_ID=<uuid> as printed by `gui-lock.sh acquire`')
+    lines = status_text.split('\n')
+    if lines[-1] == '':
+        lines.pop()
+    if not lines or lines[0] != 'HELD:':
+        raise Environment('the shared GUI lock is not held (gui-lock.sh status: '
+                          f'{lines[0] if lines else "no output"!r}): gui-lock.sh acquire <run-id> first')
+    values = {}
+    for line in lines[1:]:
+        key, equals, value = line[2:].partition('=')
+        if not line.startswith('  ') or not equals or key not in LOCK_FIELDS or key in values or not value:
+            raise Environment(f'the GUI lock owner record is malformed or incomplete at {line!r}; report it, '
+                              'never remove a lock')
+        values[key] = value
+    if set(values) != set(LOCK_FIELDS):
+        raise Environment('the GUI lock owner record lacks ' + ', '.join(sorted(set(LOCK_FIELDS) - set(values))))
+    if values['project'] != 'rclick':
+        raise Environment(f'the GUI lock is held by project {values["project"]!r}, not rclick')
+    if not values['pid'].isdecimal() or not UUID4.fullmatch(values['acquisition_id']):
+        raise Environment('the GUI lock owner record has a malformed pid or acquisition_id')
+    if values['batch'] != batch:
+        raise Environment(f'the GUI lock is held by rclick run {values["batch"]!r}, not this run {batch!r}')
+    if values['acquisition_id'] != acquisition_id:
+        raise Environment('the GUI lock is held under another acquisition of this run id (a stale lock?): '
+                          'report it, never remove it')
 
 
 # Calibration steps in run order, each with the ui.sh command a failure tells the tester to distrust.

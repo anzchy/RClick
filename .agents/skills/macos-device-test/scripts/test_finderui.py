@@ -309,11 +309,43 @@ class Calibration(unittest.TestCase):
         self.assertEqual(code, 65)
         self.assertIn('not run', lines[-2])
 
-    def test_gui_lock_must_be_held_by_rclick(self):
-        held = 'HELD:\n  project=rclick\n  session=rclick-delegator\n  batch=i32-cal\n'
-        self.assertTrue(finderui.lock_held_by_rclick(held))
-        self.assertFalse(finderui.lock_held_by_rclick('FREE\n'))
-        self.assertFalse(finderui.lock_held_by_rclick(held.replace('project=rclick', 'project=picsee')))
+
+
+class Lock(unittest.TestCase):
+    """`gui-lock.sh status` must show ONE complete owner record of THIS run's acquisition (batch and acquisition id
+    exported from `gui-lock.sh acquire`). The record's pid is the short-lived acquire process (gui-lock.sh protocol),
+    so the acquisition id, not pid liveness, tells this run's lock from a stale or another session's lock."""
+    ID = '0b6f2c1e-8d3a-4f5b-9c7d-1e2f3a4b5c6d'
+    HELD = ('HELD:\n  project=rclick\n  session=rclick-delegator\n  batch=i32-cal\n  start=2026-11-18T01:00:00+0800\n'
+            '  pid=4242\n  expected_minutes=30\n  purpose=device run\n  acquisition_id=' + ID + '\n')
+
+    def refused(self, status, batch='i32-cal', acquisition=ID):
+        with self.assertRaisesRegex(finderui.Environment, 'GUI lock'):
+            finderui.check_lock(status, batch, acquisition)
+
+    def test_gui_lock_must_be_held_by_this_rclick_run(self):
+        # Before this fix: lock_held_by_rclick(held) was True for any HELD + project=rclick record.
+        self.assertIsNone(finderui.check_lock(self.HELD, 'i32-cal', self.ID))
+        self.refused('FREE\n')
+        self.refused(self.HELD.replace('project=rclick', 'project=picsee'))
+
+    def test_near_miss_owner_records_are_refused(self):
+        for name, status in (
+                ('substring project', self.HELD.replace('project=rclick', 'project=rclick-old')),
+                ('no HELD header', self.HELD.replace('HELD:\n', 'LOCKED:\n')),
+                ('two projects', self.HELD.replace('HELD:\n', 'HELD:\n  project=picsee\n')),
+                ('missing fields', 'HELD:\n  project=rclick\n  batch=i32-cal\n  acquisition_id=' + self.ID + '\n'),
+                ('unknown line', self.HELD + '  note=x\n'),
+                ('invalid lock path', 'HELD:\n  (invalid lock path; do not start GUI work)\n'),
+                ('owner line without indent', self.HELD.replace('  purpose=', 'purpose=')),
+                ('non-numeric pid', self.HELD.replace('pid=4242', 'pid=x'))):
+            with self.subTest(name):
+                self.refused(status)
+
+    def test_another_run_or_a_stale_acquisition_is_refused(self):
+        self.refused(self.HELD, batch='i31-cal')  # another rclick session's live lock
+        self.refused(self.HELD, acquisition='5d1c0e2a-6b7f-4a8e-9d0c-2f3e4a5b6c7d')  # a crashed run's stale lock
+        self.refused(self.HELD, batch='', acquisition='')  # the caller did not export its acquisition
 
 
 if __name__ == '__main__':
