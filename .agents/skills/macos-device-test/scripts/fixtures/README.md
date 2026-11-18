@@ -10,6 +10,7 @@ see `finderui.py`). They hold no personal path and no machine identifier: replac
 | `menu-file-alpha.jsonl` | `menu-alpha.txt`, run i22-device-20261116e (Finder, RClick and other extensions' items with centres) | titles, order, enabled flags and centres are recorded; frames are derived from the centres |
 | `menu-file-sibling-option.jsonl` | the same menu as seen in run i5-device-20261117b when the click landed on the sibling: `Compress “%41.txt”` while `%2541.txt` was the target, opened with Option | derived from the two records |
 | `dialog-delete-confirm.jsonl` | the Delete Direct confirmation of `a-dialog.txt`, run i5-device-20261117d, above the Settings window | texts and buttons recorded; frames constructed |
+| `process-table.txt` | `ps -axo pid=,comm=` on the test Mac (2026-11-18): Finder, System Settings, FinderSyncExt, universalAccessAuthWarn, UserNotificationCenter, the open-panel service, tccd | recorded executables and format; build paths replaced by `/private/tmp/…`; the RClick, osascript and other-extension lines are added in the same format |
 | `panel-grant.jsonl` | texts and buttons of the folder-permission panel, `PERM-panel-ax-newfile.txt`, run i22-device-20261116e | the file list and the location pop-up were not in that dump: their shape is ASSUMED (list view) |
 
 When a calibration run saves real dumps (`$RUN_DIR/calibration/*.jsonl`), the delegator may replace a shaped

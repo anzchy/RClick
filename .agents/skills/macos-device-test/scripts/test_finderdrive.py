@@ -46,6 +46,7 @@ class FakeDesktop:
         self.menu, self.selection, self.front, self.menu_pid = menu, list(selection), front, menu_pid
         self.calls, self.requests, self.pressed = [], [], []
         self.menu_at_press = None  # the menu open when the press arrives (None: unchanged)
+        self.windows, self.acted = fixture('dialog-delete-confirm.jsonl'), []
         self.selection_at_check = None
 
     def completed(self, argv, out='', code=0, err=''):
@@ -59,11 +60,20 @@ class FakeDesktop:
             return self.completed(argv, HELD)
         if name == 'pgrep':
             return self.completed(argv, f'{FINDER}\n')
+        if name == 'ps':
+            pid = argv[argv.index('-p') + 1]
+            line = next((l for l in fixture('process-table.txt').splitlines() if l.split()[0] == pid), '')
+            return self.completed(argv, line + '\n' if line else '', 0 if line else 1)
         if name == 'axprobe':
             if argv[1] == 'trusted':
                 return self.completed(argv, 'true\n')
             if argv[1] == 'menu-at':
                 return self.completed(argv, self.menu)
+            if argv[1] == 'dump':
+                return self.completed(argv, self.windows)
+            if argv[1] == 'act':
+                self.acted.append(argv[2:])
+                return self.completed(argv, f'{argv[4]} ok\n')
             return self.completed(argv, '', 64, f'fake axprobe: {argv[1]} not expected')
         if name == 'osascript':
             script = argv[2]
@@ -376,6 +386,36 @@ class AxprobeNeedsTheLock(unittest.TestCase):
                 result = self.axprobe(*args, **LOCK_ENV)
                 self.assertEqual(result.returncode, 70, result.stderr)
                 self.assertIn("project 'picsee'", result.stderr)
+
+
+class PressOnlyInAllowedProcesses(unittest.TestCase):
+    """`press-button` acts only in an allowed process (finderui.allowed_process); the RClick pid comes from
+    $RUN_DIR/rclick.pid (audit r1 opus M3)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='rclick-run-')
+        self.addCleanup(temp.cleanup)
+        self.run_dir = Path(temp.name)
+        (self.run_dir / 'rclick.pid').write_text('28075\n')
+
+    def press(self, pid):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [])
+        with mock.patch.dict(os.environ, RUN_DIR=str(self.run_dir)):
+            code, out, err = drive(desktop, 'press-button', str(pid), 'Cancel', '--window-text', 'Permanently delete')
+        return code, err, desktop
+
+    def test_the_rclick_pid_of_this_run_is_pressed(self):
+        code, err, desktop = self.press(28075)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(desktop.acted, [['28075', '0.3', 'press', 'AXButton', 'Cancel']])
+
+    def test_a_privacy_prompt_or_another_app_is_never_pressed(self):
+        for pid in (92997, 3610, 562, 60606):
+            with self.subTest(pid=pid):
+                code, err, desktop = self.press(pid)
+                self.assertEqual(code, 65, err)
+                self.assertEqual(desktop.acted, [])
+                self.assertNotIn(['dump'], [call[1:2] for call in desktop.calls if Path(call[0]).name == 'axprobe'])
 
 
 class Source(unittest.TestCase):
