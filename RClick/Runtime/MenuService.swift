@@ -14,7 +14,7 @@ final class MenuService {
     private var menuVersion = 0
 
     /// 从 AppState 实时构建菜单配置
-    func buildConfig(from state: AppState) -> MenuConfigPayload {
+    func buildConfig(from state: AppState, cutChangeCount: Int? = nil, cutItemCount: Int = 0) -> MenuConfigPayload {
         menuVersion += 1
         return MenuConfigPayload(
             version: menuVersion,
@@ -30,7 +30,9 @@ final class MenuService {
             appsCollapsed: state.foldAppsMenu,
             newFilesCollapsed: state.foldNewFileMenu,
             commonDirsCollapsed: state.foldCommonDirMenu,
-            iconStyle: state.appIconStyle
+            iconStyle: state.appIconStyle,
+            cutChangeCount: cutChangeCount,
+            cutItemCount: cutItemCount
         )
     }
 }

@@ -51,6 +51,18 @@ final class ActionService {
         self.revealNewFile = revealNewFile
     }
 
+    struct CutRecord: Sendable {
+        let paths: [String]
+        let identities: [FileIdentity]
+        let changeCount: Int
+    }
+
+    private var cutRecord: CutRecord?
+    var pendingCut: CutRecord? {
+        guard let cutRecord, PendingCut(pasteboard: pasteboard).isStillPending(cutRecord.changeCount) else { return nil }
+        return cutRecord
+    }
+
     // MARK: - SystemActions
 
     /// 复制路径到剪贴板
@@ -158,6 +170,9 @@ final class ActionService {
         }
 
         switch rcitem.id {
+        case "cut":
+            guard rcitem.enabled, trigger == MenuTrigger.contextualItems.rawValue, !target.isEmpty else { return }
+            prepareCut(target)
         case "copy-path":
             copyPath(target)
         case "copy-file-name":
@@ -173,6 +188,17 @@ final class ActionService {
         default:
             logger.warning("no action id matched")
         }
+    }
+
+    private func prepareCut(_ target: [String]) {
+        let urls = target.map { URL(fileURLWithPath: $0) }
+        var seen: Set<String> = []
+        let parents = urls.map { $0.deletingLastPathComponent() }.filter { seen.insert($0.path).inserted }
+        let lease = accessLeaser.beginAccess(covering: parents)
+        defer { lease.end() }
+        guard let identities = try? urls.map({ try fileOperations.fileIdentity(of: $0) }),
+              let count = PendingCut(pasteboard: pasteboard).writeCut(target) else { return }
+        cutRecord = CutRecord(paths: target, identities: identities, changeCount: count)
     }
 
     func showAirDrop(_ target: [String], _ trigger: String) async {

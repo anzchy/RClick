@@ -265,7 +265,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func sendMenuConfigurationUpdate() {
-        let config = RCRuntime.shared.menuService.buildConfig(from: appState)
+        let pendingCut = RCRuntime.shared.actionService.pendingCut
+        let config = RCRuntime.shared.menuService.buildConfig(
+            from: appState, cutChangeCount: pendingCut?.changeCount, cutItemCount: pendingCut?.paths.count ?? 0
+        )
         messager.sendMenuConfig(config)
         logger.debug("Sent menu configuration to extension: \(config.actions.count) actions, \(config.apps.count) apps")
     }
@@ -288,6 +291,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 trigger: event.trigger.rawValue,
                 optionKeyPressed: optionKeyPressed
             )
+            if event.itemId == "cut" { sendMenuConfigurationUpdate() }
         case .newFile:
             await actionService.createFile(rid: event.itemId, target: event.target)
         case .commonDir:
