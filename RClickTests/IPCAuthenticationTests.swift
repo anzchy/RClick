@@ -115,7 +115,7 @@ final class IPCAuthenticationTests: XCTestCase {
         let provider = MutableIPCKeyProvider()
         provider.data.withLock { $0 = nil }
         let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
-        for _ in 0..<1000 { center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: "x") }
+        for _ in 0..<1000 { clock.advance(1); center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: "x") }
         XCTAssertEqual(provider.flags.withLock { $0.count }, 1, "parse malformed traffic before key retries")
         let invalid = IPCEnvelope(direction: .toExtension, action: "running", id: "bad", session: "session", timestamp: 100,
             nonce: Data(repeating: 1, count: 16), mac: Data(repeating: 0, count: 32)).wireString()
@@ -301,6 +301,94 @@ final class IPCAuthenticationTests: XCTestCase {
         clock.prepareRollbackAfterNextSample()
         XCTAssertThrowsError(try receiver.receive(wire, key: key), "freshness and retention must use the SAME clock observation as the barrier")
         XCTAssertThrowsError(try receiver.receive(wire, key: key))
+    }
+
+    func testTransientExtensionReadFailureRecoversSameKeyAndSession() {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32)), clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let delivery = IPCExtensionDelivery(messager: ext)
+        app.sendMenuConfig(MenuConfigPayload())
+        let session = ext.currentSession
+        provider.data.withLock { $0 = nil }
+        clock.advance(10)
+        ext.sendHeartbeat()
+        XCTAssertFalse(ext.hasReadableKey)
+        XCTAssertNil(delivery.menuConfig(as: MenuConfigPayload.self))
+        provider.data.withLock { $0 = Data(repeating: 0x42, count: 32) }
+        clock.advance(10)
+        app.sendRunningNotification()
+        app.sendMenuConfig(MenuConfigPayload())
+        XCTAssertEqual(ext.currentSession, session)
+        XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.version, 2)
+        XCTAssertTrue(delivery.isHostAppRunning)
+    }
+
+    func testReadableKeyMACMissFloodCoalescesAndBacksOffRefreshes() {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let wire = IPCEnvelope(direction: .toExtension, action: "running", id: "bad", session: "session", timestamp: 100,
+            nonce: Data(repeating: 1, count: 16), mac: Data(repeating: 0, count: 32)).wireString()
+        DispatchQueue.concurrentPerform(iterations: 1000) { _ in center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: wire) }
+        XCTAssertEqual(provider.flags.withLock { $0.count }, 2, "one concurrent MAC-miss refresh plus initialization")
+        for _ in 0..<60 {
+            clock.advance(1)
+            center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: wire)
+        }
+        XCTAssertLessThanOrEqual(provider.flags.withLock { $0.count }, 16, "periodic validation plus capped exponential MAC-miss backoff")
+        XCTAssertTrue(ext.hasReadableKey)
+    }
+
+    func testOriginalWirePrefixTravelsWithTheParsedEnvelope() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "wire-bytes", session: "",
+            timestamp: 100, nonce: Data(repeating: 1, count: 16)), key: key).wireString()
+        let received = try IPCEnvelope.parseReceived(wire)
+        let raw = try XCTUnwrap(Data(base64Encoded: wire))
+        XCTAssertEqual(received.authenticatedBytes, Data(raw.dropLast(36)))
+        XCTAssertTrue(MessageSecurity.verify(received, key: key))
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Shared/MessageSecurity.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("authenticating: received.authenticatedBytes"))
+        XCTAssertTrue(source.contains("guard MessageSecurity.verify(received, key: key)"))
+    }
+
+    func testExactDestructiveReplayCannotReachActualAppHandlerOrAckAfterRollback() async throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let events = Mutex<[ClickEventPayload]>([])
+        let acks = Mutex<[String]>([])
+        ext.onMainMessage(.actionAck) { message in acks.withLock { $0.append(message.inReplyTo) } }
+        let first = expectation(description: "original legitimate destructive click")
+        let next = expectation(description: "legitimate click after resync")
+        app.onClickEvent { event in
+            let count = events.withLock { $0.append(event); return $0.count }
+            if count == 1 { first.fulfill() } else { next.fulfill() }
+        }
+        app.sendRunningNotification()
+        let event = ClickEventPayload(itemId: "delete-direct", itemType: .action, target: ["/tmp/exact-disposable-selection"], trigger: .contextualItems, optionKeyPressed: true)
+        let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "click", id: "captured-click", session: app.currentSession,
+            timestamp: 100, nonce: Data(repeating: 1, count: 16), payload: try JSONEncoder().encode(event)), key: key).wireString()
+        center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+        await fulfillment(of: [first], timeout: 1)
+        clock.advance(3)
+        center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+        clock.step(wall: -3, monotonic: 13)
+        center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+        app.sendRunningNotification()
+        ext.sendClickEvent(event, id: "legitimate-after-resync")
+        await fulfillment(of: [next], timeout: 1)
+        XCTAssertEqual(events.withLock { $0.count }, 2)
+        XCTAssertEqual(events.withLock { $0.last?.target }, event.target)
+        XCTAssertEqual(events.withLock { $0.last?.optionKeyPressed }, true)
+        XCTAssertEqual(acks.withLock { $0 }, ["captured-click", "legitimate-after-resync"])
     }
 
     func testCapturedMACCannotAuthorizeDifferentPayload() throws {
