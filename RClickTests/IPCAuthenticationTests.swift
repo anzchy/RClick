@@ -134,6 +134,17 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertNoThrow(try receiver.receive(wire(1, "second"), key: key))
     }
 
+    func testWrongAckDoesNotCancelAnyOtherClickDeadline() {
+        var pending = PendingClicks()
+        pending.register("first")
+        pending.register("second")
+        pending.acknowledge("unrelated")
+        pending.acknowledge("second")
+        XCTAssertTrue(pending.expire("first"))
+        XCTAssertFalse(pending.expire("second"))
+        XCTAssertFalse(pending.expire("first"))
+    }
+
 }
 
 

@@ -289,3 +289,11 @@ nonisolated final class Messager: NSObject, Sendable {
     }
     func decodeSignedData<T: Decodable>(_ message: VerifiedMessage, as type: T.Type = T.self) -> T? { message.decode(type) }
 }
+
+/// Click-time liveness: each pending click owns its own three-second deadline.
+nonisolated struct PendingClicks {
+    private var ids: Set<String> = []
+    mutating func register(_ id: String) { ids.insert(id) }
+    mutating func acknowledge(_ inReplyTo: String) { ids.remove(inReplyTo) }
+    mutating func expire(_ id: String) -> Bool { ids.remove(id) != nil }
+}
