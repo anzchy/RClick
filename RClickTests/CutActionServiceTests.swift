@@ -21,14 +21,28 @@ struct CutActionServiceTests {
         var authorized: Set<String> = []
         var replies: [Bool] = []
         var prompts: [URL] = []
+        var holdNextPrompt = false
+        var heldPrompt: CheckedContinuation<URL?, Never>?
+        var onPromptStarted: (() -> Void)?
         func hasAccess(to url: URL) -> Bool { authorized.contains(url.path) }
         func promptForPermission(for url: URL) async -> URL? {
             prompts.append(url)
+            if holdNextPrompt {
+                holdNextPrompt = false
+                return await withCheckedContinuation { continuation in
+                    heldPrompt = continuation
+                    onPromptStarted?()
+                }
+            }
             guard !replies.isEmpty, replies.removeFirst() else { return nil }
             authorized.insert(url.path)
             return url
         }
         func saveBookmark(for url: URL) {}
+        func cancelHeldPrompt() {
+            heldPrompt?.resume(returning: nil)
+            heldPrompt = nil
+        }
     }
 
     private final class MockConfirmation: DeleteConfirmationProviding {
@@ -164,6 +178,69 @@ struct CutActionServiceTests {
         #expect(warnings.first?.contains(files[0].path) == true)
         #expect(lease.ended == 1)
         #expect(try Data(contentsOf: files[0]) == Data("unchanged".utf8))
+    }
+
+    @Test(arguments: ["disabled", "container", "empty"])
+    func cutRejectsInvalidRequestsBeforeAccessOrClipboardChanges(request: String) async throws {
+        let (root, files) = try makeFiles()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("keep", forType: .string)
+        let before = board.changeCount
+        let state = MockState()
+        if request == "disabled" { state.actions[0].enabled = false }
+        let permission = MockPermission()
+        permission.authorized = [root.path]
+        let lease = TrackingLease()
+        let service = ActionService(state: state, permission: permission, confirmation: MockConfirmation(),
+                                    pasteboard: board, accessLeaser: lease)
+        await service.actionHandler(rid: "cut", target: request == "empty" ? [] : files.map(\.path),
+                                    trigger: request == "container" ? "ctx-container" : "ctx-items")
+        #expect(board.changeCount == before)
+        #expect(board.string(forType: .string) == "keep")
+        #expect(service.pendingCut == nil)
+        #expect(permission.prompts.isEmpty)
+        #expect(lease.parents.isEmpty)
+        for file in files { #expect(try Data(contentsOf: file) == Data("unchanged".utf8)) }
+    }
+
+    @Test func secondCutWhilePermissionPanelIsOpenDoesNotChangeClipboardOrPendingState() async throws {
+        let (firstRoot, firstFiles) = try makeFiles()
+        let (secondRoot, secondFiles) = try makeFiles()
+        defer { for root in [firstRoot, secondRoot] { try? FileManager.default.removeItem(at: root) } }
+        let board = NSPasteboard(name: .init("RClickTests-cut-\(UUID())"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("keep", forType: .string)
+        let before = board.changeCount
+        let permission = MockPermission()
+        permission.authorized = [secondRoot.path]
+        permission.holdNextPrompt = true
+        let lease = TrackingLease()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
+                                    pasteboard: board, accessLeaser: lease)
+        var first: Task<Void, Never>?
+        await withCheckedContinuation { started in
+            permission.onPromptStarted = { started.resume() }
+            first = Task { await service.actionHandler(rid: "cut", target: firstFiles.map(\.path), trigger: "ctx-items") }
+        }
+        permission.onPromptStarted = nil
+        defer { permission.cancelHeldPrompt() }
+        await service.actionHandler(rid: "cut", target: secondFiles.map(\.path), trigger: "ctx-items")
+        #expect(board.changeCount == before)
+        #expect(board.string(forType: .string) == "keep")
+        #expect(service.pendingCut == nil)
+        #expect(permission.prompts == [firstRoot])
+        #expect(lease.parents.isEmpty)
+        permission.cancelHeldPrompt()
+        if let first { await first.value }
+        #expect(board.changeCount == before)
+        #expect(service.pendingCut == nil)
+        for file in firstFiles + secondFiles {
+            #expect(try Data(contentsOf: file) == Data("unchanged".utf8))
+        }
     }
 
 }
