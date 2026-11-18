@@ -257,3 +257,23 @@ def check_guard(targets, selection, items, background=None, front=None):
     if titles != [expected]:
         raise Refused(f'menu shows {" / ".join(titles)}, expected {expected!r}: the menu belongs to another item')
     return f'{expected} and selection {wanted}'
+
+
+def find_group_item(items, title, sub=None, also=()):
+    """The enabled item titled exactly `title` inside RClick's group (and its submenu item `sub`), else Refused.
+    Returns (item, submenu item path or None)."""
+    group = rclick_group(items, also)
+    matches = [item for item in group if item.title == nfc(title)]
+    if not matches:
+        raise Refused(f"{title!r} is not in RClick's group ({', '.join(item.title for item in group) or 'empty'}); "
+                      'is the extension loaded, or is it a user-added title (pass --also)?')
+    item = matches[0]
+    if not item.enabled:
+        raise Refused(f'{title!r} is disabled in the menu')
+    if sub is None:
+        return item, None
+    paths = [path for name, path in item.sub if name == nfc(sub)]
+    if len(paths) != 1:
+        raise Refused(f'no submenu item {sub!r} under {title!r} (has: {", ".join(name for name, _ in item.sub)})'
+                      if not paths else f'{len(paths)} submenu items {sub!r} under {title!r}')
+    return item, paths[0]

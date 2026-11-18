@@ -159,5 +159,34 @@ class Guard(unittest.TestCase):
             finderui.check_guard([], [], self.items('menu-file-alpha.jsonl'), background=self.DIR, front=self.DIR)
 
 
+class Choose(unittest.TestCase):
+    def setUp(self):
+        self.items = finderui.menu_items(dump('menu-file-alpha.jsonl'))
+
+    def test_item_is_taken_from_rclicks_group_not_from_another_extension(self):
+        item, sub = finderui.find_group_item(self.items, 'Copy Path')
+        # Another extension's `Copy Path` sits further down (y 982); RClick's is the one after Quick Actions.
+        self.assertEqual((item.index, item.point, sub), (27, (565, 598), None))
+
+    def test_submenu_item_is_addressed_inside_rclicks_new_file(self):
+        item, sub = finderui.find_group_item(self.items, 'New File', sub='TXT')
+        self.assertEqual((item.index, sub), (31, (31, 0, 0)))
+        with self.assertRaisesRegex(finderui.Refused, 'no submenu item'):
+            finderui.find_group_item(self.items, 'New File', sub='RTF')  # only the other extension's New File has RTF
+
+    def test_a_title_outside_the_group_is_refused(self):
+        for title in ('Move file to...', 'Compress “alpha.txt”', 'Hide'):
+            with self.subTest(title=title), self.assertRaisesRegex(finderui.Refused, "not in RClick's group"):
+                finderui.find_group_item(self.items, title)
+
+    def test_a_disabled_item_is_refused(self):
+        nodes = dump('menu-file-alpha.jsonl')
+        for node in nodes:
+            if node.get('title') == 'Copy File Name':
+                node['enabled'] = False
+        with self.assertRaisesRegex(finderui.Refused, 'disabled'):
+            finderui.find_group_item(finderui.menu_items(nodes), 'Copy File Name')
+
+
 if __name__ == '__main__':
     unittest.main()
