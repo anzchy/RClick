@@ -1,14 +1,169 @@
 """Offline tests of the ui.sh / calibrate.sh command line: exit codes and refusals that happen before any AX,
 AppleScript or desktop call. A fake osascript/xcrun/pgrep on PATH records any call; none may happen here."""
+import contextlib
+import io
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 TRAP = '#!/bin/sh\necho "$0 $*" >> "$TRAP_LOG"\nexit 99\n'
+sys.path.insert(0, str(HERE))
+import finderdrive  # noqa: E402
+
+FIXTURES = HERE / 'fixtures'
+DIR = '/tmp/rclick-cal'
+ACQUISITION = '0b6f2c1e-8d3a-4f5b-9c7d-1e2f3a4b5c6d'
+LOCK_ENV = {'RCLICK_GUI_LOCK_BATCH': 'i32-cal', 'RCLICK_GUI_LOCK_ACQUISITION_ID': ACQUISITION}
+HELD = ('HELD:\n  project=rclick\n  session=rclick-delegator\n  batch=i32-cal\n  start=2026-11-18T01:00:00+0800\n'
+        '  pid=4242\n  expected_minutes=30\n  purpose=device run\n  acquisition_id=' + ACQUISITION + '\n')
+FINDER = 415
+
+
+def fixture(name):
+    return (FIXTURES / name).read_text(encoding='utf-8')
+
+
+def top_titles(menu_text):
+    nodes = [json.loads(line) for line in menu_text.splitlines() if line.strip()]
+    return [node['title'] for node in sorted(nodes, key=lambda n: n['path']) if len(node['path']) == 1]
+
+
+class FakeDesktop:
+    """The process boundary of finderdrive (`run`, `spawn`) answered offline: gui-lock.sh, pgrep, osascript and
+    axprobe. An axprobe menu session answers a press the way axprobe.swift does: it compares the request's owner pid
+    and full top-level title list with the menu that is open NOW and exits 65 (nothing pressed) on a difference."""
+
+    def __init__(self, menu, selection, front=DIR, menu_pid=FINDER):
+        self.menu, self.selection, self.front, self.menu_pid = menu, list(selection), front, menu_pid
+        self.calls, self.requests, self.pressed = [], [], []
+        self.menu_at_press = None  # the menu open when the press arrives (None: unchanged)
+        self.selection_at_check = None
+
+    def completed(self, argv, out='', code=0, err=''):
+        return subprocess.CompletedProcess(argv, code, out, err)
+
+    def run(self, argv, timeout=20):
+        argv = [str(a) for a in argv]
+        name = Path(argv[0]).name
+        self.calls.append(argv)
+        if name == 'gui-lock.sh':
+            return self.completed(argv, HELD)
+        if name == 'pgrep':
+            return self.completed(argv, f'{FINDER}\n')
+        if name == 'axprobe':
+            if argv[1] == 'trusted':
+                return self.completed(argv, 'true\n')
+            if argv[1] == 'menu-at':
+                return self.completed(argv, self.menu)
+            return self.completed(argv, '', 64, f'fake axprobe: {argv[1]} not expected')
+        if name == 'osascript':
+            script = argv[2]
+            if 'selection as alias list' in script:
+                paths = self.selection if self.selection_at_check is None else self.selection_at_check
+                return self.completed(argv, ''.join(p + '\n' for p in paths) + '\n')
+            if 'front Finder window' in script:
+                return self.completed(argv, self.front + '/\n')
+            return self.completed(argv, '\n')
+        return self.completed(argv, '', 99, f'fake desktop: unexpected {name}')
+
+    def spawn(self, argv):
+        argv = [str(a) for a in argv]
+        self.calls.append(argv)
+        return FakeSession(self, argv)
+
+
+class FakeSession:
+    def __init__(self, desktop, argv):
+        self.desktop, self.returncode = desktop, None
+        lines = [json.dumps({'session': {'pid': desktop.menu_pid}})] + [
+            line for line in desktop.menu.splitlines() if line.strip()] + [json.dumps({'end': True})]
+        self.stdout = io.BytesIO(('\n'.join(lines) + '\n').encode())
+
+    def communicate(self, input=None, timeout=None):
+        request = json.loads(input.decode())
+        self.desktop.requests.append(request)
+        if 'abort' in request:
+            self.returncode = 0
+            return b'aborted\n', b''
+        now = self.desktop.menu_at_press or self.desktop.menu
+        if request.get('pid') != self.desktop.menu_pid or request.get('titles') != top_titles(now):
+            self.returncode = 65
+            return b'', b'axprobe: the menu changed since it was verified: nothing pressed\n'
+        self.desktop.pressed.append(request)
+        self.returncode = 0
+        return b'press ok\n', b''
+
+    def kill(self):
+        self.returncode = -9
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+def drive(desktop, *argv):
+    """finderdrive.main with only the process boundary replaced; returns (exit code, stdout, stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch.dict(os.environ, LOCK_ENV), mock.patch.object(finderdrive, 'run', desktop.run), \
+            mock.patch.object(finderdrive, 'spawn', desktop.spawn, create=True), \
+            mock.patch.object(finderdrive, 'probe_binary', lambda: Path('/fake/axprobe')), \
+            mock.patch.object(finderdrive.time, 'sleep', lambda seconds: None), \
+            contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = finderdrive.main(list(argv))
+    return code, out.getvalue(), err.getvalue()
+
+
+class ChooseAtTheActingBoundary(unittest.TestCase):
+    """`choose` decides and presses inside ONE axprobe menu session: the press request carries the verified owner pid
+    and title list, and the selection is read again inside that session (audit r1 F2)."""
+    ALPHA = DIR + '/alpha.txt'
+
+    def test_a_verified_menu_is_pressed_with_its_identity(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        code, out, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(desktop.pressed), 1)
+        request = desktop.pressed[0]
+        self.assertEqual((request['press'], request['title'], request['pid']), ([27], 'Copy Path', FINDER))
+        self.assertEqual(request['titles'], top_titles(fixture('menu-file-alpha.jsonl')))
+        self.assertIn('chose: Copy Path', out)
+
+    def test_a_menu_replaced_by_the_siblings_before_the_press_is_not_pressed(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        desktop.menu_at_press = fixture('menu-file-sibling-option.jsonl')  # same Copy Path at the same index
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertIn('nothing pressed', err)
+
+    def test_a_guard_pass_does_not_carry_over_to_a_later_choose(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        self.assertEqual(drive(desktop, 'guard', '660,237', self.ALPHA)[0], 0)
+        desktop.menu = fixture('menu-file-sibling-option.jsonl')  # another row's menu now at the point
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+
+    def test_a_selection_changed_inside_the_session_is_not_pressed(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA])
+        desktop.selection_at_check = [DIR + '/%41.txt']
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertIn('selection', err)
+
+    def test_a_menu_owned_by_another_process_is_not_pressed(self):
+        desktop = FakeDesktop(fixture('menu-file-alpha.jsonl'), [self.ALPHA], menu_pid=999)
+        code, _, err = drive(desktop, 'choose', '660,237', 'Copy Path', '--target', self.ALPHA)
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertIn('not Finder', err)
 
 
 class CommandLine(unittest.TestCase):

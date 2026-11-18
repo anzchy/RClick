@@ -9,7 +9,12 @@
 //   axprobe dump PID WINDOW|all MAXDEPTH              JSON lines, one per element; path starts with the window index
 //   axprobe menu-at X Y MAXDEPTH                      JSON lines of the menu under the screen point; path [] is the menu
 //   axprobe act PID PATH select|press ROLE NAME       PATH like 0.3.1; verifies ROLE and NAME first, else exit 65
-//   axprobe menu-press X Y PATH TITLE [SUBTITLE]      PATH i (TITLE) or i.0.j (TITLE, then SUBTITLE in its submenu)
+//   axprobe menu-session X Y MAXDEPTH                 the menu under the point: prints {"session":{"pid":N}}, its dump
+//                                                     and {"end":true}, then reads ONE JSON line from stdin:
+//                                                     {"abort":true}, or {"press":[i] or [i,0,j],"title":T,"sub":S|null,
+//                                                     "titles":[every top-level title],"pid":N}. Before pressing it
+//                                                     re-reads the menu it HOLDS: same owner pid, same top-level titles,
+//                                                     item i titled T (and j titled S), else exit 65 and nothing pressed.
 // exit: 0 ok, 64 usage, 65 no such element or it does not match (nothing done), 70 AX error / not trusted
 import ApplicationServices
 import Foundation
@@ -164,19 +169,41 @@ case "act":
     guard string(target, "AXRole") == argument(5) else { fail(65, "element is \(string(target, "AXRole")), not \(argument(5))") }
     guard names(target, 3).contains(where: { same($0, argument(6)) }) else { fail(65, "element does not show \(argument(6))") }
     perform(target, argument(4))
-case "menu-press":
-    let steps = path(argument(4))
+case "menu-session":
     let root = menu(at: Float(number(2)), Float(number(3)))
+    var owner: pid_t = 0
+    guard AXUIElementGetPid(root, &owner) == .success else { fail(70, "cannot read the menu's owner pid") }
+    emit(["session": ["pid": Int(owner)]])
+    walk(root, [], 0, number(4))
+    emit(["end": true])
+    fflush(stdout)
+    guard let line = readLine(), let data = line.data(using: .utf8),
+          let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        fail(65, "no decision from the driver: nothing pressed")
+    }
+    if request["abort"] != nil { print("aborted"); exit(0) }
+    guard let steps = request["press"] as? [Int], !steps.isEmpty, steps.allSatisfy({ $0 >= 0 }),
+          let title = request["title"] as? String, let titles = request["titles"] as? [String],
+          let want = request["pid"] as? Int else { fail(64, "malformed press request") }
+    var now: pid_t = 0
+    guard AXUIElementGetPid(root, &now) == .success, Int(now) == want else {
+        fail(65, "the menu's owner changed since it was verified: nothing pressed")
+    }
+    let current = children(root).map { string($0, "AXTitle") }
+    guard current.count == titles.count, zip(current, titles).allSatisfy({ same($0.0, $0.1) }) else {
+        fail(65, "the menu changed since it was verified: nothing pressed")
+    }
     let item = descend(root, steps.prefix(1))
-    guard same(string(item, "AXTitle"), argument(5)) else { fail(65, "menu item is \(string(item, "AXTitle")), not \(argument(5))") }
+    guard same(string(item, "AXTitle"), title) else { fail(65, "menu item is \(string(item, "AXTitle")), not \(title): nothing pressed") }
     if steps.count == 1 {
         perform(item, "press")
     } else {
-        guard steps.count == 3, steps[1] == 0 else { fail(64, "submenu path must be i.0.j") }
+        guard steps.count == 3, steps[1] == 0, let subtitle = request["sub"] as? String else { fail(64, "submenu path must be i.0.j with a sub title") }
         let sub = descend(item, steps.dropFirst())
-        guard same(string(sub, "AXTitle"), argument(6)) else { fail(65, "submenu item is \(string(sub, "AXTitle")), not \(argument(6))") }
+        guard same(string(sub, "AXTitle"), subtitle) else { fail(65, "submenu item is \(string(sub, "AXTitle")), not \(subtitle): nothing pressed") }
         perform(item, "press")  // opens the submenu, as the tester's press helper did
         usleep(600_000)
+        guard same(string(sub, "AXTitle"), subtitle) else { fail(65, "the submenu changed after it opened: nothing pressed") }
         perform(sub, "press")
     }
 default:

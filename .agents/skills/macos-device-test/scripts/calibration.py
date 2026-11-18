@@ -164,9 +164,7 @@ class Run:
         if 'Copy Path' not in [item.title for item in ui.rclick_group(self.items)]:
             raise ui.Refused("RClick's group has no Copy Path")
         _, point = drive.open_menu('alpha.txt')
-        items, _ = drive.guard(point, [self.path('alpha.txt')])
-        item, _ = ui.find_group_item(items, 'Copy Path')
-        drive.probe('menu-press', point[0], point[1], drive.dotted(item.path), item.title)
+        drive.choose(point, 'Copy Path', targets=[self.path('alpha.txt')])
         time.sleep(0.8)
         pasted = drive.run(['pbpaste'], timeout=5).stdout.strip()
         if pasted != self.path('alpha.txt'):
