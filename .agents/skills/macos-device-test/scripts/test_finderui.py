@@ -296,7 +296,8 @@ class Dialogs(unittest.TestCase):
 
 
 class PanelGrant(unittest.TestCase):
-    # The panel shows /tmp/run/fixtures (location pop-up `fixtures`); the sidebar also lists a `rclick-cal` favourite.
+    # The panel shows /tmp/run/fixtures (location pop-up `fixtures`, rows with AXURL); the sidebar also lists a
+    # `rclick-cal` favourite. The file list, the pop-up and the AXURL values are ASSUMED (fixtures/README.md).
     def setUp(self):
         self.nodes = dump('panel-grant.jsonl')
 
@@ -311,6 +312,47 @@ class PanelGrant(unittest.TestCase):
     def test_a_same_named_folder_under_another_parent_is_refused(self):
         with self.assertRaisesRegex(finderui.Refused, "panel shows 'fixtures'"):
             finderui.panel_plan(self.nodes, '/tmp/elsewhere/rclick-cal')
+
+    def without(self, role):
+        return [node for node in self.nodes if node['role'] != role]
+
+    def test_a_different_full_path_with_the_same_basenames_is_refused(self):
+        # audit r1 F3: only basenames were compared, so all three were granted as if they were the shown folder.
+        with self.assertRaisesRegex(finderui.Refused, "panel shows 'fixtures'"):
+            finderui.panel_plan(self.nodes, '/tmp/other/fixtures/rclick-cal')
+        with self.assertRaisesRegex(finderui.Refused, "panel shows 'fixtures'"):
+            finderui.panel_plan(self.nodes, '/tmp/other/fixtures')
+        with self.assertRaisesRegex(finderui.Refused, "panel shows 'fixtures'"):
+            finderui.panel_plan(self.without('AXPopUpButton'), '/tmp/other/fixtures/rclick-cal')
+
+    def test_the_full_path_comes_from_the_rows_urls_not_the_pop_up(self):
+        plan = finderui.panel_plan(self.without('AXPopUpButton'), '/tmp/run/fixtures/rclick-cal')
+        self.assertEqual((plan.mode, plan.location), ('row', '/tmp/run/fixtures'))
+
+    def test_a_panel_whose_location_cannot_be_established_is_refused(self):
+        nodes = [dict(node, url=None) for node in self.nodes]
+        with self.assertRaisesRegex(finderui.Refused, 'full location'):
+            finderui.panel_plan(nodes, '/tmp/run/fixtures/rclick-cal')
+        nodes = [dict(node, value='elsewhere') if node['role'] == 'AXPopUpButton' else node for node in self.nodes]
+        with self.assertRaisesRegex(finderui.Refused, 'pop-up'):
+            finderui.panel_plan(nodes, '/tmp/run/fixtures/rclick-cal')
+
+    def selected(self, *paths):
+        return [dict(node, selected=tuple(node['path']) in paths) if node['role'] == 'AXRow' else node
+                for node in self.nodes]
+
+    def test_current_mode_needs_no_selected_row(self):
+        # An NSOpenPanel returns the selected subfolder, not the folder it shows.
+        with self.assertRaisesRegex(finderui.Refused, 'selected'):
+            finderui.panel_plan(self.selected((0, 0, 1, 0, 2)), '/tmp/run/fixtures')
+        self.assertEqual(finderui.panel_ready(self.nodes, '/tmp/run/fixtures').mode, 'current')
+
+    def test_row_mode_is_ready_only_when_the_target_is_the_one_selected_row(self):
+        self.assertEqual(finderui.panel_ready(self.selected((0, 0, 1, 0, 0)), '/tmp/run/fixtures/rclick-cal').row_path,
+                         (0, 0, 1, 0, 0))
+        for rows in ((), ((0, 0, 1, 0, 2),), ((0, 0, 1, 0, 0), (0, 0, 1, 0, 2))):
+            with self.subTest(selected=rows), self.assertRaisesRegex(finderui.Refused, 'selected'):
+                finderui.panel_ready(self.selected(*rows), '/tmp/run/fixtures/rclick-cal')
 
     def test_a_folder_that_is_not_listed_is_refused(self):
         with self.assertRaisesRegex(finderui.Refused, 'no row'):

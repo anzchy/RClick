@@ -6,7 +6,8 @@
 //
 // usage:
 //   axprobe trusted                                   exit 0 if this process (its host terminal) is AX-trusted, else 70
-//   axprobe dump PID WINDOW|all MAXDEPTH              JSON lines, one per element; path starts with the window index
+//   axprobe dump PID WINDOW|all MAXDEPTH              JSON lines, one per element (url = AXURL path or null); path
+//                                                     starts with the window index
 //   axprobe menu-at X Y MAXDEPTH                      JSON lines of the menu under the screen point; path [] is the menu
 //   axprobe act PID PATH select|press ROLE NAME       PATH like 0.3.1; verifies ROLE and NAME first, else exit 65
 //   axprobe menu-session X Y MAXDEPTH                 the menu under the point: prints {"session":{"pid":N}}, its dump
@@ -65,6 +66,8 @@ func record(_ element: AXUIElement, _ path: [Int]) -> [String: Any] {
     node["enabled"] = (attr(element, "AXEnabled") as? Bool).map { $0 as Any } ?? NSNull()
     node["selected"] = (attr(element, "AXSelected") as? Bool).map { $0 as Any } ?? NSNull()
     node["frame"] = frame(element).map { $0 as Any } ?? NSNull()
+    if let url = attr(element, "AXURL"), CFGetTypeID(url) == CFURLGetTypeID() { node["url"] = (url as! URL).path }
+    else { node["url"] = NSNull() }
     return node
 }
 

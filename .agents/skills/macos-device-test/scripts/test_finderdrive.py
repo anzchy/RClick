@@ -46,7 +46,7 @@ class FakeDesktop:
         self.menu, self.selection, self.front, self.menu_pid = menu, list(selection), front, menu_pid
         self.calls, self.requests, self.pressed = [], [], []
         self.menu_at_press = None  # the menu open when the press arrives (None: unchanged)
-        self.windows, self.acted = fixture('dialog-delete-confirm.jsonl'), []
+        self.windows, self.acted, self.after_act = fixture('dialog-delete-confirm.jsonl'), [], []
         self.selection_at_check = None
 
     def completed(self, argv, out='', code=0, err=''):
@@ -73,6 +73,8 @@ class FakeDesktop:
                 return self.completed(argv, self.windows)
             if argv[1] == 'act':
                 self.acted.append(argv[2:])
+                if self.after_act:
+                    self.windows = self.after_act.pop(0)
                 return self.completed(argv, f'{argv[4]} ok\n')
             return self.completed(argv, '', 64, f'fake axprobe: {argv[1]} not expected')
         if name == 'osascript':
@@ -416,6 +418,59 @@ class PressOnlyInAllowedProcesses(unittest.TestCase):
                 self.assertEqual(code, 65, err)
                 self.assertEqual(desktop.acted, [])
                 self.assertNotIn(['dump'], [call[1:2] for call in desktop.calls if Path(call[0]).name == 'axprobe'])
+
+
+class GrantByFullPath(unittest.TestCase):
+    """`grant` through finderdrive.main: the full path is established before anything is selected, and the selection
+    is read again before the button is pressed (audit r1 F3). The panel structure is ASSUMED (fixtures/README.md)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='rclick-run-')
+        self.addCleanup(temp.cleanup)
+        self.run_dir = Path(temp.name)
+        (self.run_dir / 'rclick.pid').write_text('28075\n')
+        self.panel = fixture('panel-grant.jsonl')
+
+    def with_selected(self, *paths):
+        lines = []
+        for line in self.panel.splitlines():
+            node = json.loads(line)
+            if node['role'] == 'AXRow':
+                node['selected'] = node['path'] in [list(p) for p in paths]
+            lines.append(json.dumps(node, ensure_ascii=False))
+        return '\n'.join(lines) + '\n'
+
+    def grant(self, desktop, pid, folder):
+        desktop.windows = self.panel
+        with mock.patch.dict(os.environ, RUN_DIR=str(self.run_dir)):
+            return drive(desktop, 'grant', str(pid), folder)
+
+    def test_the_target_row_is_selected_read_back_and_granted(self):
+        desktop = FakeDesktop('', [])
+        desktop.after_act = [self.with_selected((0, 0, 1, 0, 0)), '']
+        code, out, err = self.grant(desktop, 28075, '/tmp/run/fixtures/rclick-cal')
+        self.assertEqual(code, 0, err)
+        self.assertEqual([call[2] for call in desktop.acted], ['select', 'press'])
+        self.assertIn('granted: /tmp/run/fixtures/rclick-cal (row mode; verified', out)
+
+    def test_an_equal_basename_elsewhere_selects_and_presses_nothing(self):
+        desktop = FakeDesktop('', [])
+        code, _, err = self.grant(desktop, 28075, '/tmp/other/fixtures/rclick-cal')
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.acted, [])
+
+    def test_another_row_selected_after_the_select_is_not_pressed(self):
+        desktop = FakeDesktop('', [])
+        desktop.after_act = [self.with_selected((0, 0, 1, 0, 2))]
+        code, _, err = self.grant(desktop, 28075, '/tmp/run/fixtures/rclick-cal')
+        self.assertEqual(code, 65, err)
+        self.assertEqual([call[2] for call in desktop.acted], ['select'])
+
+    def test_a_panel_in_a_process_that_is_not_allowed_is_not_touched(self):
+        desktop = FakeDesktop('', [])
+        code, _, err = self.grant(desktop, 92997, '/tmp/run/fixtures/rclick-cal')
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.acted, [])
 
 
 class Source(unittest.TestCase):
