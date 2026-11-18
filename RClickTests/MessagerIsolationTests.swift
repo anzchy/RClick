@@ -64,7 +64,7 @@ final class MessagerIsolationTests: XCTestCase {
         XCTAssertEqual(try receiver.receive(signed.wireString(), key: key).decode(RunningPayload.self)?.directories, ["original"])
         var tampered = signed
         tampered.mac = Data(repeating: 0, count: 32)
-        XCTAssertThrowsError(try receiver.receive(tampered.wireString(), key: key))
+        XCTAssertThrowsError(try IPCReceiver(direction: .toExtension).receive(tampered.wireString(), key: key))
         XCTAssertThrowsError(try receiver.receive(String(decoding: JSONEncoder().encode(RunningPayload()), as: UTF8.self), key: key))
     }
 }
