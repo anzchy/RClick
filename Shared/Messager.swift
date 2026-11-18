@@ -286,14 +286,14 @@ nonisolated final class Messager: NSObject, Sendable {
     @objc private func receiveNotification(_ notification: NSNotification) {
         do {
             guard let wire = notification.object as? String, wire.utf8.count <= IPCEnvelope.maximumWireBytes else { throw IPCSecurityError.malformed }
-            _ = try IPCEnvelope.parse(wire) // Reject malformed floods BEFORE any key read.
+            let received = try IPCEnvelope.parseReceived(wire) // Reject malformed floods BEFORE any key read.
             guard let key = key() else { throw IPCSecurityError.noKey }
             let message: VerifiedMessage
             do {
-                message = try receiver.receive(wire, key: key)
+                message = try receiver.receive(received, key: key)
             } catch IPCSecurityError.unauthenticated {
                 guard let refreshed = self.key(onMACFailure: true) else { throw IPCSecurityError.noKey }
-                message = try receiver.receive(wire, key: refreshed) // One retry, never a loop.
+                message = try receiver.receive(received, key: refreshed) // One retry, never a loop.
             }
             if isExtension, let action = MainToExtensionAction(rawValue: message.action) {
                 let handler = state.withLock { $0.main[action] }

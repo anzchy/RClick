@@ -43,7 +43,9 @@ nonisolated struct IPCEnvelope: Sendable {
     }
     func wireString() -> String { (authenticatedBytes + Self.pack([mac])).base64EncodedString() }
 
-    static func parse(_ wire: String) throws -> IPCEnvelope {
+    static func parse(_ wire: String) throws -> IPCEnvelope { try parseReceived(wire).envelope }
+
+    static func parseReceived(_ wire: String) throws -> IPCReceivedEnvelope {
         guard wire.utf8.count <= maximumWireBytes,
               let data = Data(base64Encoded: wire) else { throw IPCSecurityError.malformed }
         var offset = 0
@@ -65,11 +67,14 @@ nonisolated struct IPCEnvelope: Sendable {
         let time = try field()
         guard time.count == 8 else { throw IPCSecurityError.malformed }
         let timestamp = Double(bitPattern: time.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) })
-        let nonce = try field(), payload = try field(), mac = try field()
+        let nonce = try field(), payload = try field()
+        let authenticatedBytes = Data(data.prefix(offset))
+        let mac = try field()
         guard offset == data.count, nonce.count == 16, mac.count == 32, !id.isEmpty,
               timestamp.isFinite else { throw IPCSecurityError.malformed }
-        return IPCEnvelope(version: version, direction: direction, action: action, id: id,
-                           inReplyTo: reply, session: session, timestamp: timestamp, nonce: nonce, payload: payload, mac: mac)
+        let envelope = IPCEnvelope(version: version, direction: direction, action: action, id: id,
+                                   inReplyTo: reply, session: session, timestamp: timestamp, nonce: nonce, payload: payload, mac: mac)
+        return IPCReceivedEnvelope(envelope: envelope, authenticatedBytes: authenticatedBytes)
     }
 
     private static func pack(_ fields: [Data]) -> Data {
@@ -83,11 +88,21 @@ nonisolated struct IPCEnvelope: Sendable {
     }
 }
 
+/// Immutable parsed view and its original wire prefix travel together. Receiver
+/// MAC verification never reconstructs serialized fields from decoded values.
+nonisolated struct IPCReceivedEnvelope: Sendable {
+    let envelope: IPCEnvelope
+    let authenticatedBytes: Data
+}
+
 nonisolated enum MessageSecurity {
     static func sign(_ envelope: IPCEnvelope, key: Data) -> IPCEnvelope {
         var signed = envelope
         signed.mac = Data(HMAC<SHA256>.authenticationCode(for: envelope.authenticatedBytes, using: SymmetricKey(data: key)))
         return signed
+    }
+    static func verify(_ received: IPCReceivedEnvelope, key: Data) -> Bool {
+        HMAC<SHA256>.isValidAuthenticationCode(received.envelope.mac, authenticating: received.authenticatedBytes, using: SymmetricKey(data: key))
     }
     static func verify(_ envelope: IPCEnvelope, key: Data) -> Bool {
         HMAC<SHA256>.isValidAuthenticationCode(envelope.mac, authenticating: envelope.authenticatedBytes, using: SymmetricKey(data: key))
@@ -161,8 +176,11 @@ nonisolated final class IPCReceiver: Sendable {
         state.withLock { $0.session = session; $0.configVersion = nil }
     }
     func receive(_ wire: String, key: Data) throws -> VerifiedMessage {
-        let envelope = try IPCEnvelope.parse(wire)
-        guard MessageSecurity.verify(envelope, key: key) else { throw IPCSecurityError.unauthenticated }
+        try receive(IPCEnvelope.parseReceived(wire), key: key)
+    }
+    func receive(_ received: IPCReceivedEnvelope, key: Data) throws -> VerifiedMessage {
+        let envelope = received.envelope
+        guard MessageSecurity.verify(received, key: key) else { throw IPCSecurityError.unauthenticated }
         guard envelope.direction == direction else { throw IPCSecurityError.direction }
         guard !checkClock() else { throw IPCSecurityError.clockDiscontinuity }
         try state.withLock { state in
