@@ -77,4 +77,26 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertThrowsError(try receiver.receive(oldest, key: key))
     }
 
+    func testFreshnessRejectsStaleAndFutureButAcceptsBoundaries() throws {
+        let key = Data(repeating: 0x42, count: 32)
+        let receiver = IPCReceiver(direction: .toMain, clock: TestIPCClock(wall: 100, monotonic: 200))
+        func wire(_ time: Double, _ nonce: UInt8) -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: "heartbeat", id: "id", session: "",
+                                              timestamp: time, nonce: Data(repeating: nonce, count: 16)), key: key).wireString()
+        }
+        XCTAssertThrowsError(try receiver.receive(wire(94.999, 1), key: key))
+        XCTAssertThrowsError(try receiver.receive(wire(101.001, 2), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire(95, 3), key: key))
+        XCTAssertNoThrow(try receiver.receive(wire(101, 4), key: key))
+    }
+
+}
+
+
+nonisolated final class TestIPCClock: IPCClock {
+    private let time: Mutex<(Double, Double)>
+    init(wall: Double, monotonic: Double) { time = Mutex((wall, monotonic)) }
+    var wallTime: TimeInterval { time.withLock { $0.0 } }
+    var monotonicTime: TimeInterval { time.withLock { $0.1 } }
+    func advance(_ seconds: Double) { time.withLock { $0.0 += seconds; $0.1 += seconds } }
 }
