@@ -27,7 +27,9 @@ the same change, and record the deviation.
 - A menu's item list is taken while it is open; record its titles verbatim (they are localized). Save the
   `ui.sh menu` output under `$RUN_DIR/menus/`.
 - Choose an RClick item with `ui.sh choose "<title>" --group "<title>"... --target <path>`: it opens the menu itself
-  (no `open-menu` before it), verifies the target through AX and presses in one process. Never
+  (no `open-menu` before it), verifies the target through AX and presses in one process. Close a menu you opened
+  for reading (`close-menu X,Y`) before `choose`: with a Finder menu open, its first AppleScript call times out
+  (70). For a `(skip confirmation)` title pass `--option`. Never
   aim by AppleScript order, remembered coordinates or a screenshot.
 - Undo what a recipe changes (settings, hidden flags, granted folders) when the brief asks for a clean machine;
   never delete evidence.
