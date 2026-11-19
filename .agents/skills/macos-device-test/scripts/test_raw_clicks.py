@@ -39,9 +39,11 @@ if (args[0] !== '-l' || args[1] !== 'JavaScript' || args[2] !== '-') {
   process.stderr.write('fake osascript: expected -l JavaScript -\n'); process.exit(64);
 }
 const argv = args.slice(3);
+{ const s = load(); s.pids = (s.pids || []).concat([process.pid]); save(s); }
 const source = fs.readFileSync(0, 'utf8');
-function sleep(seconds) {
-  if (load().real_sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
+function sleep(seconds) {  // real_sleep: a factor (the signal tests stretch the 1 s hold)
+  const factor = load().real_sleep;
+  if (factor) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * factor * 1000);
 }
 function post(tap, e) {
   const s = load();
@@ -247,21 +249,21 @@ class RawOptionClickCleansUpOnItsOwnSignals(Checks):
     def test_int_term_and_hup_during_the_hold(self):
         for sig, code in ((signal.SIGINT, 130), (signal.SIGTERM, 143), (signal.SIGHUP, 129)):
             with self.subTest(signal=sig.name):
-                desk = Desk(self, real_sleep=True)
+                desk = Desk(self, real_sleep=5)  # the 1 s hold lasts 5 s here
                 process = desk.start('rightclick.sh', '100', '200', 'option')
                 deadline = time.monotonic() + 10
-                while len(desk.state()['events']) < 3:  # the click is done; the child holds Option for 1 s
+                while len(desk.state()['events']) < 3:  # the click is done; the child holds Option
                     self.assertLess(time.monotonic(), deadline, 'the click never happened')
                     time.sleep(0.01)
                 started = time.monotonic()
                 process.send_signal(sig)
-                out, err = process.communicate(timeout=10)
+                out, err = process.communicate(timeout=20)
                 self.assertEqual(process.returncode, code, err)
-                self.assertLess(time.monotonic() - started, 0.9, 'the shell waited for the hold to end')
+                self.assertLess(time.monotonic() - started, 3, 'the shell waited for the hold to end')
                 self.assert_restored(desk, f'(shell {sig.name})')
-                events = len(desk.state()['events'])
-                time.sleep(1.3)
-                self.assertEqual(len(desk.state()['events']), events, 'the child lived on and posted after the exit')
+                clicker = desk.state()['pids'][1]  # [0] is modifiers.sh check's read, [1] the click
+                with self.assertRaises(ProcessLookupError, msg='the click\'s osascript outlived the shell'):
+                    os.kill(clicker, 0)
 
 
 class TheStateReadIsHidOrSession(Checks):
