@@ -188,13 +188,16 @@ extension FileOperations {
         }
     }
 
+    nonisolated func trashDirectories() -> [URL] {
+        FileManager.default.urls(for: .trashDirectory, in: .userDomainMask)
+    }
     nonisolated func destinationRefusal(_ url: URL) throws -> DestinationRefusal? { try readDestinationRefusal(url) }
     nonisolated func readDestinationRefusal(_ url: URL) throws -> DestinationRefusal? {
         guard try moveFacts(of: url).directory else { return .notFolder }
         for path in ["/", "/System", "/Library", "/usr", "/bin", "/sbin"] {
             if try sameItem(url, URL(fileURLWithPath: path)) { return .systemRoot }
         }
-        let knownTrash = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask)
+        let knownTrash = trashDirectories()
         var ancestor = url
         while true {
             if try moveFacts(of: ancestor).package { return .package }

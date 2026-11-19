@@ -49,13 +49,13 @@ extension PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 
-    @Test(arguments: [false, true])
-    func ordinaryPlainTrashFolderRemainsAnAllowedDestination(viaLink: Bool) async throws {
+    @Test(arguments: ["ordinary", "lookalike-cloud-storage"], [false, true])
+    func ordinaryPlainTrashFolderRemainsAnAllowedDestination(kind: String, viaLink: Bool) async throws {
         let f = try Fixture(); defer { f.clean() }
         let home = f.root.appendingPathComponent("home")
-        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/CloudStorage"), withIntermediateDirectories: true)
         f.operations.setAccountHome(home)
-        let destination = f.destination.appendingPathComponent("Trash")
+        let destination = f.destination.appendingPathComponent(kind == "ordinary" ? "Trash" : "CloudStorage/Unrelated/Trash")
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         let target: URL
         if viaLink {
@@ -68,6 +68,32 @@ extension PasteActionServiceTests {
         #expect(try Data(contentsOf: destination.appendingPathComponent("notes.txt")) == Data("original".utf8))
         #expect(f.operations.renameCalls == [source.path])
         #expect(f.warnings.isEmpty)
+        #expect(f.leaser.balance == 0)
+    }
+}
+
+extension PasteActionServiceTests {
+    @Test(arguments: [false, true], [false, true])
+    func systemReportedTrashIdentityRefusesAliasesAndDescendants(descendant: Bool, viaLink: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let trash = f.destination.appendingPathComponent("SystemRecycleDirectory")
+        let destination = descendant ? trash.appendingPathComponent("sub/deeper") : trash
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        // FileManager's system-directory result is injected, never the refusal.
+        // The name deliberately matches none of the name-based policy branches.
+        f.operations.setTrashDirectories([trash])
+        let target: URL
+        if viaLink {
+            target = f.root.appendingPathComponent("system-trash-alias")
+            try FileManager.default.createSymbolicLink(at: target, withDestinationURL: destination)
+        } else { target = destination }
+        #expect(try f.operations.readDestinationRefusal(target.resolvingSymlinksInPath()) == .trash)
+        let source = try f.file()
+        await f.cut([source]); await f.paste(target)
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        #expect(f.warnings.first?.contains("Use Finder’s Move to Trash") == true)
+        #expect(f.service.pendingCut?.paths == [source.path])
         #expect(f.leaser.balance == 0)
     }
 }

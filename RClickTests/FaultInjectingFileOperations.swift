@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var reportedTrash: [URL]?
         var accountHome: URL?
         var volumeUUIDs: [String: String] = [:]
         var renameErrors: [String: POSIXErrorCode] = [:]
@@ -136,6 +137,8 @@ final class FaultInjectingFileOperations: FileOperations {
         base.notifyMove(notification, using: coordinator, from: source, to: destination)
     }
     var renameCalls: [String] { faults.withLock { $0.renames } }
+    func setTrashDirectories(_ directories: [URL]) { faults.withLock { $0.reportedTrash = directories } }
+    func trashDirectories() -> [URL] { faults.withLock { $0.reportedTrash } ?? base.trashDirectories() }
     func refuseDestination(_ url: URL, reason: DestinationRefusal) {
         faults.withLock { $0.destinationRefusals[url.path] = reason }
     }
