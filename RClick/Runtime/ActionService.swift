@@ -21,6 +21,10 @@ final class ActionService {
     private let permission: PermissionProviding
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
+    private let terminationBoundary: any MoveTerminationBoundary
+    private let quitWait: TimeInterval
+    private var terminationPending = false
+    private var terminationReply: (@MainActor () -> Void)?
     private let journalStore: (any UndoJournalStore)?
     private let pasteboard: NSPasteboard
     private let cutWarning: (String) -> Void
@@ -44,6 +48,8 @@ final class ActionService {
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
         revealNewFile: ((URL) -> Void)? = nil,
         journalStore: (any UndoJournalStore)? = nil,
+        terminationBoundary: any MoveTerminationBoundary = SystemMoveTerminationBoundary(),
+        quitWait: TimeInterval = 35,
         cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) },
         cutVolumeIsReadOnly: @escaping (URL) -> Bool = {
             (try? $0.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) == true
@@ -53,6 +59,8 @@ final class ActionService {
         self.permission = permission
         self.confirmation = confirmation
         self.fileOperations = fileOperations
+        self.terminationBoundary = terminationBoundary
+        self.quitWait = quitWait
         self.journalStore = journalStore
         self.pasteboard = pasteboard
         self.now = now
@@ -228,6 +236,29 @@ final class ActionService {
         }
     }
 
+    /// Returns true when the delegate should return terminateLater.
+    func deferTermination(reply: @escaping @MainActor () -> Void) -> Bool {
+        guard preparingCut else { return false }
+        guard !terminationPending else { return true }
+        terminationPending = true
+        terminationReply = reply
+        terminationBoundary.scheduleDeadline(now().addingTimeInterval(quitWait)) { [weak self] in
+            self?.replyToTermination()
+        }
+        return true
+    }
+
+    private func replyToTermination() {
+        let reply = terminationReply
+        terminationReply = nil // Take before calling: completion and deadline may both fire.
+        reply?()
+    }
+
+    private func releaseReservation() {
+        preparingCut = false
+        replyToTermination()
+    }
+
     private func restoreMoveJournal() async {
         let store: any UndoJournalStore
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
@@ -240,7 +271,7 @@ final class ActionService {
             [URL(fileURLWithPath: $0.originalPath).deletingLastPathComponent(),
              URL(fileURLWithPath: $0.movedToPath).deletingLastPathComponent()]
         }
-        guard directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
         let lease = accessLeaser.beginAccess(covering: directories)
         defer { lease.end() }
         let operations = fileOperations
@@ -253,20 +284,33 @@ final class ActionService {
     }
 
     private func pasteMove(_ target: [String], trigger: String) async {
-        guard !preparingCut else { return }
-        preparingCut = true
-        defer {
-            preparingCut = false
-            NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: nil)
+        defer { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: nil) }
+        guard !preparingCut, !terminationPending else {
+            cutWarning(AppLocalization.localized("A move is already in progress"))
+            return
         }
-        guard let record = pendingCut, target.count == 1,
-              trigger == "ctx-container" || trigger == "ctx-items" else { return }
+        preparingCut = true
+        defer { releaseReservation() }
+        guard let record = pendingCut else {
+            cutRecord = nil
+            cutWarning(AppLocalization.localized("The cut has ended"))
+            return
+        }
+        guard target.count == 1, trigger == "ctx-container" || trigger == "ctx-items" else {
+            cutWarning(AppLocalization.localized("Choose a folder as the destination"))
+            return
+        }
         let destination = URL(fileURLWithPath: target[0]).resolvingSymlinksInPath()
         let directories = [destination] + record.paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
         for directory in directories where !permission.hasAccess(to: directory) {
             guard await permission.promptForPermission(for: directory) != nil else { return }
         }
-        guard directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        guard cutRecord?.changeCount == record.changeCount, pasteboard.changeCount == record.changeCount else {
+            cutRecord = nil
+            cutWarning(AppLocalization.localized("The cut has ended"))
+            return
+        }
         let lease = accessLeaser.beginAccess(covering: directories)
         defer { lease.end() }
         let operations = fileOperations
@@ -274,6 +318,8 @@ final class ActionService {
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
         catch { cutWarning(error.localizedDescription); return }
         let timestamp = now()
+        terminationBoundary.protectMutation()
+        defer { terminationBoundary.unprotectMutation() }
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
             do {
@@ -384,12 +430,12 @@ final class ActionService {
     }
 
     private func prepareCut(_ target: [String]) async {
-        guard !preparingCut else {
-            logger.info("Cut ignored: another Cut is preparing")
+        guard !preparingCut, !terminationPending else {
+            logger.info("Cut ignored: another operation is reserved or Quit is pending")
             return
         }
         preparingCut = true
-        defer { preparingCut = false }
+        defer { releaseReservation() }
         let urls = target.map { URL(fileURLWithPath: $0) }
         var seen: Set<String> = []
         let parents = urls.map { $0.deletingLastPathComponent() }.filter { seen.insert($0.path).inserted }
