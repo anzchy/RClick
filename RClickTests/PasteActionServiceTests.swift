@@ -65,9 +65,10 @@ struct PasteActionServiceTests {
     @MainActor final class ManualTermination: MoveTerminationBoundary {
         var date = Date(timeIntervalSince1970: 100000)
         var scheduled: [(Date, @MainActor () -> Void)] = []
-        var balance = 0
-        func protectMutation() { balance += 1 }
-        func unprotectMutation() { balance -= 1 }
+        nonisolated let protection = Counter()
+        var balance: Int { protection.value.withLock { $0 } }
+        func protectMutation() { protection.value.withLock { $0 += 1 } }
+        func unprotectMutation() { protection.value.withLock { $0 -= 1 } }
         func scheduleDeadline(_ date: Date, action: @escaping @MainActor () -> Void) { scheduled.append((date, action)) }
         func advance(by interval: TimeInterval) {
             date.addTimeInterval(interval)
@@ -498,7 +499,24 @@ struct PasteActionServiceTests {
             operation = Task { await f.paste() }
         }
         var replies = 0
-        let delegate = AppDelegate(isTestHost: true, sendQuit: {}, terminationService: f.service, replyToTermination: { replies += 1 })
+        let delegate = AppDelegate(isTestHost: true, sendQuit: {}, terminationService: f.service, replyToTermination: {
+            replies += 1
+            if exit != "timeout" {
+                #expect(f.leaser.balance == 0)
+                #expect(f.termination.balance == 0)
+                if ["success", "partial"].contains(exit) {
+                    #expect(f.journal.load()?.inProgress == false)
+                    #expect(f.journal.load()?.entries.first?.outcome == .moved)
+                }
+                if exit == "success" {
+                    #expect(f.service.pendingCut == nil)
+                    #expect(f.board.pasteboardItems?.isEmpty != false)
+                } else if exit == "partial" {
+                    #expect(f.service.pendingCut?.paths == [second.path])
+                    #expect(f.service.pendingCut?.changeCount == f.board.changeCount)
+                }
+            }
+        })
         #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateLater)
         #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateLater)
         #expect(replies == 0)
@@ -701,6 +719,22 @@ struct PasteActionServiceTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.destination.appendingPathComponent("dangling").path) == target.path)
         #expect(f.warnings.isEmpty)
         #expect(f.service.pendingCut == nil)
+    }
+
+    // test only, already enforced: observe protection at the filesystem boundary.
+    @Test func mutationHoldsLeasesAndSuddenTerminationProtection() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        let protection = f.termination.protection, lease = f.leaser.counter, observed = Counter()
+        f.operations.onNextCoordination { _ in
+            if protection.value.withLock({ $0 }) == 1 && lease.value.withLock({ $0 }) == 1 {
+                observed.value.withLock { $0 += 1 }
+            }
+        }
+        await f.cut([file]); await f.paste()
+        #expect(observed.value.withLock { $0 } == 1)
+        #expect(f.leaser.balance == 0)
+        #expect(f.termination.balance == 0)
     }
 
 }
