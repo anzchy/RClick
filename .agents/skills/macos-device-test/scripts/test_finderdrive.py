@@ -797,7 +797,10 @@ class ModifiersAreReleased(unittest.TestCase):
                          'the Option flag is not released in a finally')
         release = script[script.index('function release()'):script.index('function run(')]
         self.assertIn('CGEventSetType(changed, 12)', release)  # flagsChanged
-        self.assertIn('CGEventSetFlags(changed, 0)', release)
+        # fix r6 (confirm r5 gpt F1): never all-zero flags, which cleared a key someone else held; test_raw_clicks
+        # runs the script itself
+        self.assertNotIn('CGEventSetFlags(changed, 0)', release)
+        self.assertIn('CGEventSetFlags(changed, keep)', release)
         self.assertRegex(release, r'\[58, 61\]')  # both Option keys up
         for name in ('INT', 'TERM', 'HUP'):
             self.assertRegex(source, r"trap '\"\$here/modifiers.sh\" release option[^']*' " + name + r'\n')
