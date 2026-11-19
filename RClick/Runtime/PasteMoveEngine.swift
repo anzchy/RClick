@@ -26,7 +26,9 @@ extension FileOperations {
     nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, timeout: TimeInterval) throws {
         let job = MoveCoordinationJob()
         let done = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
+        // A dedicated Foundation thread keeps blocking file presenters off both
+        // the cooperative executor and libdispatch's shared worker pool.
+        Thread.detachNewThread {
             var coordinationError: NSError?
             job.coordinator.coordinate(writingItemAt: source, options: .forMoving,
                 writingItemAt: destination, options: [], error: &coordinationError) { from, to in
