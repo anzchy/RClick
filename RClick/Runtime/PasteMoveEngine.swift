@@ -135,6 +135,18 @@ extension FileOperations {
             }
             if facts.providerContainer != nil { break }
         }
+        if facts.ubiquitous, facts.providerContainer == nil {
+            // Resource values identify relocated iCloud Desktop/Documents too.
+            // Walk the contiguous ubiquitous ancestors to find their sync root.
+            var ancestor = directory ? url : url.deletingLastPathComponent()
+            while true {
+                let values = try ancestor.resourceValues(forKeys: [.isUbiquitousItemKey])
+                guard values.isUbiquitousItem == true else { break }
+                facts.providerContainer = ancestor
+                if ancestor.path == "/" { break }
+                ancestor = ancestor.deletingLastPathComponent()
+            }
+        }
         return facts
     }
 
