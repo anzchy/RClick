@@ -265,6 +265,13 @@ effects in `finderdrive.py` and `calibration.py`.
   `test_finderdrive.AStuckModifierIsRefused`, the modifier tests in `test_calibration`. UNVERIFIED on a device: that
   the 1 s hold is long enough for the skip title, and that the release clears the HID state (`option-menu` and
   `modifiers-after-option` prove both).
+- Fix (#32 fix round 6, from the round-5 confirm, offline): the raw `rightclick.sh` and `click.sh` read the state
+  first (`modifiers.sh check`) and refuse a held modifier (65) before posting anything; the release clears only
+  Option (flagsChanged with the HID state minus Option, not all-zero flags, which cleared a modifier the owner held);
+  `rightclick.sh` releases again when its osascript is terminated or killed (which skips the JXA `finally`) and on
+  its own INT/TERM/HUP, keeping the failure status; every check reads the union of the HID and the combined session
+  state, as the extension does. Tests: `test_raw_clicks` runs the real scripts under a fake osascript. UNVERIFIED on
+  a device: that a flagsChanged carrying the remaining flags (0x20000000 rather than 0) clears Option.
 - Evidence: device run, 2026-11-18 ("Script problems" 2).
 
 ### 2026-11-18 — `ui.sh grant` fails on the osascript panel

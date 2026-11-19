@@ -790,6 +790,24 @@ class ModifiersAreReleased(unittest.TestCase):
         self.assertIn('rightclick.sh failed', err)
         self.assertIn('could not release option', err)
 
+    def test_a_release_that_fails_under_ctrl_c_or_sigterm_is_reported_not_claimed(self):
+        """opus L2 (confirm r5): dispatch printed `pressed modifiers released` after a release that had failed."""
+        def interrupt(desktop):
+            raise KeyboardInterrupt
+
+        def terminate(desktop):
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        for name, during, exit_code in (('Ctrl-C', interrupt, 130), ('SIGTERM', terminate, 143)):
+            with self.subTest(signal=name):
+                desktop = FakeDesktop()
+                desktop.release_works = False
+                desktop.during_click = during
+                code, _, err = drive(desktop, 'open-menu', 'alpha.txt', '--option')
+                self.assertEqual(code, exit_code, err)
+                self.assertIn(f'INTERRUPTED: {name}', err)
+                self.assertNotIn('pressed modifiers released', err)
+                self.assertIn('could not release option', err)
+
     def test_rightclick_sh_releases_option_itself_in_a_finally_and_on_signals(self):
         source = (HERE / 'rightclick.sh').read_text(encoding='utf-8')
         script = source.split("<<'JXA'", 1)[1]
