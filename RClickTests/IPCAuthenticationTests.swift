@@ -752,6 +752,41 @@ final class IPCAuthenticationTests: XCTestCase {
 
 @MainActor
 final class ClickAckAdmissionTests: XCTestCase {
+    func testReadableKeyReplacementBeforeAckRetainsClickDeadline() async {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let delivery = IPCExtensionDelivery(messager: ext)
+        let acks = Mutex(0)
+        let observer = center.addObserver(forName: Notification.Name(Messager.mainToExtensionNotification),
+                                          object: nil, queue: nil) { notification in
+            if let wire = notification.object as? String,
+               let message = try? IPCEnvelope.parseReceived(wire), message.envelope.action == "action-ack" {
+                acks.withLock { $0 += 1 }
+            }
+        }
+        defer { center.removeObserver(observer) }
+        app.sendRunningNotification()
+        let session = app.currentSession
+        let rotated = expectation(description: "ack key refresh rotates the session")
+        app.onSessionInvalidated { rotated.fulfill() }
+        let handled = Mutex(0)
+        app.onClickEvent { _ in handled.withLock { $0 += 1 } }
+        delivery.registerClick("replacement-click")
+        ext.sendClickEvent(ClickEventPayload(itemId: "delete-direct", itemType: .action,
+                                            trigger: .contextualItems), id: "replacement-click")
+        // The click is authenticated synchronously, before its MainActor task runs.
+        provider.data.withLock { $0 = Data(repeating: 0x43, count: 32) }
+        clock.advance(10) // Both clocks advance normally; only the key refresh rotates.
+        await fulfillment(of: [rotated], timeout: 1)
+        XCTAssertNotEqual(app.currentSession, session)
+        XCTAssertEqual(handled.withLock { $0 }, 0)
+        XCTAssertEqual(acks.withLock { $0 }, 0, "a pre-post invalidation must not acknowledge the dropped click")
+        XCTAssertTrue(delivery.expireClick("replacement-click"), "a dropped click must retain its response-alert deadline")
+    }
+
     func testKeyLossBeforeAckDropsClickWithoutAcknowledging() async {
         let center = NotificationCenter()
         let clock = TestIPCClock(wall: 100, monotonic: 200)
