@@ -17,12 +17,20 @@ struct PasteActionServiceTests {
     }
     @MainActor final class Permission: PermissionProviding {
         var allowed = true
+        var allowedPaths: Set<String>?
+        var replies: [Bool] = []
+        var prompts: [String] = []
         var hold: CheckedContinuation<URL?, Never>?
         var onPrompt: (() -> Void)?
-        func hasAccess(to url: URL) -> Bool { allowed }
+        func hasAccess(to url: URL) -> Bool { allowedPaths?.contains(url.path) ?? allowed }
         func promptForPermission(for url: URL) async -> URL? {
+            prompts.append(url.path)
             if let onPrompt {
                 return await withCheckedContinuation { hold = $0; onPrompt() }
+            }
+            if !replies.isEmpty, replies.removeFirst() {
+                allowedPaths?.insert(url.path)
+                return url
             }
             return nil
         }
@@ -620,6 +628,69 @@ struct PasteActionServiceTests {
             #expect(FileManager.default.fileExists(atPath: file.path))
             #expect(f.operations.renameCalls.isEmpty)
         }
+    }
+
+    // test only, already enforced; final mutants remove the relevant protection.
+    @Test func cancellingTheLastSourceParentPanelMovesNothing() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let first = try f.file()
+        let other = f.root.appendingPathComponent("other")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let second = other.appendingPathComponent("second.txt")
+        try Data("second".utf8).write(to: second)
+        f.permission.allowedPaths = [f.source.path, other.path]
+        await f.cut([first, second])
+        let count = f.board.changeCount
+        f.permission.allowedPaths = [f.source.path]
+        f.permission.replies = [true, false]
+        await f.paste()
+        #expect(f.permission.prompts == [f.destination.path, other.path])
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: first.path))
+        #expect(FileManager.default.fileExists(atPath: second.path))
+        #expect(f.board.changeCount == count)
+        #expect(f.service.pendingCut?.paths == [first.path, second.path])
+        #expect(f.leaser.balance == 0)
+    }
+
+    @Test func overlongNumberedNameLeavesOriginalAndClashIntact() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let name = String(repeating: "a", count: 251) + ".txt"
+        let file = try f.file(name)
+        let clash = f.destination.appendingPathComponent(name)
+        try Data("keep".utf8).write(to: clash)
+        await f.cut([file]); await f.paste()
+        #expect(try Data(contentsOf: file) == Data("original".utf8))
+        #expect(try Data(contentsOf: clash) == Data("keep".utf8))
+        #expect(f.service.pendingCut?.paths == [file.path])
+        #expect(f.warnings.first?.contains("255 UTF-8 bytes") == true)
+        #expect(f.operations.renameCalls.count == 1)
+    }
+
+    @Test func writableVolumeRootPassesDestinationPolicyWithoutTouchingUserFiles() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        let volume = URL(fileURLWithPath: "/System/Volumes/Data", isDirectory: true)
+        let reached = Counter()
+        f.operations.onNextCoordination { _ in
+            reached.value.withLock { $0 += 1 }
+            throw POSIXError(.ENOTSUP) // No actual rename outside the temp tree.
+        }
+        await f.cut([file]); await f.paste(volume)
+        #expect(reached.value.withLock { $0 } == 1)
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @Test func danglingTerminalSymlinkMovesAsALink() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let link = f.source.appendingPathComponent("dangling")
+        let target = f.root.appendingPathComponent("absent")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        await f.cut([link]); await f.paste()
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.destination.appendingPathComponent("dangling").path) == target.path)
+        #expect(f.warnings.isEmpty)
+        #expect(f.service.pendingCut == nil)
     }
 
 }
