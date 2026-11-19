@@ -403,7 +403,21 @@ final class ActionService {
                             number += 1
                         }
                     }
-                } catch { result.failures.append(FileActionFailure(path: path, error: error)) }
+                } catch {
+                    result.failures.append(FileActionFailure(path: path, error: error))
+                    if let index = journal.entries.lastIndex(where: { $0.originalPath == source.path && $0.outcome == .intended }) {
+                        journal.entries[index].outcome = .failed
+                        do { try store.save(journal) }
+                        catch {
+                            for remaining in selection.map(\.0) where !result.completed.contains(remaining)
+                                && !result.failures.contains(where: { $0.path == remaining }) {
+                                result.failures.append(FileActionFailure(path: remaining, error: error))
+                            }
+                            result.journalNeedsRecovery = true
+                            return result
+                        }
+                    }
+                }
             }
             let moved = journal.entries.filter { $0.outcome == .moved }
             journal.entries = moved.isEmpty ? journal.previous : moved

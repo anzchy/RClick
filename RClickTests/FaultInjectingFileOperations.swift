@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var renameErrors: [String: POSIXErrorCode] = [:]
         var providerRoots: [URL]?
         var coordinationHook: (@Sendable (URL) throws -> Void)?
         var destinationRefusals: [String: DestinationRefusal] = [:]
@@ -95,6 +96,7 @@ final class FaultInjectingFileOperations: FileOperations {
         try base.coordinatedTransfer(kind, from: source, to: destination)
     }
 
+    func failRename(_ source: URL, with code: POSIXErrorCode) { faults.withLock { $0.renameErrors[source.path] = code } }
     func onNextCoordination(_ action: @escaping @Sendable (URL) throws -> Void) {
         faults.withLock { $0.coordinationHook = action }
     }
@@ -133,6 +135,7 @@ final class FaultInjectingFileOperations: FileOperations {
 
     func exclusiveRename(from source: URL, to destination: URL) throws {
         faults.withLock { $0.renames.append(source.path) }
+        if let code = faults.withLock({ $0.renameErrors[source.path] }) { throw POSIXError(code) }
         if faults.withLock({ $0.createClash.remove(destination.path) != nil }) {
             try Data("racing owner".utf8).write(to: destination, options: .withoutOverwriting)
         }
