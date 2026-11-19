@@ -77,7 +77,8 @@ keep_failure_log() {
     print "commit: $full"
     print "time: $(date -u +%FT%TZ)"
     print "lane: $name"
-    print "uptime: $(uptime 2>/dev/null || print unavailable)"
+    # Linux uptime starts with a space; a missing command (no sysctl on Linux) says unavailable, never fails.
+    print "uptime: $(uptime 2>/dev/null | sed 's/^[[:space:]]*//' || print unavailable)"
     print "loadavg: $(sysctl -n vm.loadavg 2>/dev/null || print unavailable)"
     print "ncpu: $(sysctl -n hw.ncpu 2>/dev/null || print unavailable)"
     # The failing items: the lane's GATE line and the indented lines gates.sh prints under it.

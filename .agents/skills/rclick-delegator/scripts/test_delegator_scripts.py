@@ -1278,6 +1278,25 @@ class OwnerGatesTests(unittest.TestCase):
         self.assertIn(".agents/skills/rclick-delegator/scripts/test_delegator_scripts.py", header)
         self.assertIn(self.TRACEBACK, body)
 
+    def test_the_load_header_trims_linux_uptime_and_survives_a_missing_sysctl(self):
+        # Linux uptime starts with a space; Linux has no vm.loadavg / hw.ncpu sysctl (seen on the Linux preflight).
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        for name, body in (("uptime", "echo ' 06:23:55 up 264 days,  load average: 0.03, 0.04, 0.01'"),
+                           ("sysctl", "echo 'sysctl: unknown oid' >&2; exit 1")):
+            (bin_dir / name).write_text(f"#!/bin/sh\n{body}\n")
+            (bin_dir / name).chmod(0o755)
+        self.env["PATH"] = f"{bin_dir}:{self.env['PATH']}"
+        self.commit_gates(self.write_lane_log("skill-tooling", self.TRACEBACK)
+                          + "echo 'GATE skill-tooling FAIL (1 of 3 test files)'\necho 'GATES FAIL'\n", exit_code=1)
+        result = self.run_gates("0")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(self.summary().rstrip().endswith("DONE overall=1"), self.summary())
+        header = self.failure_log("skill-tooling").read_text().partition("\n---\n")[0]
+        self.assertIn("\nuptime: 06:23:55 up 264 days,  load average: 0.03, 0.04, 0.01\n", header)
+        self.assertIn("\nloadavg: unavailable\n", header)
+        self.assertIn("\nncpu: unavailable\n", header)
+
     def test_a_failed_lane_without_a_lane_log_is_reported_not_a_crash(self):
         self.commit_gates("echo 'GATE skill-tooling FAIL (1 of 3 test files)'\necho 'GATES FAIL'\n", exit_code=1)
         result = self.run_gates("0")
