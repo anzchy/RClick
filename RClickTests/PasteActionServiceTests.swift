@@ -43,6 +43,7 @@ struct PasteActionServiceTests {
     }
     nonisolated final class JournalStore: UndoJournalStore {
         let value = Mutex<MoveJournal?>(nil)
+        let history = Mutex<[MoveJournal]>([])
         let failOutcomes = Mutex(false)
         func load() -> MoveJournal? { value.withLock { $0 } }
         func save(_ journal: MoveJournal) throws {
@@ -50,6 +51,7 @@ struct PasteActionServiceTests {
                 throw CocoaError(.fileWriteUnknown)
             }
             value.withLock { $0 = journal }
+            history.withLock { $0.append(journal) }
         }
     }
     @MainActor final class ManualTermination: MoveTerminationBoundary {
@@ -532,6 +534,19 @@ struct PasteActionServiceTests {
         #expect(FileManager.default.fileExists(atPath: root.path))
         #expect(f.operations.renameCalls.isEmpty)
         #expect(f.warnings.first?.contains("cloud container") == true)
+    }
+
+    @Test func unsupportedRenamePersistsItsFailedOutcomeAndKeepsTheSource() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        f.operations.failRename(file, with: .ENOTSUP)
+        await f.cut([file]); await f.paste()
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(f.service.pendingCut?.paths == [file.path])
+        #expect(f.warnings.first?.contains("does not support exclusive") == true)
+        #expect(f.journal.history.withLock { $0.contains { $0.entries.last?.outcome == .failed } })
+        #expect(f.journal.load()?.entries.isEmpty == true)
+        #expect(f.leaser.balance == 0)
     }
 
 }
