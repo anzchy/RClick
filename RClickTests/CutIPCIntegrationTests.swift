@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Synchronization
 import XCTest
 @testable import RClick
 
@@ -53,4 +54,53 @@ final class CutIPCIntegrationTests: XCTestCase {
         app.sendMenuConfig(input)
         XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.version, 2)
     }
+    func testCapabilityLostAfterSnapshotDisablesNativeCutInBothLayouts() throws {
+        for collapsed in [false, true] {
+            let center = NotificationCenter()
+            let clock = TestIPCClock(wall: 100, monotonic: 200)
+            let app = Messager(isExtension: false, center: center,
+                               keyProvider: InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32)), clock: clock)
+            let provider = MutableIPCKeyProvider()
+            let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+            let delivery = IPCExtensionDelivery(messager: ext)
+            app.sendRunningNotification()
+            app.sendMenuConfig(MenuConfigPayload(
+                actions: [ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)],
+                actionsCollapsed: collapsed, cutChangeCount: 42, cutItemCount: 1))
+            var cache: (id: String, value: MenuConfigPayload)?
+            let snapshot = try XCTUnwrap(delivery.menuConfig(as: MenuConfigPayload.self, cached: &cache))
+            let captured = PendingCut.menuVisibility(config: snapshot, menuKind: .contextualItems,
+                selection: ["/tmp/selected-file"], currentChangeCount: 42, hostOnline: delivery.isHostAppRunning)
+            XCTAssertTrue(captured.cut)
+            XCTAssertTrue(captured.cutEnabled)
+            let menu = NSMenu(title: "RClick")
+            menu.autoenablesItems = false
+            let cut = NSMenuItem(title: "Cut", action: nil, keyEquivalent: "")
+            if snapshot.actionsCollapsed {
+                let actions = NSMenu(title: "Actions")
+                actions.autoenablesItems = false
+                actions.addItem(cut)
+                let parent = NSMenuItem(title: "Actions", action: nil, keyEquivalent: "")
+                parent.submenu = actions
+                menu.addItem(parent)
+            } else {
+                menu.addItem(cut)
+            }
+            PendingCut.renderCutEnablement(on: cut, snapshotEnabled: captured.cutEnabled, delivery: delivery)
+            XCTAssertTrue(cut.isEnabled)
+
+            // Lose real controller capability after snapshot, before rendering the item again.
+            provider.data.withLock { $0 = nil }
+            clock.advance(10)
+            ext.sendHeartbeat()
+            XCTAssertFalse(ext.canUseCachedMenus)
+            XCTAssertFalse(delivery.isHostAppRunning)
+            XCTAssertNil(delivery.menuConfig(as: MenuConfigPayload.self, cached: &cache))
+            XCTAssertNil(cache)
+            PendingCut.renderCutEnablement(on: cut, snapshotEnabled: captured.cutEnabled, delivery: delivery)
+            let rendered = try XCTUnwrap(collapsed ? menu.items.first?.submenu?.items.first : menu.items.first)
+            XCTAssertFalse(rendered.isEnabled, "a captured online flag cannot outlive authenticated capability")
+        }
+    }
+
 }
