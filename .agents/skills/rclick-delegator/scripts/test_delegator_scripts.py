@@ -1287,6 +1287,25 @@ class OwnerGatesTests(unittest.TestCase):
         self.assertIn("lane skill-tooling failure-log=none reason=no .build/gates/skill-tooling.log", summary)
         self.assertFalse(self.failure_log("skill-tooling").exists())
 
+    def test_a_long_lane_log_keeps_only_its_last_3000_lines(self):
+        self.commit_gates("mkdir -p .build/gates\nseq 1 5000 | sed 's/^/line /' > .build/gates/build.log\n"
+                          "echo 'GATE build FAIL (exit 65)'\necho 'GATES FAIL'\n", exit_code=1)
+        result = self.run_gates("0")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        header, _, body = self.failure_log("build").read_text().partition("\n---\n")
+        self.assertIn("truncated: kept the last 3000 of 5000 lines", header)
+        lines = body.splitlines()
+        self.assertEqual(len(lines), 3000)
+        self.assertEqual((lines[0], lines[-1]), ("line 2001", "line 5000"))
+
+    def test_a_short_lane_log_is_kept_whole(self):
+        self.commit_gates(self.write_lane_log("build", "line 1\nline 2\n")
+                          + "echo 'GATE build FAIL (exit 65)'\necho 'GATES FAIL'\n", exit_code=1)
+        self.run_gates("0")
+        header, _, body = self.failure_log("build").read_text().partition("\n---\n")
+        self.assertIn("truncated: no (2 lines)", header)
+        self.assertEqual(body, "line 1\nline 2\n")
+
 
 class CodexNoQuestionsTests(unittest.TestCase):
     """Codex panes must not stall on a sub-agent question nobody watches."""

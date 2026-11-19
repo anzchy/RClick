@@ -60,8 +60,9 @@ lane() {
 }
 
 # Copy a failed lane's log out of the scratch tree, behind a header that records the machine load at failure time.
+# Bounded: the build log can be huge, and the end of a log is where the failure is.
 keep_failure_log() {
-  local name=$1 gates_log=$2
+  local name=$1 gates_log=$2 max_lines=3000
   local src=$scratch/.build/gates/$name.log kept=$out/$prefix-$name-failure.log
   if [[ ! -f $src ]]; then
     print "lane $name failure-log=none reason=no .build/gates/$name.log in the scratch tree" | tee -a "$summary"
@@ -80,9 +81,15 @@ keep_failure_log() {
       index($0, "GATE " lane " FAIL") == 1 { on = 1; print "gate: " $0; next }
       on && /^  / { print "item: " substr($0, 3); next }
       { on = 0 }' "$gates_log"
+    local total=$(wc -l < "$src" | tr -d ' ')
+    if (( total > max_lines )); then
+      print "truncated: kept the last $max_lines of $total lines"
+    else
+      print "truncated: no ($total lines)"
+    fi
     print "source: .build/gates/$name.log"
     print -- "---"
-    cat "$src"
+    tail -n "$max_lines" "$src"
   } > "$kept"
   print "lane $name failure-log=$kept" | tee -a "$summary"
 }
@@ -96,10 +103,11 @@ if [[ -x $scratch/scripts/gates.sh ]]; then
     print "lane gates verdict=missing-or-fail reason=no 'GATES PASS' line in $log" | tee -a "$summary"
     overall=1
   fi
-  # The trap below removes the scratch tree, and with it gates.sh's own lane logs (.build/gates/<lane>.log): the only
+  # The EXIT trap removes the scratch tree, and with it gates.sh's own lane logs (.build/gates/<lane>.log): the only
   # copy of a failure's traceback. Keep each failed lane's log first (#17).
   for failed in ${(u)${(f)"$(sed -nE 's/^GATE ([A-Za-z0-9._-]+) FAIL.*/\1/p' "$log")"}}; do
-    keep_failure_log "$failed" "$log"
+    keep_failure_log "$failed" "$log" ||
+      print "lane $failed failure-log=error reason=could not copy .build/gates/$failed.log" | tee -a "$summary"
   done
 else
   print "lane gates rc=127 reason=scripts/gates.sh missing at ${full[1,12]}" | tee -a "$summary"
