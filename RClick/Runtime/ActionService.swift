@@ -342,9 +342,19 @@ final class ActionService {
                 result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
                 return result
             }
-            for (path, identity) in zip(record.paths, record.identities) {
+            var seen: Set<URL> = []
+            let unique = zip(record.paths, record.identities).compactMap { path, identity -> (String, URL, FileIdentity)? in
                 let raw = URL(fileURLWithPath: path)
-                let source = raw.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(raw.lastPathComponent)
+                let source = raw.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(raw.lastPathComponent).standardizedFileURL
+                return seen.insert(source).inserted ? (path, source, identity) : nil
+            }
+            let selection = unique.filter { candidate in
+                !unique.contains { other in
+                    other.1 != candidate.1 && (try? operations.moveFacts(of: other.1).directory) == true
+                        && (try? operations.contains(other.1, candidate.1)) == true
+                }
+            }
+            for (path, source, identity) in selection {
                 do {
                     if try operations.sameItem(source.deletingLastPathComponent(), destination) {
                         result.completed.append(path)

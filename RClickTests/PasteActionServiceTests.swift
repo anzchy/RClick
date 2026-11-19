@@ -280,4 +280,24 @@ struct PasteActionServiceTests {
         #expect(f.termination.balance == 0)
     }
 
+    @Test func batchCollapsesDuplicateAndNestedSelectionsAndMovesSymlinkAsLink() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let folder = f.source.appendingPathComponent("Project.v2")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let child = folder.appendingPathComponent("child.txt")
+        try Data("child".utf8).write(to: child)
+        let target = try f.file("target.txt")
+        let link = f.source.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        await f.cut([folder, child, folder, link]); await f.paste()
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("Project.v2/child.txt")) == Data("child".utf8))
+        let movedLink = f.destination.appendingPathComponent("link")
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: movedLink.path) == target.path)
+        #expect(try Data(contentsOf: target) == Data("original".utf8))
+        #expect(f.warnings.isEmpty)
+        #expect(f.service.pendingCut == nil)
+        #expect(f.journal.load()?.entries.count == 2)
+        #expect(f.leaser.balance == 0)
+    }
+
 }
