@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -78,7 +79,14 @@ class FakeDesktop:
     was not selected) or the window-background menu; the menu stays open until AXCancel (menu-cancel, or a session
     abort), an Esc to Finder or a press. An axprobe menu session answers a press the way axprobe.swift does: it
     compares the request's owner pid and full top-level title list with the menu open NOW and exits 65 on a
-    difference. `menu_delay` menu-at polls answer "no menu" before a fresh menu shows (a cold first menu)."""
+    difference. `menu_delay` menu-at polls answer "no menu" before a fresh menu shows (a cold first menu).
+
+    HID modifier state (device run, 2026-11-18): `hid_flags` is CGEventSourceFlagsState of the HID system. The fake
+    `rightclick.sh X Y option` sets the Option bit and never clears it (the script of 09eee72 did exactly that; the
+    script's own release is checked by Source tests); only `modifiers.sh release option` clears it. A menu is built
+    from the state at the click: with Option set, Delete Direct reads `Delete Direct (skip confirmation)`, also on a
+    plain click, as on the device."""
+    OPTION = 0x80000
 
     def __init__(self, menu=None, selection=(), menu_pid=FINDER, folder=FOLDER, window=None):
         self.template = menu or fixture('menu-file-alpha.jsonl')
@@ -101,6 +109,11 @@ class FakeDesktop:
         self.window_error_with_menu = None  # what axprobe answers for the Finder window while a menu is open
         self.calls, self.requests, self.pressed, self.clicks, self.timeouts, self.keys = [], [], [], [], [], []
         self.windows, self.acted, self.after_act = fixture('dialog-delete-confirm.jsonl'), [], []
+        self.hid_flags = 0x20000000  # the non-modifier bit the device showed beside Option; no key held
+        self.release_works = True
+        self.releases = []  # the modifier names of every `modifiers.sh release`
+        self.during_click = None  # called (desktop) inside rightclick.sh after the flags were posted: may raise
+        self.click_code = 0  # rightclick.sh's exit code (after it posted its events)
 
     def completed(self, argv, out='', code=0, err=''):
         return subprocess.CompletedProcess(argv, code, out, err)
@@ -133,6 +146,8 @@ class FakeDesktop:
 
     def right_click(self, x, y, option):
         self.clicks.append((x, y, option))
+        if option:
+            self.hid_flags |= self.OPTION
         if self.before_click:
             self.before_click(self, x, y)
         hit = next((row for row in self.rows() if inside(row.frame, (x, y))), None)
@@ -141,7 +156,7 @@ class FakeDesktop:
         elif hit.url not in self.selection:
             self.selection = [hit.url]
         menu = self.fixed_menu or menu_for(self.template, sorted(self.selection), self.folder)
-        if option:
+        if self.hid_flags & self.OPTION:
             menu = menu.replace('"Delete Direct"', '"Delete Direct (skip confirmation)"')
         self.menu, self.polls_left = menu, self.menu_delay
 
@@ -228,12 +243,27 @@ class FakeDesktop:
             return self.completed(argv, f'{FINDER}\n')
         if name == 'rightclick.sh':
             self.right_click(int(argv[1]), int(argv[2]), argv[3:] == ['option'])
-            return self.completed(argv, 'right-clicked\n')
+            if self.during_click:
+                self.during_click(self)
+            return self.completed(argv, 'right-clicked\n' if not self.click_code else '', self.click_code,
+                                  'rightclick.sh: osascript failed\n' if self.click_code else '')
+        if name == 'modifiers.sh':
+            return self.modifiers(argv)
         if name == 'axprobe':
             return self.axprobe(argv)
         if name == 'osascript':
             return self.osascript(argv)
         return self.completed(argv, '', 99, f'fake desktop: unexpected {name}')
+
+    def modifiers(self, argv):
+        if argv[1:] == ['state']:
+            return self.completed(argv, f'flags=0x{self.hid_flags:x}\n')
+        if argv[1] == 'release' and argv[2:]:
+            self.releases.append(argv[2:])
+            if self.release_works and 'option' in argv[2:]:
+                self.hid_flags &= ~self.OPTION
+            return self.completed(argv, f'flags=0x{self.hid_flags:x}\n')
+        return self.completed(argv, '', 2, 'usage: modifiers.sh state | release MODIFIER...\n')
 
     def executable_of(self, pid):
         """The resolved executable of pid from the recorded capture (fixtures/process-table.txt)."""
@@ -641,6 +671,136 @@ class CleanupFromTheClickOnward(unittest.TestCase):
         self.assertIn('AXError -25204', err)
         self.assertIn('could not be closed', err)
         self.assertIn('close it by hand', err)
+
+
+class ModifiersAreReleased(unittest.TestCase):
+    """Fix r5 item 1 (device run, 2026-11-18): after calibration's `open-menu --option` the HID system state kept the
+    Option flag (CGEventSourceFlagsState 0x20080000), so every later PLAIN right-click showed `Delete Direct (skip
+    confirmation)` and a plain Delete Direct would have skipped its confirmation. Every path that posts Option must
+    release it (modifiers.sh release) on success, on every failure, on Ctrl-C and on SIGTERM."""
+    ALPHA = FOLDER + '/alpha.txt'
+
+    def assert_released(self, desktop):
+        self.assertEqual(desktop.hid_flags & FakeDesktop.OPTION, 0,
+                         f'Option left set in the HID state: flags 0x{desktop.hid_flags:x}')
+
+    def test_open_menu_with_option_releases_it_so_the_next_plain_menu_is_plain(self):
+        desktop = FakeDesktop()
+        code, out, err = drive(desktop, 'open-menu', 'alpha.txt', '--option')
+        self.assertEqual(code, 0, err)
+        point = re.search(r'menu-point (\d+,\d+)', out).group(1)
+        self.assertIn('Delete Direct (skip confirmation)', drive(desktop, 'menu', point)[1])
+        self.assert_released(desktop)
+        self.assertEqual(drive(desktop, 'close-menu', point)[0], 0)
+        code, out, err = drive(desktop, 'open-menu', 'beta.txt')
+        self.assertEqual(code, 0, err)
+        point = re.search(r'menu-point (\d+,\d+)', out).group(1)
+        listing = drive(desktop, 'menu', point)[1]
+        self.assertIn('|Delete Direct|', listing)
+        self.assertNotIn('skip confirmation', listing, 'a plain right-click after the Option one showed the skip title')
+
+    def test_choose_with_option_and_the_background_opener_release_it(self):
+        for argv in (('choose', 'Delete Direct (skip confirmation)', '--option', '--target', self.ALPHA, *GROUP),
+                     ('open-menu', '--background', '--option')):
+            with self.subTest(argv=argv[:2]):
+                desktop = FakeDesktop()
+                code, _, err = drive(desktop, *argv)
+                self.assertEqual(code, 0, err)
+                self.assert_released(desktop)
+                self.assertEqual(desktop.releases, [['option']])
+
+    def test_a_plain_click_presses_and_releases_nothing(self):
+        desktop = FakeDesktop()
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(desktop.releases, [])
+
+    def test_a_failure_in_the_middle_of_the_option_flow_still_releases_it(self):
+        def failing_click(desktop):
+            desktop.click_code = 1
+
+        def no_menu(desktop):
+            desktop.menu_delay = 10 ** 6
+
+        def menu_of_another_row(desktop):
+            desktop.fixed_menu = fixture('menu-file-sibling-option.jsonl')
+
+        for name, setup, exit_code in (('rightclick.sh fails after posting', failing_click, 70),
+                                       ('no menu appears', no_menu, 65),
+                                       ('the guard refuses the menu', menu_of_another_row, 65)):
+            for argv in (('choose', 'Delete Direct (skip confirmation)', '--option', '--target', self.ALPHA, *GROUP),
+                         ('open-menu', 'alpha.txt', '--option')):
+                if argv[0] == 'open-menu' and setup is menu_of_another_row:
+                    continue
+                with self.subTest(failure=name, command=argv[0]):
+                    desktop = FakeDesktop()
+                    setup(desktop)
+                    code, _, err = drive(desktop, *argv)
+                    self.assertEqual(code, exit_code, err)
+                    self.assertEqual(desktop.pressed, [])
+                    self.assert_released(desktop)
+
+    def test_ctrl_c_during_the_option_click_releases_it_and_closes_the_menu(self):
+        def interrupt(desktop):
+            raise KeyboardInterrupt
+        desktop = FakeDesktop()
+        desktop.during_click = interrupt
+        try:
+            code, _, err = drive(desktop, 'choose', 'Delete Direct (skip confirmation)', '--option', '--target',
+                                 self.ALPHA, *GROUP)
+        except KeyboardInterrupt:
+            code, err = 'KeyboardInterrupt escaped ui.sh', ''
+        self.assertEqual(code, 130, err)
+        self.assert_released(desktop)
+        self.assertIsNone(desktop.menu, 'the menu the interrupted click opened was left open')
+        self.assertEqual(desktop.pressed, [])
+
+    def test_sigterm_during_the_option_click_releases_it_and_closes_the_menu(self):
+        seen = []
+
+        def terminate(desktop):
+            handler = signal.getsignal(signal.SIGTERM)
+            seen.append(handler)
+            if callable(handler):  # deliver the signal the way Python does: the handler runs in the main thread
+                handler(signal.SIGTERM, None)
+        desktop = FakeDesktop()
+        desktop.during_click = terminate
+        code, _, err = drive(desktop, 'open-menu', 'alpha.txt', '--option')
+        self.assertTrue(callable(seen[0]), f'SIGTERM would end ui.sh with no release (handler {seen[0]!r})')
+        self.assertEqual(code, 143, err)
+        self.assert_released(desktop)
+        self.assertIsNone(desktop.menu, 'the menu the terminated click opened was left open')
+        self.assertIsNot(signal.getsignal(signal.SIGTERM), seen[0], 'main did not restore the previous handler')
+
+    def test_a_release_that_does_not_clear_it_is_reported(self):
+        desktop = FakeDesktop()
+        desktop.release_works = False
+        code, _, err = drive(desktop, 'open-menu', 'alpha.txt', '--option')
+        self.assertEqual(code, 70, err)
+        self.assertIn('could not release option', err)
+        self.assertIn('press and release that key', err)
+        self.assertIsNone(desktop.menu, 'the menu was left open')
+
+    def test_a_release_failure_after_a_failed_click_reports_both(self):
+        desktop = FakeDesktop()
+        desktop.release_works = False
+        desktop.click_code = 1
+        code, _, err = drive(desktop, 'open-menu', 'alpha.txt', '--option')
+        self.assertEqual(code, 70, err)
+        self.assertIn('rightclick.sh failed', err)
+        self.assertIn('could not release option', err)
+
+    def test_rightclick_sh_releases_option_itself_in_a_finally_and_on_signals(self):
+        source = (HERE / 'rightclick.sh').read_text(encoding='utf-8')
+        script = source.split("<<'JXA'", 1)[1]
+        self.assertRegex(script, r'finally\s*\{\s*if \(flags\) release\(\);\s*\}',
+                         'the Option flag is not released in a finally')
+        release = script[script.index('function release()'):script.index('function run(')]
+        self.assertIn('CGEventSetType(changed, 12)', release)  # flagsChanged
+        self.assertIn('CGEventSetFlags(changed, 0)', release)
+        self.assertRegex(release, r'\[58, 61\]')  # both Option keys up
+        for name in ('INT', 'TERM', 'HUP'):
+            self.assertRegex(source, r"trap '\"\$here/modifiers.sh\" release option[^']*' " + name + r'\n')
 
 
 class CommandLine(unittest.TestCase):
