@@ -521,4 +521,15 @@ struct PasteActionServiceTests {
         }
     }
 
+    @Test func providerStorageRootCannotEscapeItsContainer() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let root = f.source.appendingPathComponent("CloudStorage")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        f.operations.setProviderRoots([root])
+        await f.cut([root]); await f.paste()
+        #expect(FileManager.default.fileExists(atPath: root.path))
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(f.warnings.first?.contains("cloud container") == true)
+    }
+
 }

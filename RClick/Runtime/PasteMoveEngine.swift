@@ -105,6 +105,10 @@ extension FileOperations {
         // Walk canonical ancestors. Do not treat an inaccessible provider root
         // as absent: once its name is encountered, identity errors fail closed.
         for root in providerRootCandidates() {
+            if url.lastPathComponent == root.lastPathComponent, try sameItem(url, root) {
+                facts.providerContainer = root
+                break
+            }
             var ancestor = url.deletingLastPathComponent()
             var container = url
             while true {
