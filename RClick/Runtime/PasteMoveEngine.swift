@@ -91,8 +91,11 @@ extension FileOperations {
         return relationship == .contains
     }
 
-    nonisolated func providerRootCandidates() -> [URL] {
-        let home = Self.realUserHome
+    nonisolated func providerRootCandidates() throws -> [URL] {
+        try readProviderRootCandidates()
+    }
+    nonisolated func readProviderRootCandidates() throws -> [URL] {
+        let home = try accountHomeDirectory()
         return [home.appendingPathComponent("Library/Mobile Documents"), home.appendingPathComponent("Library/CloudStorage")]
     }
     nonisolated func moveFacts(of url: URL) throws -> MoveFacts { try readMoveFacts(of: url) }
@@ -104,7 +107,7 @@ extension FileOperations {
                               mountPoint: directory && values.isVolume == true, ubiquitous: values.isUbiquitousItem == true)
         // Walk canonical ancestors. Do not treat an inaccessible provider root
         // as absent: once its name is encountered, identity errors fail closed.
-        for root in providerRootCandidates() {
+        for root in try providerRootCandidates() {
             if url.lastPathComponent.caseInsensitiveCompare(root.lastPathComponent) == .orderedSame, try sameItem(url, root) {
                 facts.providerContainer = root
                 break
@@ -126,14 +129,23 @@ extension FileOperations {
         return facts
     }
 
-    nonisolated static var realUserHome: URL {
-        if let home = NSHomeDirectoryForUser(NSUserName()) {
-            return URL(fileURLWithPath: home, isDirectory: true)
+    nonisolated func accountHomeDirectory() throws -> URL {
+        // NSHomeDirectory APIs can describe the sandbox container. Query the
+        // account record with caller-owned storage, safe across coordinator threads.
+        var record = passwd()
+        var result: UnsafeMutablePointer<passwd>?
+        var storage = [CChar](repeating: 0, count: 16384)
+        return try storage.withUnsafeMutableBufferPointer { buffer in
+            let code = getpwuid_r(getuid(), &record, buffer.baseAddress, buffer.count, &result)
+            guard code == 0, result != nil, let directory = record.pw_dir else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            return URL(fileURLWithPath: String(cString: directory), isDirectory: true).resolvingSymlinksInPath()
         }
-        return FileManager.default.homeDirectoryForCurrentUser
     }
 
-    nonisolated func destinationRefusal(_ url: URL) throws -> DestinationRefusal? {
+    nonisolated func destinationRefusal(_ url: URL) throws -> DestinationRefusal? { try readDestinationRefusal(url) }
+    nonisolated func readDestinationRefusal(_ url: URL) throws -> DestinationRefusal? {
         guard try moveFacts(of: url).directory else { return .notFolder }
         for path in ["/", "/System", "/Library", "/usr", "/bin", "/sbin"] {
             if try sameItem(url, URL(fileURLWithPath: path)) { return .systemRoot }
@@ -145,7 +157,7 @@ extension FileOperations {
             // Detect the well-known Trash entry by name plus its PARENT identity,
             // avoiding a traversal into a privacy-protected Trash just to classify it.
             let parent = ancestor.deletingLastPathComponent()
-            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame, try sameItem(parent, Self.realUserHome) { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame, try sameItem(parent, accountHomeDirectory()) { return .trash }
             if ancestor.lastPathComponent.caseInsensitiveCompare(".Trashes") == .orderedSame, try moveFacts(of: parent).mountPoint { return .trash }
             for trash in knownTrash where FileManager.default.fileExists(atPath: trash.path) {
                 if try sameItem(ancestor, trash) { return .trash }

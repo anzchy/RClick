@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var accountHome: URL?
         var volumeUUIDs: [String: String] = [:]
         var renameErrors: [String: POSIXErrorCode] = [:]
         var providerRoots: [URL]?
@@ -123,8 +124,13 @@ final class FaultInjectingFileOperations: FileOperations {
         self.faults.withLock { $0.facts[url.path] = facts }
     }
     func setProviderRoots(_ roots: [URL]) { faults.withLock { $0.providerRoots = roots } }
-    func providerRootCandidates() -> [URL] {
-        faults.withLock { $0.providerRoots } ?? base.providerRootCandidates()
+    func accountHomeDirectory() throws -> URL {
+        try faults.withLock { $0.accountHome } ?? base.accountHomeDirectory()
+    }
+    func setAccountHome(_ home: URL) { faults.withLock { $0.accountHome = home } }
+    func providerRootCandidates() throws -> [URL] {
+        if let roots = faults.withLock({ $0.providerRoots }) { return roots }
+        return try readProviderRootCandidates()
     }
     func moveFacts(of url: URL) throws -> MoveFacts {
         if let value = faults.withLock({ $0.facts[url.path] }) { return value }
@@ -132,7 +138,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal? {
         if let value = faults.withLock({ $0.destinationRefusals[url.path] }) { return value }
-        return try base.destinationRefusal(url)
+        return try readDestinationRefusal(url)
     }
 
     func createClashAtRename(_ url: URL) {

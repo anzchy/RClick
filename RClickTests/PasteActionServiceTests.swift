@@ -576,4 +576,33 @@ struct PasteActionServiceTests {
         #expect(!files.contains { $0.hasPrefix(".paste-journal-") })
     }
 
+    @Test(arguments: ["home", "Desktop", "Documents", "trash", "trash-child", "provider"])
+    func accountHomeBoundaryDrivesRealDestinationAndProviderClassification(kind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.operations.setAccountHome(f.destination)
+        var file = try f.file()
+        var destination = f.destination
+        if kind == "Desktop" || kind == "Documents" { destination = destination.appendingPathComponent(kind) }
+        if kind == "trash" || kind == "trash-child" {
+            destination = destination.appendingPathComponent(kind == "trash" ? ".Trash" : ".Trash/child")
+        }
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        if kind == "provider" {
+            let folder = f.destination.appendingPathComponent("Library/CloudStorage/Provider/source")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            file = folder.appendingPathComponent("cloud.txt")
+            try Data("cloud".utf8).write(to: file)
+            destination = f.source
+        }
+        await f.cut([file]); await f.paste(destination)
+        if ["home", "Desktop", "Documents"].contains(kind) {
+            #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("notes.txt").path))
+            #expect(f.warnings.isEmpty)
+        } else {
+            #expect(FileManager.default.fileExists(atPath: file.path))
+            #expect(f.operations.renameCalls.isEmpty)
+            #expect(f.warnings.count == 1)
+        }
+    }
+
 }
