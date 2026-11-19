@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var volumeUUIDs: [String: String] = [:]
         var renameErrors: [String: POSIXErrorCode] = [:]
         var providerRoots: [URL]?
         var coordinationHook: (@Sendable (URL) throws -> Void)?
@@ -96,6 +97,11 @@ final class FaultInjectingFileOperations: FileOperations {
         try base.coordinatedTransfer(kind, from: source, to: destination)
     }
 
+    func setVolumeUUID(_ uuid: String, for url: URL) { faults.withLock { $0.volumeUUIDs[url.path] = uuid } }
+    func volumeUUID(of url: URL) throws -> String {
+        if let uuid = faults.withLock({ $0.volumeUUIDs[url.path] }) { return uuid }
+        return try base.volumeUUID(of: url)
+    }
     func failRename(_ source: URL, with code: POSIXErrorCode) { faults.withLock { $0.renameErrors[source.path] = code } }
     func onNextCoordination(_ action: @escaping @Sendable (URL) throws -> Void) {
         faults.withLock { $0.coordinationHook = action }
