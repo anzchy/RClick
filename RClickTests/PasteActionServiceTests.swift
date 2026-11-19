@@ -86,6 +86,7 @@ struct PasteActionServiceTests {
         let source: URL
         let destination: URL
         let board = NSPasteboard(name: .init("RClickTests-paste-\(UUID())"))
+        var storeOverride: (any UndoJournalStore)?
         var coordinationTimeout: TimeInterval = 30
         let termination = ManualTermination()
         let clock = Clock()
@@ -96,7 +97,7 @@ struct PasteActionServiceTests {
         let operations = FaultInjectingFileOperations()
         var warnings: [String] = []
         lazy var service = ActionService(state: State(), permission: permission, confirmation: Confirmation(),
-            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: journal, cutPasteboard: cutBoard, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
+            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: storeOverride ?? journal, cutPasteboard: cutBoard, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
             cutWarning: { [weak self] in self?.warnings.append($0) })
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-paste-\(UUID())").resolvingSymlinksInPath()
@@ -547,6 +548,32 @@ struct PasteActionServiceTests {
         #expect(f.journal.history.withLock { $0.contains { $0.entries.last?.outcome == .failed } })
         #expect(f.journal.load()?.entries.isEmpty == true)
         #expect(f.leaser.balance == 0)
+    }
+
+    @Test func journalUsesTheInjectedVolumeUUIDSystemBoundary() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        f.operations.setVolumeUUID("TEST-VOLUME-UUID", for: file)
+        await f.cut([file]); await f.paste()
+        #expect(f.journal.load()?.entries.first?.identity.volumeUUID == "TEST-VOLUME-UUID")
+    }
+
+    // test only, already enforced: production store is exercised in a temp folder.
+    @Test func atomicJournalReloadsThroughANewStoreAndService() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let path = f.root.appendingPathComponent("journal.json")
+        let store = AtomicUndoJournalStore(url: path)
+        f.storeOverride = store
+        let file = try f.file(); await f.cut([file]); await f.paste()
+        #expect(try store.load()?.entries.first?.outcome == .moved)
+        let reloaded = AtomicUndoJournalStore(url: path)
+        let service = ActionService(state: State(), permission: f.permission, confirmation: Confirmation(),
+            fileOperations: f.operations, pasteboard: f.board, now: { [clock = f.clock] in clock.now() },
+            accessLeaser: f.leaser, journalStore: reloaded, terminationBoundary: f.termination, cutWarning: { _ in })
+        await service.actionHandler(rid: "cut", target: [], trigger: "ctx-items")
+        #expect(try reloaded.load()?.entries.first?.originalPath == file.path)
+        let files = try FileManager.default.contentsOfDirectory(atPath: f.root.path)
+        #expect(!files.contains { $0.hasPrefix(".paste-journal-") })
     }
 
 }

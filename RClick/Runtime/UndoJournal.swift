@@ -69,11 +69,17 @@ nonisolated struct AtomicUndoJournalStore: UndoJournalStore {
 }
 
 extension FileOperations {
+    nonisolated func volumeUUID(of url: URL) throws -> String {
+        guard let value = try url.deletingLastPathComponent().resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return value
+    }
     nonisolated func stableMoveIdentity(of url: URL) throws -> StableMoveIdentity {
         let identity = try fileIdentity(of: url)
-        let values = try url.deletingLastPathComponent().resourceValues(forKeys: [.volumeUUIDStringKey])
+        let uuid = try volumeUUID(of: url)
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let uuid = values.volumeUUIDString, let birth = attributes[.creationDate] as? Date else {
+        guard let birth = attributes[.creationDate] as? Date else {
             throw CocoaError(.fileReadUnknown)
         }
         return StableMoveIdentity(volumeUUID: uuid, inode: identity.fileNumber, creationDate: birth)
