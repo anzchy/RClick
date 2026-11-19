@@ -10,6 +10,8 @@
 import Foundation
 
 nonisolated protocol FileOperations: Sendable {
+    func exclusiveRename(from source: URL, to destination: URL) throws
+    func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity) throws
     func moveItem(at source: URL, to destination: URL) throws
     func copyItem(at source: URL, to destination: URL) throws
     func removeItem(at url: URL) throws

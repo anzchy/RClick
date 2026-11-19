@@ -173,11 +173,16 @@ final class ActionService {
 
     /// 动作分发入口
     func actionHandler(rid: String, target: [String], trigger: String, optionKeyPressed: Bool = false) async {
-        guard let rcitem = state.getActionItem(rid: rid) else {
+        guard let rcitem = state.getActionItem(rid: RCAction.entityID(for: rid)) else {
             logger.warning("when actionHandler, but not have action \(rid)")
             return
         }
 
+        if rid == "paste-move" {
+            guard rcitem.enabled else { return }
+            await pasteMove(target, trigger: trigger)
+            return
+        }
         switch rcitem.id {
         case "cut":
             guard rcitem.enabled else {
@@ -207,6 +212,42 @@ final class ActionService {
             await showAirDrop(target, trigger)
         default:
             logger.warning("no action id matched")
+        }
+    }
+
+    private func pasteMove(_ target: [String], trigger: String) async {
+        guard !preparingCut else { return }
+        preparingCut = true
+        defer {
+            preparingCut = false
+            NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: nil)
+        }
+        guard let record = pendingCut, target.count == 1,
+              trigger == "ctx-container" || trigger == "ctx-items" else { return }
+        let destination = URL(fileURLWithPath: target[0]).resolvingSymlinksInPath()
+        let directories = [destination] + record.paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+        for directory in directories where !permission.hasAccess(to: directory) {
+            guard await permission.promptForPermission(for: directory) != nil else { return }
+        }
+        guard directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        let lease = accessLeaser.beginAccess(covering: directories)
+        defer { lease.end() }
+        let operations = fileOperations
+        let result = await executor.run { () -> FileActionResult in
+            var result = FileActionResult()
+            for (path, identity) in zip(record.paths, record.identities) {
+                let source = URL(fileURLWithPath: path)
+                do {
+                    try operations.coordinatedExclusiveMove(from: source,
+                        to: destination.appendingPathComponent(source.lastPathComponent), expected: identity)
+                    result.completed.append(path)
+                } catch { result.failures.append(FileActionFailure(path: path, error: error)) }
+            }
+            return result
+        }
+        if result.failures.isEmpty {
+            if pasteboard.changeCount == record.changeCount { pasteboard.clearContents() }
+            cutRecord = nil
         }
     }
 
