@@ -174,8 +174,9 @@ effects in `finderdrive.py` and `calibration.py`.
 - Cause: its frontmost check (System Events) did not report Finder as frontmost while the menu was open.
 - Fix: `ui.sh close-menu X,Y` reads the menu at the point through AX, cancels it with `AXCancel` (`axprobe
   menu-cancel`, owner pid checked: another process's menu is never touched), and only while AX still shows that
-  Finder menu sends Esc to Finder through System Events. Every refusal or failure of `choose` after its click
-  closes the menu the same way. UNVERIFIED on a device: that `AXCancel` closes a Finder context menu.
+  Finder menu sends Esc to Finder through System Events. Every refusal or failure of `choose` or `open-menu` after its click
+  closes the menu the same way (fix r4: also AX/transport errors and a session abort that times out; axprobe's
+  session cancels only a menu Finder owns). UNVERIFIED on a device: that `AXCancel` closes a Finder context menu.
 - Evidence: device run, 2026-11-18 ("Script problems").
 
 ### 2026-11-18 — the press allow-list compared `ps` comm, not the executable
