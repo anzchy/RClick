@@ -158,8 +158,9 @@ effects in `finderdrive.py` and `calibration.py`.
 
 - Symptom: with a Finder context menu open, every AppleScript call to Finder timed out after 20 s (exit 70):
   `ui.sh selection` after `ui.sh menu` left the menu open (and answered at once after Esc), `ui.sh open-menu
-  --background` with a stale menu open, `ui.sh choose ... --target %41.txt` (nothing pressed), calibration's `ui.sh
-  guard` and `guard --background`. System Events (AppleScript to another app) still answered. Calibration ended
+  --background` with a stale menu open, `ui.sh choose ... --target %41.txt` (nothing pressed), and calibration's
+  `background-menu` step (`ui.sh guard --background` exited 70). Calibration's `guard` step was SKIP (a prior step
+  had failed), not a timeout. System Events (AppleScript to another app) still answered. Calibration ended
   `CALIBRATION FAIL`, 13 helpers distrusted.
 - Cause: Finder services Apple events only after its menu tracking ends; `guard`/`choose` read the selection (and
   the front window for `--background`) through AppleScript while the `menu-session` held the menu.
