@@ -8,8 +8,10 @@ rightclick.sh with a fake and never ran it."""
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -196,6 +198,64 @@ class RawClicksRefuseAHeldModifier(Checks):
                 self.assertEqual([MOUSE.get(e['type']) for e in events], types)
                 self.assertEqual(desk.option_events(), [])
                 self.assert_restored(desk)
+
+
+# The events of a clean `rightclick.sh X Y option` in order: 1 mouse-moved with Option, 2 right-down, 3 right-up
+# (the click; then the 1 s hold), 4 and 5 the Option key-ups and 6 the flagsChanged of the JXA `finally`.
+KILL_POINTS = ((1, 'after the first Option event'), (2, 'before the click completes (right-down only)'),
+               (3, 'after the click, during the hold'), (4, 'inside the JXA release, after one key-up'))
+
+
+class RawOptionClickCleansUpWhenItsChildDies(Checks):
+    """F2: a SIGTERM or SIGKILL of the osascript child skips its JXA `finally`; on 46e9c2e nothing else released the
+    Option it had posted (HID state 0x20080000 after exit 143/137). The surviving shell must release it (only it),
+    keep the child's status and read the state back."""
+
+    def test_a_terminated_or_killed_child_leaves_the_entry_state_and_its_status(self):
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            for after, where in KILL_POINTS:
+                with self.subTest(signal=sig.name, point=where):
+                    desk = Desk(self, kill_after=after, kill_signal=sig.name)
+                    code, out, err = desk.run('rightclick.sh', '100', '200', 'option')
+                    self.assertEqual(code, 128 + sig, f'not the child\'s status: {err}')
+                    self.assert_restored(desk, f'(child {sig.name} {where})')
+                    self.assertNotIn('released', out, 'a failed click reported as done')
+                    self.assertIn('Option released', err)
+
+    def test_a_release_that_does_not_clear_option_is_reported_never_as_released(self):
+        for kill in (None, 'SIGTERM'):
+            with self.subTest(child=kill or 'exits 0'):
+                extra = dict(kill_after=3, kill_signal=kill) if kill else {}
+                desk = Desk(self, stuck=True, **extra)
+                code, out, err = desk.run('rightclick.sh', '100', '200', 'option')
+                self.assertEqual(code, 143 if kill else 70, err)
+                self.assertNotIn('released', out)
+                self.assertIn('Option could not be released', err)
+                self.assertNotIn('Option released', err)
+
+
+class RawOptionClickCleansUpOnItsOwnSignals(Checks):
+    """F2: the shell itself interrupted (INT, TERM, HUP) during the hold: it stops its child, releases the Option the
+    child posted, and exits 130/143/129. On 46e9c2e zsh ran the trap only after osascript had finished."""
+
+    def test_int_term_and_hup_during_the_hold(self):
+        for sig, code in ((signal.SIGINT, 130), (signal.SIGTERM, 143), (signal.SIGHUP, 129)):
+            with self.subTest(signal=sig.name):
+                desk = Desk(self, real_sleep=True)
+                process = desk.start('rightclick.sh', '100', '200', 'option')
+                deadline = time.monotonic() + 10
+                while len(desk.state()['events']) < 3:  # the click is done; the child holds Option for 1 s
+                    self.assertLess(time.monotonic(), deadline, 'the click never happened')
+                    time.sleep(0.01)
+                started = time.monotonic()
+                process.send_signal(sig)
+                out, err = process.communicate(timeout=10)
+                self.assertEqual(process.returncode, code, err)
+                self.assertLess(time.monotonic() - started, 0.9, 'the shell waited for the hold to end')
+                self.assert_restored(desk, f'(shell {sig.name})')
+                events = len(desk.state()['events'])
+                time.sleep(1.3)
+                self.assertEqual(len(desk.state()['events']), events, 'the child lived on and posted after the exit')
 
 
 if __name__ == '__main__':
