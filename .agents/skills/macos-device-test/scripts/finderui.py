@@ -354,6 +354,24 @@ def front_folder(nodes):
     return location
 
 
+def bound_menu(nodes, click, targets=(), background=None):
+    """With the context menu OPEN and held, before the press: the front Finder window read again through AX (no
+    AppleScript) still holds exactly what was verified before the click. A Compress title carries only a basename or
+    a count, so this read is what binds the open menu to full paths: for targets, target_row again (every target the
+    one visible row of its name with its full path as AXURL; the selected rows exactly the targets) and the clicked
+    row still at `click`; for a background menu, front_folder is still `background` (nothing selected). Returns what
+    matched; Refused otherwise (nothing is pressed)."""
+    if background is not None:
+        front = front_folder(nodes)
+        if clean_path(front) != clean_path(background):
+            raise Refused(f'the front Finder window lists {front!r}, not {clean_path(background)!r}')
+        return f'front folder {front} re-read through AX with the menu open'
+    row, selected = target_row(nodes, targets)
+    if tuple(row.point) != tuple(click):
+        raise Refused(f'row {row.name!r} is at {row.point}, not at the click point {tuple(click)}')
+    return f'selection {selected} re-read through AX with the menu open'
+
+
 def check_guard(targets, selection, items, background=None, front=None):
     """The pre-action guard. Before any RClick item is chosen, the open menu must be the menu of the intended
     target: Finder's own `Compress “<name>”` (`Compress N Items`) title names it, and `selection` (the selected rows'
