@@ -92,6 +92,7 @@ class FakeDesktop:
         self.menu_delay, self.polls_left = 0, 0
         self.cancel_works = self.esc_works = True
         self.menu_at_press = None
+        self.cancelled = []  # owner pid of every menu a cancel (AXCancel) closed
         self.calls, self.requests, self.pressed, self.clicks, self.timeouts, self.keys = [], [], [], [], [], []
         self.windows, self.acted, self.after_act = fixture('dialog-delete-confirm.jsonl'), [], []
 
@@ -185,6 +186,7 @@ class FakeDesktop:
                 return self.completed(argv, '', 65, f'axprobe: the menu belongs to pid {self.menu_pid}\n')
             if not self.cancel_works:
                 return self.completed(argv, '', 70, 'axprobe: AXCancel on the menu failed\n')
+            self.cancelled.append(self.menu_pid)
             self.menu = None
             return self.completed(argv, 'cancelled\n')
         if command == 'dump':
@@ -231,8 +233,13 @@ class FakeDesktop:
 
 
 class FakeSession:
+    """`axprobe menu-session X Y DEPTH OWNER` as axprobe.swift answers it. Every cancel (abort, no decision, a press
+    refused) is a REAL cancel of the desktop's menu, made only when OWNER owns it (cancelOwned); an older argv
+    without OWNER is answered as the axprobe of that argv did: it cancelled whatever menu it held."""
+
     def __init__(self, desktop, argv):
         self.desktop, self.returncode = desktop, None
+        self.owner = int(argv[5]) if len(argv) > 5 else None
         if not desktop.menu_shows():
             self.stdout = io.BytesIO(b'')
             self.ended = (b'', b'axprobe: no menu at the point (found AXTextField)\n', 65)
@@ -242,22 +249,36 @@ class FakeSession:
             line for line in desktop.menu.splitlines() if line.strip()] + [json.dumps({'end': True})]
         self.stdout = io.BytesIO(('\n'.join(lines) + '\n').encode())
 
+    def cancel(self):
+        if self.owner is not None and self.owner != self.desktop.menu_pid:
+            return 'left open'
+        if self.desktop.cancel_works:
+            self.desktop.cancelled.append(self.desktop.menu_pid)
+            self.desktop.menu = None
+        return 'menu cancelled'
+
     def communicate(self, input=None, timeout=None):
         if self.ended:
             out, err, self.returncode = self.ended
             return out, err
+        if input is None:
+            self.returncode = 65
+            return b'', f'axprobe: no decision from the driver: nothing pressed; {self.cancel()}\n'.encode()
         request = json.loads(input.decode())
         self.desktop.requests.append(request)
+        if 'abandon' in request:
+            self.returncode = 0
+            return b'abandoned: menu left as it is\n', b''
         if 'abort' in request:
             self.returncode = 0
-            if self.desktop.cancel_works:
-                self.desktop.menu = None
-            return b'aborted: menu cancelled\n', b''
+            return f'aborted: {self.cancel()}\n'.encode(), b''
         now = self.desktop.menu_at_press or self.desktop.menu
-        if request.get('pid') != self.desktop.menu_pid or request.get('titles') != top_titles(now):
+        if request.get('pid') != self.desktop.menu_pid or self.owner not in (None, self.desktop.menu_pid):
             self.returncode = 65
-            if self.desktop.cancel_works:
-                self.desktop.menu = None
+            return b'', b"axprobe: the menu's owner changed since it was verified: nothing pressed\n"
+        if request.get('titles') != top_titles(now):
+            self.returncode = 65
+            self.cancel()
             return b'', b'axprobe: the menu changed since it was verified: nothing pressed\n'
         self.desktop.pressed.append(request)
         self.desktop.menu = None  # a pressed menu closes
@@ -355,13 +376,25 @@ class ChooseAtTheActingBoundary(unittest.TestCase):
         self.assertEqual(desktop.clicks, [])
         self.assertIn('not the target', err)
 
-    def test_a_menu_owned_by_another_process_is_not_pressed(self):
+    def test_a_menu_owned_by_another_process_is_not_pressed_and_is_left_open(self):
+        # audit r3 gpt F2: the refusal aborted the session and axprobe AXCancelled the foreign menu with no owner check.
         desktop = FakeDesktop(menu_pid=999)
         code, _, err = self.choose(desktop)
         self.assertEqual(code, 65, err)
         self.assertEqual(desktop.pressed, [])
         self.assertIn('not Finder', err)
         self.assertEqual(desktop.keys, [], 'an Esc was sent to a menu of another process')
+        self.assertEqual(desktop.cancelled, [], 'a menu of another process was cancelled')
+        self.assertIsNotNone(desktop.menu, 'the menu of another process was closed')
+
+    def test_the_session_is_told_finders_pid_so_axprobe_can_check_the_owner_before_any_cancel(self):
+        desktop = FakeDesktop()
+        desktop.fixed_menu = fixture('menu-file-sibling-option.jsonl')  # a refusal: the session is aborted
+        code, _, err = self.choose(desktop)
+        self.assertEqual(code, 65, err)
+        sessions = [call for call in desktop.calls if call[1:2] == ['menu-session']]
+        self.assertEqual([call[5:] for call in sessions], [[str(FINDER)]])
+        self.assertEqual(desktop.cancelled, [FINDER])
 
     def test_a_slow_first_menu_is_waited_for(self):
         desktop = FakeDesktop()
@@ -675,7 +708,7 @@ class AxprobeNeedsTheLock(unittest.TestCase):
 
     def acting_calls(self):
         return (('act', str(os.getpid()), '0', 'select', 'AXRow', 'alpha.txt'),
-                ('menu-session', '-10000', '-10000', '3'), ('menu-cancel', '-10000', '-10000', str(os.getpid())))
+                ('menu-session', '-10000', '-10000', '3', str(os.getpid())), ('menu-cancel', '-10000', '-10000', str(os.getpid())))
 
     def test_acting_without_the_lock_is_refused_before_any_ax_call(self):
         for args in self.acting_calls():
@@ -879,6 +912,25 @@ class Source(unittest.TestCase):
                     self.assertNotIn(marker, text)
                     if len(home) > 1:
                         self.assertNotIn(home, text)
+
+    def test_axprobe_cancels_a_menu_only_after_checking_its_owner(self):
+        # audit r3 gpt F2 / opus M1: the session's abort and no-decision branches AXCancelled with no owner check. The
+        # Swift is not run offline, so its one AXCancel must sit in cancelOwned, after the owner comparison, and every
+        # caller must pass the owner the driver expects (the session's OWNER argument, or menu-cancel's PID).
+        source = (HERE / 'axprobe.swift').read_text(encoding='utf-8')
+        self.assertEqual(source.count('"AXCancel"'), 1)
+        body = re.search(r'func cancelOwned\(_ menu: AXUIElement, by expected: pid_t\) -> String\? \{(.*?)\n\}', source,
+                         re.S)
+        self.assertIsNotNone(body, 'no cancelOwned(_:by:)')
+        body = body.group(1)
+        self.assertIn('"AXCancel"', body)
+        self.assertLess(body.index('guard owner == expected'), body.index('"AXCancel"'))
+        calls = re.findall(r'cancelOwned\(root, by: (\w+)\)', source)
+        self.assertEqual(len(calls), source.count('cancelOwned(') - 1, 'a cancelOwned call this test does not read')
+        self.assertEqual(set(calls), {'expected'})
+        for command, argument in (('menu-session', 5), ('menu-cancel', 4)):
+            branch = source.split(f'case "{command}":', 1)[1].split('\ncase ', 1)[0]
+            self.assertIn(f'let expected = pid_t(number({argument}))', branch)
 
     @unittest.skipUnless(Path('/usr/bin/xcrun').exists(), 'needs the Xcode toolchain (the Mac gate lane has it)')
     def test_axprobe_type_checks(self):
