@@ -379,9 +379,19 @@ final class ActionService {
             var journal: MoveJournal
             do {
                 let old = try store.load()
-                let previous = (old?.entries ?? []).filter { $0.outcome == .moved && timestamp.timeIntervalSince($0.timestamp) < 86400 }
+                let live: (MoveJournalEntry) -> Bool = {
+                    $0.timestamp <= timestamp && timestamp.timeIntervalSince($0.timestamp) < 86400
+                }
+                var previous = (old?.entries ?? []).filter { $0.outcome == .moved && live($0) }
+                var deferred = (old?.deferred ?? []).filter(live)
+                if let old, old.inProgress {
+                    // Recovery may have read the outcome but failed to persist it.
+                    // Preserve the durable intents in this new write-ahead record.
+                    deferred += old.entries.filter { $0.outcome == .intended && live($0) }
+                    if previous.isEmpty { previous = old.previous.filter { $0.outcome == .moved && live($0) } }
+                }
                 journal = MoveJournal(previous: previous, inProgress: true)
-                journal.deferred = old?.deferred
+                journal.deferred = deferred.isEmpty ? nil : deferred
             } catch {
                 result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
                 return result
