@@ -71,6 +71,7 @@ nonisolated struct MoveFacts: Sendable {
     var directory = false
     var package = false
     var mountPoint = false
+    var caseSensitiveNames = false
     var ubiquitous = false
     var providerContainer: URL?
 }
@@ -102,9 +103,11 @@ extension FileOperations {
     nonisolated func readMoveFacts(of url: URL) throws -> MoveFacts {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let directory = attributes[.type] as? FileAttributeType == .typeDirectory
-        let values = try url.resourceValues(forKeys: [.isPackageKey, .isVolumeKey, .isUbiquitousItemKey])
+        let values = try url.resourceValues(forKeys: [.isPackageKey, .isVolumeKey, .isUbiquitousItemKey, .volumeSupportsCaseSensitiveNamesKey])
         var facts = MoveFacts(directory: directory, package: directory && values.isPackage == true,
-                              mountPoint: directory && values.isVolume == true, ubiquitous: values.isUbiquitousItem == true)
+                              mountPoint: directory && values.isVolume == true,
+                              caseSensitiveNames: values.volumeSupportsCaseSensitiveNames == true,
+                              ubiquitous: values.isUbiquitousItem == true)
         // Walk canonical ancestors. Do not treat an inaccessible provider root
         // as absent: once its name is encountered, identity errors fail closed.
         for root in try providerRootCandidates() {
@@ -157,8 +160,12 @@ extension FileOperations {
             // Detect the well-known Trash entry by name plus its PARENT identity,
             // avoiding a traversal into a privacy-protected Trash just to classify it.
             let parent = ancestor.deletingLastPathComponent()
-            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame, try sameItem(parent, accountHomeDirectory()) { return .trash }
-            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trashes") == .orderedSame, try moveFacts(of: parent).mountPoint { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame,
+               try sameItem(parent, accountHomeDirectory()),
+               try ancestor.lastPathComponent == ".Trash" || !moveFacts(of: parent).caseSensitiveNames { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trashes") == .orderedSame,
+               try moveFacts(of: parent).mountPoint,
+               try ancestor.lastPathComponent == ".Trashes" || !moveFacts(of: parent).caseSensitiveNames { return .trash }
             for trash in knownTrash where FileManager.default.fileExists(atPath: trash.path) {
                 if try sameItem(ancestor, trash) { return .trash }
             }

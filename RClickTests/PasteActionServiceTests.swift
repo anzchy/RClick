@@ -605,4 +605,21 @@ struct PasteActionServiceTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func trashNameAliasesRespectTheVolumesCaseSensitivity(caseSensitive: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.operations.setAccountHome(f.destination)
+        f.operations.setMoveFacts(MoveFacts(directory: true, caseSensitiveNames: caseSensitive), for: f.destination)
+        let folder = f.destination.appendingPathComponent(".TRASH")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = try f.file(); await f.cut([file]); await f.paste(folder)
+        if caseSensitive {
+            #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("notes.txt").path))
+            #expect(f.warnings.isEmpty)
+        } else {
+            #expect(FileManager.default.fileExists(atPath: file.path))
+            #expect(f.operations.renameCalls.isEmpty)
+        }
+    }
+
 }
