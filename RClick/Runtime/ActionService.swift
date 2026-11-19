@@ -90,6 +90,7 @@ final class ActionService {
         let changeCount: Int
     }
 
+    private var journalNotice: String?
     private var journalRecovery: Task<Void, Never>?
     private var cutRecord: CutRecord?
     private var preparingCut = false
@@ -269,23 +270,52 @@ final class ActionService {
         let store: any UndoJournalStore
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
         catch { return }
-        let loaded = try? await executor.run { try store.load() }
-        guard let loaded else { return }
-        // Recorded paths grant no access. Recovery uses existing bookmarks only,
-        // never an unsolicited permission panel at launch.
-        let directories = (loaded.entries + loaded.previous).flatMap {
+        let loaded: MoveJournal
+        do {
+            guard let value = try await executor.run({ try store.load() }) else { return }
+            loaded = value
+        } catch JournalFailure.discarded {
+            journalNotice = "A previous move could not be fully recovered; its undo information was discarded"
+            logger.warning("Paste journal: quarantined unreadable or unsupported record count 1")
+            return
+        } catch {
+            journalNotice = "The move journal could not be read or quarantined; check its folder access"
+            logger.warning("Paste journal: unreadable record count 1")
+            return
+        }
+        // Recorded paths grant no access. Prune first, independently of access;
+        // only inspect live objects covered by existing bookmarks, never prompt.
+        let directories = (loaded.entries + loaded.previous + (loaded.deferred ?? [])).flatMap {
             [URL(fileURLWithPath: $0.originalPath).deletingLastPathComponent(),
              URL(fileURLWithPath: $0.movedToPath).deletingLastPathComponent()]
         }
-        guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
-        let lease = accessLeaser.beginAccess(covering: directories)
+        let accessible = directories.filter { permission.hasAccess(to: $0) }
+        let lease = accessLeaser.beginAccess(covering: accessible)
         defer { lease.end() }
         let operations = fileOperations
         let timestamp = now()
-        try? await executor.run {
-            var journal = loaded
-            try journal.reconcile(using: operations, at: timestamp)
-            try store.save(journal)
+        let accessiblePaths = Set(accessible.map(\.path))
+        do {
+            let report = try await executor.run {
+                var journal = loaded
+                let report = try journal.reconcile(using: operations, at: timestamp, accessibleDirectories: accessiblePaths)
+                try store.persist(journal)
+                return report
+            }
+            if report.missingAccess > 0 {
+                journalNotice = "A previous move is awaiting recovery because folder access is missing; its undo information is retained for 24 hours"
+                logger.warning("Paste journal: missing access count \(report.missingAccess)")
+            } else if report.ambiguous > 0 {
+                journalNotice = "A previous move is awaiting recovery because its locations are ambiguous; its undo information is retained for 24 hours"
+                logger.warning("Paste journal: ambiguous entry count \(report.ambiguous)")
+            } else if report.unreadable > 0 {
+                journalNotice = "A previous move is awaiting recovery because its files could not be read; its undo information is retained for 24 hours"
+                logger.warning("Paste journal: unreadable entry count \(report.unreadable)")
+            }
+            if report.pruned > 0 { logger.info("Paste journal: expired entry count \(report.pruned)") }
+        } catch {
+            journalNotice = "The move journal could not be saved; no further files can be moved until it is writable"
+            logger.warning("Paste journal: recovery write failure count 1")
         }
     }
 
@@ -297,6 +327,11 @@ final class ActionService {
         }
         preparingCut = true
         defer { releaseReservation() }
+        await restoreMoveJournal()
+        if let notice = journalNotice {
+            journalNotice = nil
+            cutWarning(AppLocalization.localized(notice))
+        }
         guard let record = pendingCut else {
             cutRecord = nil
             cutWarning(AppLocalization.localized("The cut has ended"))
@@ -322,7 +357,11 @@ final class ActionService {
         let operations = fileOperations
         let store: any UndoJournalStore
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
-        catch { cutWarning(error.localizedDescription); return }
+        catch {
+            logger.warning("Paste journal: unavailable store count 1")
+            cutWarning(moveFailureDescription(JournalFailure.unreadable))
+            return
+        }
         let timestamp = now()
         let timeout = coordinationTimeout
         terminationBoundary.protectMutation()
@@ -338,9 +377,9 @@ final class ActionService {
             var journal: MoveJournal
             do {
                 let old = try store.load()
-                guard old?.inProgress != true else { throw CocoaError(.fileWriteUnknown) }
                 let previous = (old?.entries ?? []).filter { $0.outcome == .moved && timestamp.timeIntervalSince($0.timestamp) < 86400 }
                 journal = MoveJournal(previous: previous, inProgress: true)
+                journal.deferred = old?.deferred
             } catch {
                 result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
                 return result
@@ -384,12 +423,12 @@ final class ActionService {
                         let to = destination.appendingPathComponent(name)
                         journal.entries.append(MoveJournalEntry(originalPath: source.path, movedToPath: to.path,
                             identity: stableIdentity, timestamp: timestamp, outcome: .intended))
-                        try store.save(journal) // Write-ahead: no rename may precede this durable intent.
+                        try store.persist(journal) // Write-ahead: no rename may precede this durable intent.
                         do {
                             try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity, timeout: timeout)
                             result.completed.append(path)
                             journal.entries[journal.entries.count - 1].outcome = .moved
-                            do { try store.save(journal) }
+                            do { try store.persist(journal) }
                             catch {
                                 // The rename happened. Never mark that item pending again.
                                 // Preserve every unattempted item and stop the batch.
@@ -403,7 +442,7 @@ final class ActionService {
                             break
                         } catch let error as POSIXError where error.code == .EEXIST {
                             journal.entries[journal.entries.count - 1].outcome = .failed
-                            try store.save(journal)
+                            try store.persist(journal)
                             number += 1
                         }
                     }
@@ -411,7 +450,7 @@ final class ActionService {
                     result.failures.append(FileActionFailure(path: path, error: error))
                     if let index = journal.entries.lastIndex(where: { $0.originalPath == source.path && $0.outcome == .intended }) {
                         journal.entries[index].outcome = .failed
-                        do { try store.save(journal) }
+                        do { try store.persist(journal) }
                         catch {
                             for remaining in selection.map(\.0) where !result.completed.contains(remaining)
                                 && !result.failures.contains(where: { $0.path == remaining }) {
@@ -427,9 +466,13 @@ final class ActionService {
             journal.entries = moved.isEmpty ? journal.previous : moved
             journal.previous = []
             journal.inProgress = false
-            do { try store.save(journal) }
+            do { try store.persist(journal) }
             catch { result.journalNeedsRecovery = true }
             return result
+        }
+        let journalFailures = result.failures.filter { $0.error is JournalFailure }.count
+        if journalFailures > 0 || result.journalNeedsRecovery {
+            logger.warning("Paste journal: persistence failure count \(journalFailures + (result.journalNeedsRecovery ? 1 : 0))")
         }
         // This is an ownership check, not a pasteboard compare-and-swap.
         if cutPasteboard.changeCount != record.changeCount {
@@ -457,6 +500,9 @@ final class ActionService {
     private func moveFailureDescription(_ error: any Error) -> String {
         let key: String
         switch error {
+        case JournalFailure.discarded: key = "A previous move could not be fully recovered; its undo information was discarded"
+        case JournalFailure.unreadable: key = "The move journal could not be read or quarantined; check its folder access"
+        case JournalFailure.writeFailed: key = "The move journal could not be saved; no further files can be moved until it is writable"
         case DestinationRefusal.systemRoot: key = "System roots cannot be a move destination"
         case DestinationRefusal.trash: key = "Use Finder’s Move to Trash"
         case DestinationRefusal.package: key = "Packages and their contents cannot be a move destination"
