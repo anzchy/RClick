@@ -219,7 +219,8 @@ effects in `finderdrive.py` and `calibration.py`.
 - Fix: `ui.sh grant` reads the browser: the shown folder is the folder of the deepest column, each column must list
   an entry of the column before it, the `Where:` pop-up must agree; row mode selects the entry's `AXGroup` and
   presses only when the browser then shows the target. UNVERIFIED on a device: that `AXSelected` on the `AXGroup`
-  opens the entry, and the shape of RClick's own panel (PERM-01). Test: `test_finderui.PanelBrowser` on the
+  opens the entry (it did not: see "`ui.sh grant` fails on the osascript panel" below), and the shape of RClick's
+  own panel (PERM-01). Test: `test_finderui.PanelBrowser` on the
   sanitised real dumps (`fixtures/panel-browser-*.jsonl`).
 - Evidence: device run, 2026-11-18 (calibration/panel-row.jsonl, panel-current.jsonl).
 
@@ -246,3 +247,60 @@ effects in `finderdrive.py` and `calibration.py`.
 - Cause: key code 9 is V; the `command` modifier reaches Finder through System Events.
 - Fix: use `finder-kc.sh 9 command` to paste into Finder (for example into a rename field) instead of typing.
 - Evidence: device run, 2026-11-18 (the paste-into-rename-field rows).
+
+### 2026-11-18 — the Option flag stayed set after an Option right-click
+
+- Symptom: after calibration's `option-menu` step every PLAIN right-click showed `Delete Direct (skip
+  confirmation)`, so a plain `choose "Delete Direct"` would have refused, and a click on that item would have skipped
+  the confirmation. `CGEventSourceFlagsState(.hidSystemState)` read 0x20080000 (Option set); the session state was
+  0. The tester cleared it with a flagsChanged event with no flags; no Delete was clicked.
+- Cause: `rightclick.sh … option` set the Option flag on the right-click's mouse events and posted them at the HID
+  tap; nothing ever posted an event that cleared it (no key-up, no flagsChanged), so the HID system state kept
+  Option. The extension reads the current modifier state once, while each menu is built.
+- Fix (#32 fix round 5): `rightclick.sh` releases Option itself (key-ups and a flagsChanged with no flags) in a
+  `finally` and from INT/TERM/HUP traps, after holding it 1 s for the menu build; `finderdrive` releases it again
+  after the script returns on every path, Ctrl-C and SIGTERM included, and reads the state back. Every acting command
+  refuses (65) while Shift, Control, Option or Command is held (`modifiers.sh state`, a read). Calibration checks the
+  state at the start, after `option-menu` and at the end (21 steps). Tests: `test_finderdrive.ModifiersAreReleased`,
+  `test_finderdrive.AStuckModifierIsRefused`, the modifier tests in `test_calibration`. UNVERIFIED on a device: that
+  the 1 s hold is long enough for the skip title, and that the release clears the HID state (`option-menu` and
+  `modifiers-after-option` prove both).
+- Evidence: device run, 2026-11-18 ("Script problems" 2).
+
+### 2026-11-18 — `ui.sh grant` fails on the osascript panel
+
+- Symptom: calibration's `panel-grant-row` failed `axprobe: select failed: AXError -25205` and
+  `panel-grant-current` failed `axprobe: press failed: AXError -25204`. The pid allow-list and the panel plan
+  passed; the AX action itself was refused by that panel.
+- Cause: not known. -25205 is `kAXErrorAttributeUnsupported` (the entry's `AXGroup` does not take an `AXSelected`
+  change), -25204 is `kAXErrorCannotComplete` (the button's `AXPress`).
+- Fix: none yet; `ui.sh grant` is distrusted (a follow-up issue). Calibration keeps both steps honest: they FAIL.
+  What worked on RClick's own panel: `ui.sh press-button <rclick pid> "Grant Access"` when the panel opened at the
+  folder to grant (role and title re-checked by axprobe).
+- Evidence: device run, 2026-11-18 (calibration.txt; row C4 for `press-button "Grant Access"`).
+
+### 2026-11-18 — `doctor --expected-sha` needs the 8-character sha
+
+- Symptom: `doctor.sh … --expected-sha <7 chars>` failed `bundle-hash`; the 8-character form passed.
+- Cause: `build.json` records the 8-character short sha.
+- Fix: the runbook (§6) and SKILL.md say 8 characters (`git rev-parse --short=8`). Briefs must pass that form.
+- Evidence: device run, 2026-11-18 ("Script problems" 1).
+
+### 2026-11-18 — `log show` returned nothing for RClick
+
+- Symptom: `log show --predicate 'subsystem BEGINSWITH "cn.anzchy.RClick"'` printed only its header, so no app-log
+  evidence existed for the Cut clicks.
+- Cause: not known (log level or persistence on that Mac).
+- Fix: none in the scripts; the runbook (§9) asks for a second view of every click's effect that does not need the
+  log: the pasteboard (`pbpaste`, types, change count) and the absence of the "did not respond" alert (`ui.sh
+  dialog <FinderSyncExt pid>` empty).
+- Evidence: device run, 2026-11-18 ("Script problems" 5).
+
+### 2026-11-18 — `cleanup.sh` does not make the extension offline at once
+
+- Symptom: right after `cleanup.sh` (SIGTERM to the recorded pid) the Finder menu still looked online; it showed
+  `RClick is not running` only after about 35 s.
+- Cause: SIGTERM ends the app without the `.quit` message, so the extension falls back to its 30 s cache.
+- Fix: none in the scripts; the runbook (§11) says to quit RClick through its own menu bar item first when the
+  immediate offline state matters (CONN-01).
+- Evidence: device run, 2026-11-18 ("Script problems" 6, row C6).

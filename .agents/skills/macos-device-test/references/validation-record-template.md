@@ -13,7 +13,7 @@
 - App Group state: <created by this run | existing, backed up to settings-before.json and restored>
 - GUI lock: acquired <time>, released <time>
 - Fixtures: per-run, `fixtures.sha256` in the run folder
-- Calibration: <`CALIBRATION PASS (18 steps) — NOT covered: RClick's own sandboxed folder panel …` | `CALIBRATION FAIL — distrust: …`>, `calibration/calibration.txt`
+- Calibration: <`CALIBRATION PASS (21 steps) — NOT covered: RClick's own sandboxed folder panel …` | `CALIBRATION FAIL — distrust: …`>, `calibration/calibration.txt`
 
 ## Verdicts
 

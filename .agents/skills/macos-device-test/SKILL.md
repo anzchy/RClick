@@ -51,12 +51,14 @@ powerbox. This lane checks those. Read [features/README.md](features/README.md) 
 4. **Step zero of driving: calibrate.** `$DT/calibrate.sh "$RUN_DIR" --group "<title>"... --background-group
    "<title>"...` (RClick's top-level items of a file menu and of a background menu, in order) proves every Finder
    helper on a throwaway folder (a few minutes) and prints `PASS|FAIL|SKIP <step>` lines, then `CALIBRATION PASS` or
-   `CALIBRATION FAIL — distrust: <commands>`. It does not prove `grant` on RClick's own sandboxed panel (PERM-01 does). Do not use a distrusted helper: drive that part another way and record
+   `CALIBRATION FAIL — distrust: <commands>` (21 steps, three of them prove no Shift/Control/Option/Command is left
+   held: a stuck Option makes Delete Direct skip its confirmation). It does not prove `grant` on RClick's own sandboxed panel (PERM-01 does), and
+   `grant` itself is distrusted since the device run of 2026-11-18 (runbook §7). Do not use a distrusted helper: drive that part another way and record
    it, or mark the rows it serves NOT VERIFIED. Keep `calibration/` in the evidence.
 5. Drive each recipe through the real user path with `$DT/ui.sh` (runbook §7): `open-menu` on the row by exact
    name (or `--background`) and `menu` to read a menu, `close-menu X,Y` to dismiss it; `choose TITLE --group …
    --target …` (or `--background DIR`) to act: one process selects, verifies, right-clicks and presses, and closes
-   the menu on any refusal, `dialog` / `press-button` for alerts, `grant` for the folder panel. Never aim by AppleScript order or by remembered coordinates. Capture the action and
+   the menu on any refusal, `dialog` / `press-button` for alerts and for the folder panel (`press-button <rclick pid> "Grant Access"`). Never aim by AppleScript order or by remembered coordinates. Capture the action and
    the result; check results through a second view (`pbpaste`, `ls -lO`, `mdls`, the app log).
 6. One verdict per criterion and entry point: `pass`, `FAIL` with reproduction, or `NOT VERIFIED` with the blocker.
    Before a FAIL, check `choose` printed `GUARD PASS` for that action: a mis-aimed click is a tool problem, not a product FAIL.

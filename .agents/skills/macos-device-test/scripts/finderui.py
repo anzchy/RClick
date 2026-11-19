@@ -202,8 +202,9 @@ def dirty_input(flags, held, doing):
     flag left set by a synthetic right-click made every later plain menu show `Delete Direct (skip confirmation)`)."""
     return Refused(f'{" and ".join(held)} held down in the HID system state (flags 0x{flags:x}) that this command '
                    f'did not press: {doing}. A stuck modifier changes what a click does (Option makes Delete Direct '
-                   'skip its confirmation). Press and release that key on the keyboard, check `modifiers.sh state` '
-                   'shows no modifier, then rerun')
+                   'skip its confirmation). Release it (press and release that key on the keyboard, or `modifiers.sh '
+                   'release <key>` when no one is holding it), check `modifiers.sh state` shows no modifier, record it '
+                   'under Script problems, then rerun')
 
 
 COMPRESS_ONE = re.compile(r'Compress “(.+)”')
@@ -883,7 +884,7 @@ CALIBRATION_STEPS = (
     ('choose', 'ui.sh choose'),
     ('choose-multi', 'ui.sh choose (several targets)'),
     ('option-menu', 'ui.sh open-menu --option'),
-    ('modifiers-after-option', 'ui.sh open-menu --option and choose --option (Option not released)'),
+    ('modifiers-after-option', 'ui.sh choose --option and open-menu --option (Option not released)'),
     ('background-menu', 'ui.sh open-menu --background'),
     ('background-choose', 'ui.sh choose --background --sub'),
     ('dialog-read', 'ui.sh dialog'),
