@@ -198,15 +198,20 @@ extension FileOperations {
         var ancestor = url
         while true {
             if try moveFacts(of: ancestor).package { return .package }
-            // Detect the well-known Trash entry by name plus its PARENT identity,
-            // avoiding a traversal into a privacy-protected Trash just to classify it.
+            // Be conservative: dotted Trash names anywhere in the ancestry
+            // include iCloud Drive and providers, not just home/volume Trash.
             let parent = ancestor.deletingLastPathComponent().standardizedFileURL
-            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame,
-               try sameItem(parent, accountHomeDirectory()),
-               try ancestor.lastPathComponent == ".Trash" || !moveFacts(of: parent).caseSensitiveNames { return .trash }
-            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trashes") == .orderedSame,
-               try moveFacts(of: parent).mountPoint,
-               try ancestor.lastPathComponent == ".Trashes" || !moveFacts(of: parent).caseSensitiveNames { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trashes") == .orderedSame { return .trash }
+            // Plain Trash is reserved only immediately inside a CloudStorage
+            // provider root. Ordinary folders with that name remain allowed.
+            if ancestor.lastPathComponent.caseInsensitiveCompare("Trash") == .orderedSame {
+                let storage = parent.deletingLastPathComponent().standardizedFileURL
+                if storage.lastPathComponent.caseInsensitiveCompare("CloudStorage") == .orderedSame,
+                   try sameItem(storage, accountHomeDirectory().appendingPathComponent("Library/CloudStorage")) {
+                    return .trash
+                }
+            }
             for trash in knownTrash where FileManager.default.fileExists(atPath: trash.path) {
                 if try sameItem(ancestor, trash) { return .trash }
             }
