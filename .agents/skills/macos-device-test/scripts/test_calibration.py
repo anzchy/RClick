@@ -3,6 +3,7 @@ $RUN_DIR/fixtures/, and a cleanup that removes only what this invocation created
 import contextlib
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -300,6 +301,23 @@ class CalibrationThroughTheRealDriver(unittest.TestCase):
         self.assertIn('Compress 2 Items', results['choose-multi'][1])
         self.assertTrue((self.run.folder / 'untitled.txt').exists())
 
+    def test_the_modifier_steps_read_the_hid_state_through_the_driver(self):
+        """Fix r5 item 3: the step after option-menu and the last step FAIL while a modifier is held, PASS when not."""
+        names = [name for name, _ in finderui.CALIBRATION_STEPS]
+        for step in ('modifiers-after-option', 'modifiers-end'):
+            with self.subTest(step=step):
+                self.assertIn(step, names, f'calibration has no {step} step')
+                method = getattr(self.run, step.replace('-', '_'))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.desktop.hid_flags |= 0x80000
+                    self.run.step(step, method)
+                    self.desktop.hid_flags &= ~0x80000
+                    self.run.step(step, method)
+                dirty, clean = [result for result in self.run.results if result[0] == step][-2:]
+                self.assertEqual(dirty[1], 'FAIL', dirty)
+                self.assertIn('Option held down', dirty[2])
+                self.assertEqual(clean[1], 'PASS', clean)
+
     def test_the_option_step_leaves_no_option_held_so_the_next_plain_menu_is_plain(self):
         """Fix r5 item 1, the device run of 2026-11-18: after option-menu every plain right-click showed `Delete
         Direct (skip confirmation)`; flags 0x20080000 were left in the HID system state."""
@@ -332,6 +350,7 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.run_dir = Path(temp.name).resolve()  # device.run_dir resolves /var → /private/var
         self.fail_on = set()
         self.calls, self.scripts = [], []
+        self.hid_flags = 0x20000000  # what `modifiers.sh state` answers: no modifier held
         patches = [mock.patch.dict(os.environ, {}, clear=False),
                    mock.patch.object(calibration.time, 'sleep', lambda seconds: None),
                    mock.patch.object(finderdrive, 'require_lock', lambda: None),
@@ -356,7 +375,8 @@ class TeardownAlwaysCleans(unittest.TestCase):
 
     def fake_run(self, argv, timeout=20):
         self.transport(Path(str(argv[0])).name)
-        return subprocess.CompletedProcess([str(a) for a in argv], 0, '', '')
+        out = f'flags=0x{self.hid_flags:x}\n' if Path(str(argv[0])).name == 'modifiers.sh' else ''
+        return subprocess.CompletedProcess([str(a) for a in argv], 0, out, '')
 
     def fake_osascript(self, script, *args, timeout=20):
         if script == calibration.FRONT_WINDOW_SCRIPT:
@@ -462,6 +482,38 @@ class TeardownAlwaysCleans(unittest.TestCase):
         self.assertEqual(code, finderui.REFUSED, out)
         self.assertRegex(out, r'(?m)^FAIL context-menu — the menu did not open$')
         self.assertRegex(out, r'(?m)^PASS dialog-read — stub$')
+
+    def test_a_modifier_held_at_the_start_stops_the_calibration_before_any_fixture(self):
+        """Fix r5 item 2: a calibration that starts with a stuck modifier would click with it held."""
+        self.hid_flags |= 0x80000
+        code, out = self.calibrate()
+        self.assertEqual(code, finderui.ENVIRONMENT, out)
+        self.assertRegex(out, r'(?m)^FAIL modifiers-start — Option held down')
+        self.assertRegex(out, r'(?m)^SKIP option-menu — blocked by modifiers-start$')
+        self.assertRegex(out, r'(?m)^CALIBRATION FAIL — environment \(modifiers-start\)')
+        self.assertNotIn('open', self.calls, 'the fixture window was opened')
+        self.assertEqual(self.fixture_folders(), [])
+
+    def test_the_modifier_steps_run_after_option_menu_and_last(self):
+        code, out = self.calibrate()
+        self.assertEqual(code, finderui.OK, out)
+        steps = re.findall(r'(?m)^(?:PASS|FAIL|SKIP) (\S+) — ', out.split('\n---\n')[1])
+        self.assertEqual(len(steps), 21)
+        self.assertEqual(steps[steps.index('option-menu') + 1], 'modifiers-after-option')
+        self.assertEqual(steps[-1], 'modifiers-end')
+        self.assertRegex(out, r'(?m)^PASS modifiers-end — no Shift, Control, Option or Command held at the end')
+        self.assertRegex(out, r'(?m)^CALIBRATION PASS \(21 steps\)')
+
+    def test_a_modifier_left_held_by_a_step_fails_the_step_after_option_menu_and_the_last_one(self):
+        def option_menu(run):
+            self.hid_flags |= 0x80000  # the Option of 09eee72's rightclick.sh, never released
+            return 'stub'
+        with mock.patch.object(calibration.Run, 'option_menu', option_menu):
+            code, out = self.calibrate()
+        self.assertEqual(code, finderui.REFUSED, out)
+        self.assertRegex(out, r'(?m)^FAIL modifiers-after-option — Option held down .*flags 0x20080000')
+        self.assertRegex(out, r'(?m)^FAIL modifiers-end — Option held down')
+        self.assertRegex(out, r'(?m)^CALIBRATION FAIL — distrust: .*Option not released')
 
     def test_an_interrupt_during_a_step_still_cleans_prints_the_report_and_propagates(self):
         def interrupted(run):
