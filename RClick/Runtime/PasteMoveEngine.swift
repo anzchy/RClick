@@ -22,13 +22,16 @@ extension FileOperations {
     nonisolated func exclusiveRename(from source: URL, to destination: URL) throws {
         try SystemFileOperations().exclusiveRename(from: source, to: destination)
     }
+    nonisolated func waitForCoordination(_ completion: DispatchSemaphore, timeout: TimeInterval) -> DispatchTimeoutResult {
+        completion.wait(timeout: .now() + max(0, timeout))
+    }
     nonisolated func prepareCoordinatedMove(_ source: URL) throws {}
     nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, timeout: TimeInterval) throws {
         let job = MoveCoordinationJob()
         let done = DispatchSemaphore(value: 0)
         // A dedicated Foundation thread keeps blocking file presenters off both
         // the cooperative executor and libdispatch's shared worker pool.
-        Thread.detachNewThread {
+        let worker = Thread {
             var coordinationError: NSError?
             job.coordinator.coordinate(writingItemAt: source, options: .forMoving,
                 writingItemAt: destination, options: [], error: &coordinationError) { from, to in
@@ -51,7 +54,10 @@ extension FileOperations {
             }
             done.signal()
         }
-        if done.wait(timeout: .now() + max(0, timeout)) == .timedOut {
+        worker.qualityOfService = .userInitiated
+        worker.name = "RClick.PasteCoordinator"
+        worker.start()
+        if waitForCoordination(done, timeout: timeout) == .timedOut {
             let moved = job.state.withLock { state in
                 state.cancelled = true // A late accessor can no longer rename.
                 return state.moved

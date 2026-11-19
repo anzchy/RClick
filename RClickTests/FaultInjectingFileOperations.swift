@@ -22,6 +22,7 @@ final class FaultInjectingFileOperations: FileOperations {
         var volumeUUIDs: [String: String] = [:]
         var renameErrors: [String: POSIXErrorCode] = [:]
         var providerRoots: [URL]?
+        var coordinationWait: (@Sendable (DispatchSemaphore, TimeInterval) -> DispatchTimeoutResult)?
         var coordinationHook: (@Sendable (URL) throws -> Void)?
         var destinationRefusals: [String: DestinationRefusal] = [:]
         var facts: [String: MoveFacts] = [:]
@@ -104,6 +105,18 @@ final class FaultInjectingFileOperations: FileOperations {
         return try base.volumeUUID(of: url)
     }
     func failRename(_ source: URL, with code: POSIXErrorCode) { faults.withLock { $0.renameErrors[source.path] = code } }
+    func onNextCoordinationWait(_ wait: @escaping @Sendable (DispatchSemaphore, TimeInterval) -> DispatchTimeoutResult) {
+        faults.withLock { $0.coordinationWait = wait }
+    }
+    func waitForCoordination(_ completion: DispatchSemaphore, timeout: TimeInterval) -> DispatchTimeoutResult {
+        let hook = faults.withLock { state in
+            let wait = state.coordinationWait
+            state.coordinationWait = nil
+            return wait
+        }
+        return hook?(completion, timeout) ?? base.waitForCoordination(completion, timeout: timeout)
+    }
+
     func onNextCoordination(_ action: @escaping @Sendable (URL) throws -> Void) {
         faults.withLock { $0.coordinationHook = action }
     }
