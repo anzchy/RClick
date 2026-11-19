@@ -341,13 +341,14 @@ def open_menu(name, option=False):
 
 
 class MenuSession:
-    """`axprobe menu-session X Y`: one axprobe process finds the menu under the point, prints its owner pid and its
-    dump, and waits for one decision. The press it is then told to make is checked by that same process against the
-    menu it holds (owner pid, every top-level title) right before AXPress, so a menu closed or replaced after the
-    guard is refused (65), never pressed. An abort cancels the held menu (AXCancel)."""
+    """`axprobe menu-session X Y DEPTH OWNER`: one axprobe process finds the menu under the point, prints its owner pid
+    and its dump, and waits for one decision. The press it is then told to make is checked by that same process
+    against the menu it holds (owner pid, every top-level title) right before AXPress, so a menu closed or replaced
+    after the guard is refused (65), never pressed. `abort` cancels the held menu (AXCancel) only when OWNER (Finder)
+    owns it; `abandon` ends the session touching nothing (a menu of another process is never ours to close)."""
 
-    def __init__(self, point):
-        self.process = spawn([probe_binary(), 'menu-session', point[0], point[1], '3'])
+    def __init__(self, point, owner):
+        self.process = spawn([probe_binary(), 'menu-session', point[0], point[1], '3', owner])
         lines = []
         while True:
             line = self.process.stdout.readline()
@@ -382,6 +383,9 @@ class MenuSession:
 
     def abort(self):
         self.finish({'abort': True})
+
+    def abandon(self):
+        self.finish({'abandon': True})
 
     def press(self, item, sub_path, sub_title):
         request = {'press': list(sub_path or item.path), 'title': item.title, 'sub': sub_title if sub_path else None,
@@ -437,14 +441,15 @@ def choose(title, group, sub=None, targets=(), background=None, option=False):
     except ui.Refused as error:
         raise closing(point, error)
     try:
-        session = MenuSession(menu_point)
+        owner = finder_pid()
+        session = MenuSession(menu_point, owner)
     except (ui.Refused, ui.Environment) as error:
         raise closing(menu_point, error)
+    if session.pid != owner:  # not Finder's menu: never ours to cancel, so it is left exactly as it is
+        session.abandon()
+        raise ui.Refused(f'the menu at {menu_point[0]},{menu_point[1]} belongs to pid {session.pid}, not Finder '
+                         f'({owner}): nothing pressed, that menu left open')
     try:
-        owner = finder_pid()
-        if session.pid != owner:
-            raise ui.Refused(f'the menu at {menu_point[0]},{menu_point[1]} belongs to pid {session.pid}, not Finder '
-                             f'({owner})')
         items = ui.menu_items(session.nodes)
         reason = ui.check_guard(targets, selected, items, background=background, front=front)
         item, sub_path = ui.find_group_item(items, title, sub, group)

@@ -10,14 +10,17 @@
 //                                                     starts with the window index
 //   axprobe menu-at X Y MAXDEPTH                      JSON lines of the menu under the screen point; path [] is the menu
 //   axprobe act PID PATH select|press ROLE NAME       PATH like 0.3.1; verifies ROLE and NAME first, else exit 65
-//   axprobe menu-session X Y MAXDEPTH                 the menu under the point: prints {"session":{"pid":N}}, its dump
-//                                                     and {"end":true}, then reads ONE JSON line from stdin:
-//                                                     {"abort":true} (AXCancel on the held menu, then exit 0), or
+//   axprobe menu-session X Y MAXDEPTH PID             the menu under the point: prints {"session":{"pid":N}} (its
+//                                                     owner), its dump and {"end":true}, then reads ONE JSON line:
+//                                                     {"abandon":true} (touch nothing, exit 0), {"abort":true}
+//                                                     (AXCancel on the held menu, exit 0), or
 //                                                     {"press":[i] or [i,0,j],"title":T,"sub":S|null,
 //                                                     "titles":[every top-level title],"pid":N}. Before pressing it
-//                                                     re-reads the menu it HOLDS: same owner pid, same top-level titles,
-//                                                     item i titled T (and j titled S), else AXCancel, exit 65 and
-//                                                     nothing pressed.
+//                                                     re-reads the menu it HOLDS: owner pid N and PID, same top-level
+//                                                     titles, item i titled T (and j titled S), else AXCancel, exit 65
+//                                                     and nothing pressed. No line (EOF) or no JSON: AXCancel, exit 65.
+//                                                     EVERY AXCancel here first checks that PID owns the menu NOW;
+//                                                     a menu of any other process is left open (cancelOwned).
 //   axprobe menu-cancel X Y PID                       AXCancel on the menu under the point when PID owns it (else 65)
 // exit: 0 ok, 64 usage, 65 no such element or it does not match (nothing done), 70 AX error / not trusted / no lock
 // `act`, `menu-session` and `menu-cancel` first run the driver's GUI-lock check (`python3 finderdrive.py lock-check`, its path is
@@ -145,9 +148,13 @@ func perform(_ target: AXUIElement, _ action: String) {
     print("\(action) ok")
 }
 
-/// Closes a menu through Accessibility (no key event, so nothing can land in another app); false when refused.
-func cancel(_ menu: AXUIElement) -> Bool {
-    AXUIElementPerformAction(menu, "AXCancel" as CFString) == .success
+/// Closes a menu through Accessibility (no key event, so nothing can land in another app), and ONLY a menu that
+/// `expected` owns at this moment: the one AXCancel of this file. nil when cancelled, else why nothing was done.
+func cancelOwned(_ menu: AXUIElement, by expected: pid_t) -> String? {
+    var owner: pid_t = 0
+    guard AXUIElementGetPid(menu, &owner) == .success else { return "cannot read the menu's owner pid: left open" }
+    guard owner == expected else { return "the menu belongs to pid \(owner), not \(expected): left open" }
+    return AXUIElementPerformAction(menu, "AXCancel" as CFString) == .success ? nil : "AXCancel on the menu failed"
 }
 
 func requireLock() {
@@ -196,6 +203,7 @@ case "act":
     perform(target, argument(4))
 case "menu-session":
     requireLock()
+    let expected = pid_t(number(5))
     let root = menu(at: Float(number(2)), Float(number(3)))
     var owner: pid_t = 0
     guard AXUIElementGetPid(root, &owner) == .success else { fail(70, "cannot read the menu's owner pid") }
@@ -205,25 +213,25 @@ case "menu-session":
     fflush(stdout)
     guard let line = readLine(), let data = line.data(using: .utf8),
           let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-        _ = cancel(root)
-        fail(65, "no decision from the driver: nothing pressed")
+        fail(65, "no decision from the driver: nothing pressed; " + (cancelOwned(root, by: expected) ?? "menu cancelled"))
     }
-    if request["abort"] != nil { print(cancel(root) ? "aborted: menu cancelled" : "aborted: AXCancel refused"); exit(0) }
+    if request["abandon"] != nil { print("abandoned: menu left as it is"); exit(0) }
+    if request["abort"] != nil { print("aborted: " + (cancelOwned(root, by: expected) ?? "menu cancelled")); exit(0) }
     guard let steps = request["press"] as? [Int], !steps.isEmpty, steps.allSatisfy({ $0 >= 0 }),
           let title = request["title"] as? String, let titles = request["titles"] as? [String],
           let want = request["pid"] as? Int else { fail(64, "malformed press request") }
     var now: pid_t = 0
-    guard AXUIElementGetPid(root, &now) == .success, Int(now) == want else {
+    guard AXUIElementGetPid(root, &now) == .success, Int(now) == want, now == expected else {
         fail(65, "the menu's owner changed since it was verified: nothing pressed")
     }
     let current = children(root).map { string($0, "AXTitle") }
     guard current.count == titles.count, zip(current, titles).allSatisfy({ same($0.0, $0.1) }) else {
-        _ = cancel(root)
+        _ = cancelOwned(root, by: expected)
         fail(65, "the menu changed since it was verified: nothing pressed")
     }
     let item = descend(root, steps.prefix(1))
     guard same(string(item, "AXTitle"), title) else {
-        _ = cancel(root)
+        _ = cancelOwned(root, by: expected)
         fail(65, "menu item is \(string(item, "AXTitle")), not \(title): nothing pressed")
     }
     if steps.count == 1 {
@@ -239,12 +247,11 @@ case "menu-session":
     }
 case "menu-cancel":
     requireLock()
+    let expected = pid_t(number(4))
     let root = menu(at: Float(number(2)), Float(number(3)))
-    var owner: pid_t = 0
-    guard AXUIElementGetPid(root, &owner) == .success, Int(owner) == number(4) else {
-        fail(65, "the menu at the point belongs to pid \(owner), not \(number(4)): nothing cancelled")
+    if let why = cancelOwned(root, by: expected) {
+        fail(why.hasSuffix("left open") ? 65 : 70, why + ": nothing cancelled")
     }
-    guard cancel(root) else { fail(70, "AXCancel on the menu failed") }
     print("cancelled")
 default:
     fail(64, "unknown command \(argument(1))")
