@@ -88,17 +88,18 @@ struct PendingCutTests {
             for enabled in [false, true] {
                 for online in [false, true] {
                     for count in [41, 42] {
-                        let configs: [(MenuConfigPayload, Bool)] = [
-                            (legacy, false),
-                            (MenuConfigPayload(actions: enabled ? [action] : []), enabled),
-                            (MenuConfigPayload(actions: enabled ? [action] : [], cutChangeCount: 42, cutItemCount: 2), enabled),
+                        let configs: [(MenuConfigPayload, Bool, Bool)] = [
+                            (legacy, false, false),
+                            (MenuConfigPayload(actions: enabled ? [action] : []), enabled, false),
+                            (MenuConfigPayload(actions: enabled ? [action] : [], cutChangeCount: 42, cutItemCount: 2), enabled, true),
                         ]
-                        for (config, actionEnabled) in configs {
+                        for (config, actionEnabled, hasCut) in configs {
                             let result = PendingCut.menuVisibility(config: config, menuKind: kind,
                                 selection: selection, currentChangeCount: count, hostOnline: online)
                             #expect(result.cut == (eligible && actionEnabled))
                             #expect(result.cutEnabled == (eligible && actionEnabled && online))
-                            #expect(!result.paste)
+                            let pasteEligible = kind == .contextualContainer || (kind == .contextualItems && selection.count == 1)
+                            #expect(result.paste == (actionEnabled && hasCut && count == 42 && pasteEligible))
                             #expect(!result.undo)
                         }
                     }
