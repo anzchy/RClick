@@ -390,7 +390,9 @@ nonisolated final class Messager: NSObject, Sendable {
                                           newFiles: config.newFiles, commonDirs: config.commonDirs,
                                           actionsCollapsed: config.actionsCollapsed, appsCollapsed: config.appsCollapsed,
                                           newFilesCollapsed: config.newFilesCollapsed, commonDirsCollapsed: config.commonDirsCollapsed,
-                                          iconStyle: config.iconStyle)
+                                          iconStyle: config.iconStyle,
+                                          cutChangeCount: config.cutChangeCount,
+                                          cutItemCount: config.cutItemCount)
         guard let payload = try? JSONEncoder().encode(versioned) else { return }
         state.withLock { $0.lastConfig = payload }
         sendRaw(MainToExtensionAction.menuConfig.rawValue, direction: .toExtension, payload: payload, id: UUID().uuidString)
