@@ -752,6 +752,35 @@ final class IPCAuthenticationTests: XCTestCase {
 
 @MainActor
 final class ClickAckAdmissionTests: XCTestCase {
+    func testHandlerEntersBeforeQueuedMainActorRotation() async {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        app.sendRunningNotification()
+        let session = app.currentSession
+        let rotated = expectation(description: "queued MainActor rotation completed")
+        let entered = expectation(description: "handler entered in its authenticated session")
+        ext.onMainMessage(.actionAck) { _ in
+            // This turn must wait until admission invokes the handler. A Task
+            // wrapping that invocation would let this rotation overtake it.
+            Task { @MainActor in
+                clock.step(wall: 0, monotonic: 16)
+                app.sendRunningNotification()
+                rotated.fulfill()
+            }
+        }
+        app.onClickEvent { _ in
+            XCTAssertEqual(app.currentSession, session, "handler must enter before the queued rotation")
+            entered.fulfill()
+        }
+        ext.sendClickEvent(ClickEventPayload(itemId: "delete-direct", itemType: .action,
+                                            trigger: .contextualItems))
+        await fulfillment(of: [entered, rotated], timeout: 1)
+        XCTAssertNotEqual(app.currentSession, session, "the queued rotation must actually run")
+    }
+
     func testReadableKeyReplacementBeforeAckRetainsClickDeadline() async {
         let center = NotificationCenter()
         let clock = TestIPCClock(wall: 100, monotonic: 200)
