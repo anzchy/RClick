@@ -257,12 +257,12 @@ class FakeDesktop:
 
     def modifiers(self, argv):
         if argv[1:] == ['state']:
-            return self.completed(argv, f'flags=0x{self.hid_flags:x}\n')
+            return self.completed(argv, f'flags=0x{self.hid_flags:x} hid=0x{self.hid_flags:x} session=0x0\n')
         if argv[1] == 'release' and argv[2:]:
             self.releases.append(argv[2:])
             if self.release_works and 'option' in argv[2:]:
                 self.hid_flags &= ~self.OPTION
-            return self.completed(argv, f'flags=0x{self.hid_flags:x}\n')
+            return self.completed(argv, f'flags=0x{self.hid_flags:x} hid=0x{self.hid_flags:x} session=0x0\n')
         return self.completed(argv, '', 2, 'usage: modifiers.sh state | release MODIFIER...\n')
 
     def executable_of(self, pid):

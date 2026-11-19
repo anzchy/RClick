@@ -8,9 +8,10 @@ targets, open-menu --option and --background, choose --background --sub), each a
 itself. No step calls Finder through AppleScript while a menu it opened may be open (Finder answers none then:
 device run, 2026-11-18); a failed step closes its menus through `close-menu` (AXCancel, Esc fallback).
 
-The HID modifier state (`modifiers.sh state`, a read) is checked three times: before anything (modifiers-start, an
-environment step: a held Shift, Control, Option or Command stops the calibration), right after option-menu
-(modifiers-after-option: the Option it posted was released) and last (modifiers-end). 21 steps in all.
+The modifier state (`modifiers.sh state`, a read of the HID | combined session state) is checked three times: before
+anything (modifiers-start, an environment step: a held Shift, Control, Option or Command stops the calibration), right
+after option-menu (modifiers-after-option: the Option it posted was released) and last (modifiers-end). 21 steps in
+all.
 
 Side effects on the desktop, all under the GUI lock: opens and closes one Finder window on the fixture folder (list
 view), selects in it, opens context menus there (one with Option held, two on the window background), chooses
@@ -339,8 +340,8 @@ class Run:
         return 'ui.sh choose with two targets: Compress 2 Items; pbpaste holds both paths, one per line'
 
     def modifiers_clean(self, when):
-        """The HID modifier state read through `modifiers.sh state` (no event posted): Refused when Shift, Control,
-        Option or Command is held (device run, 2026-11-18: Option stayed set after option-menu)."""
+        """The modifier state (HID | combined session) read through `modifiers.sh state` (no event posted): Refused
+        when Shift, Control, Option or Command is held (device run, 2026-11-18: Option stayed set after option-menu)."""
         flags, held = drive.modifier_state()
         if held:
             raise ui.dirty_input(flags, held, f'{when}; every later click or press refuses until it is released')

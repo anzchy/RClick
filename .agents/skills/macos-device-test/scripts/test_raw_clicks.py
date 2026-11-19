@@ -10,12 +10,18 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import calibration  # noqa: E402
+import finderdrive  # noqa: E402
+import finderui  # noqa: E402
 
 SHIFT, CONTROL, OPTION, COMMAND = 0x20000, 0x40000, 0x80000, 0x100000
 DEVICE_BIT = 0x20000000  # set beside Option on the device run; not a key
@@ -256,6 +262,52 @@ class RawOptionClickCleansUpOnItsOwnSignals(Checks):
                 events = len(desk.state()['events'])
                 time.sleep(1.3)
                 self.assertEqual(len(desk.state()['events']), events, 'the child lived on and posted after the exit')
+
+
+class TheStateReadIsHidOrSession(Checks):
+    """opus M2: the extension takes Option as held when NSEvent.modifierFlags, the current event, the combined
+    session state OR the HID state has it (FinderSyncExt.swift isOptionKeyPressed). 46e9c2e read the HID state only,
+    so a modifier set in the combined session state alone passed every check. One read, `modifiers.sh state`
+    (flags = HID | combined session), serves the raw scripts, the ui.sh preflight and calibration's modifier steps."""
+
+    def test_modifiers_sh_state_reports_both_and_their_union(self):
+        desk = Desk(self, hid=DEVICE_BIT, session=OPTION)
+        code, out, err = desk.run('modifiers.sh', 'state')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(finderui.held_modifiers(out), (DEVICE_BIT | OPTION, ['Option']))
+        self.assertIn('hid=0x20000000', out)
+        self.assertIn('session=0x80000', out)
+
+    def test_a_state_line_that_is_not_the_union_or_names_one_state_only_is_unknown(self):
+        for text in ('flags=0x20000000', 'flags=0x20000000 hid=0x20000000 session=0x80000',
+                     'flags=0x20080000 hid=0x20000000', ''):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(finderui.Environment, 'modifier state is unknown'):
+                    finderui.held_modifiers(text)
+
+    def test_the_raw_scripts_refuse_a_modifier_held_only_in_the_session_state(self):
+        for argv in CLICKS:
+            for name, flags in HELD[:4]:
+                with self.subTest(script=' '.join(argv), held=name):
+                    desk = Desk(self, hid=DEVICE_BIT, session=flags)
+                    code, _, err = desk.run(*argv)
+                    self.assert_untouched(desk, code, err)
+                    self.assertIn(f'{name} held down', err)
+
+    def test_the_ui_sh_preflight_and_calibration_steps_refuse_it_too(self):
+        desk = Desk(self, hid=DEVICE_BIT, session=OPTION)
+        temp = tempfile.TemporaryDirectory(prefix='rclick-cal-')
+        self.addCleanup(temp.cleanup)
+        with mock.patch.dict(os.environ, PATH=desk.env['PATH'], FAKE_HID_STATE=desk.env['FAKE_HID_STATE']):
+            self.assertEqual(finderdrive.modifier_state(), (DEVICE_BIT | OPTION, ['Option']))
+            with self.assertRaisesRegex(finderui.Refused, 'Option held down'):
+                finderdrive.require_clean_input('nothing clicked')
+            run = calibration.Run(temp.name, ('Copy Path', 'Delete Direct'))
+            with self.assertRaisesRegex(finderui.Refused, 'Option held down'):
+                run.modifiers_after_option()
+            with self.assertRaisesRegex(finderui.Environment, 'Option held down'):
+                run.modifiers_start()
+        self.assertEqual(desk.state()['events'], [], 'a read posted an event')
 
 
 if __name__ == '__main__':

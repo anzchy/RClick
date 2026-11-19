@@ -375,7 +375,8 @@ class TeardownAlwaysCleans(unittest.TestCase):
 
     def fake_run(self, argv, timeout=20):
         self.transport(Path(str(argv[0])).name)
-        out = f'flags=0x{self.hid_flags:x}\n' if Path(str(argv[0])).name == 'modifiers.sh' else ''
+        out = (f'flags=0x{self.hid_flags:x} hid=0x{self.hid_flags:x} session=0x0\n'
+               if Path(str(argv[0])).name == 'modifiers.sh' else '')
         return subprocess.CompletedProcess([str(a) for a in argv], 0, out, '')
 
     def fake_osascript(self, script, *args, timeout=20):

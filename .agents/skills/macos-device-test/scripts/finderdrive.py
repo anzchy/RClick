@@ -342,7 +342,7 @@ MODIFIERS = HERE / 'modifiers.sh'
 
 
 def modifier_state():
-    """(flags, held names) of the HID system state through `modifiers.sh state` (a read: no event is posted)."""
+    """(flags, held names) of the HID | combined session state through `modifiers.sh state` (a read: no event)."""
     result = run([MODIFIERS, 'state'], timeout=10)
     if result.returncode != 0:
         raise ui.Environment('modifiers.sh state failed: ' + (result.stderr.strip() or f'exit {result.returncode}'))
@@ -350,9 +350,9 @@ def modifier_state():
 
 
 def require_clean_input(doing):
-    """Fail closed (Refused, 65) when the HID system state holds Shift, Control, Option or Command: at every check
-    this process holds none of its own (pressing releases them before it returns), so a held one is stuck or someone
-    else's, and it would change what the click or press does. A read only: nothing is posted."""
+    """Fail closed (Refused, 65) when the HID or the combined session state holds Shift, Control, Option or Command:
+    at every check this process holds none of its own (pressing releases them before it returns), so a held one is
+    stuck or someone else's, and it would change what the click or press does. A read only: nothing is posted."""
     flags, held = modifier_state()
     if held:
         raise ui.dirty_input(flags, held, doing)
