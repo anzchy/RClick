@@ -497,4 +497,28 @@ struct PasteActionServiceTests {
         } else { #expect(FileManager.default.fileExists(atPath: first.path)) }
     }
 
+    @Test(arguments: ["outside", "same-container", "other-container"])
+    func providerFallbackPreservesContainerBoundary(destinationKind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let cloud = f.source.appendingPathComponent("CloudStorage")
+        let provider = cloud.appendingPathComponent("ProviderA")
+        let folder = provider.appendingPathComponent("source")
+        let destination = destinationKind == "outside" ? f.destination :
+            (destinationKind == "same-container" ? provider : cloud.appendingPathComponent("ProviderB")).appendingPathComponent("destination")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("cloud.txt")
+        try Data("cloud".utf8).write(to: file)
+        f.operations.setProviderRoots([cloud])
+        await f.cut([file]); await f.paste(destination)
+        if destinationKind == "same-container" {
+            #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("cloud.txt").path))
+            #expect(f.warnings.isEmpty)
+        } else {
+            #expect(FileManager.default.fileExists(atPath: file.path))
+            #expect(f.operations.renameCalls.isEmpty)
+            #expect(f.warnings.first?.contains("cloud container") == true)
+        }
+    }
+
 }

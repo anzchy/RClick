@@ -10,6 +10,7 @@
 import Foundation
 
 nonisolated protocol FileOperations: Sendable {
+    func providerRootCandidates() -> [URL]
     func moveFacts(of url: URL) throws -> MoveFacts
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal?
     func exclusiveRename(from source: URL, to destination: URL) throws
