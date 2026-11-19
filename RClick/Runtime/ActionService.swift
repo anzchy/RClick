@@ -371,7 +371,11 @@ final class ActionService {
                     }
                     if let container = facts.providerContainer {
                         guard try operations.contains(container, destination) else { throw PasteMoveError.cloud }
-                    } else if facts.ubiquitous { throw PasteMoveError.cloud }
+                    } else if facts.ubiquitous {
+                        // Ubiquitous Desktop/Documents can live outside Mobile Documents.
+                        // With no known root, only a ubiquitous destination is safe.
+                        guard try operations.moveFacts(of: destination).ubiquitous else { throw PasteMoveError.cloud }
+                    }
                     let plainFolder = facts.directory && !facts.package
                     let stableIdentity = try operations.stableMoveIdentity(of: source)
                     var number = 1
