@@ -84,4 +84,16 @@ struct PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
         #expect(f.warnings.isEmpty)
     }
+    @Test func clashesRetryWithoutReplacingFilesCreatedAtRename() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        try Data("keep second".utf8).write(to: f.destination.appendingPathComponent("notes 2.txt"))
+        f.operations.createClashAtRename(f.destination.appendingPathComponent("notes.txt"))
+        await f.cut([file]); await f.paste()
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes.txt")) == Data("racing owner".utf8))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes 2.txt")) == Data("keep second".utf8))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes 3.txt")) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
+
 }
