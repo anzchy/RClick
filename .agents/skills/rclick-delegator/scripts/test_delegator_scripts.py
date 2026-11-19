@@ -1244,6 +1244,40 @@ class OwnerGatesTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("scripts/gates.sh missing", self.summary())
 
+    # #17: a failed lane's own log (.build/gates/<lane>.log in the scratch tree) is kept before the scratch is removed.
+    TRACEBACK = ("Traceback (most recent call last):\n  File \"test_delegator_scripts.py\", line 9, in test_x\n"
+                 "subprocess.TimeoutExpired: Command 'zsh' timed out after 5 seconds\n")
+
+    @staticmethod
+    def write_lane_log(lane, text):
+        # The fake gates.sh runs in the scratch tree, like the real one, and writes the lane log where gates.sh does.
+        return f"mkdir -p .build/gates\ncat > .build/gates/{lane}.log <<'EOF'\n{text}EOF\n"
+
+    def failure_log(self, lane):
+        return self.out / f"t99-r1-{lane}-failure.log"
+
+    def test_a_failed_lane_keeps_its_own_log_with_a_load_header(self):
+        self.commit_gates(self.write_lane_log("skill-tooling", "### python -m unittest x\n" + self.TRACEBACK)
+                          + "echo 'GATE build PASS'\necho 'GATE skill-tooling FAIL (1 of 3 test files)'\n"
+                            "echo '  .agents/skills/rclick-delegator/scripts/test_delegator_scripts.py'\n"
+                            "echo 'GATES FAIL'\n", exit_code=1)
+        result = self.run_gates("0")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        summary = self.summary()
+        self.assertTrue(summary.rstrip().endswith("DONE overall=1"), summary)
+        kept = self.failure_log("skill-tooling")
+        self.assertIn(f"lane skill-tooling failure-log={kept}\n", summary)
+        text = kept.read_text()
+        header, _, body = text.partition("\n---\n")
+        self.assertIn(f"commit: {self.sha}", header)
+        self.assertIn("lane: skill-tooling", header)
+        self.assertRegex(header, r"(?m)^loadavg: \S")
+        self.assertRegex(header, r"(?m)^ncpu: \S")
+        self.assertRegex(header, r"(?m)^uptime: \S")
+        self.assertIn("GATE skill-tooling FAIL (1 of 3 test files)", header)
+        self.assertIn(".agents/skills/rclick-delegator/scripts/test_delegator_scripts.py", header)
+        self.assertIn(self.TRACEBACK, body)
+
 
 class CodexNoQuestionsTests(unittest.TestCase):
     """Codex panes must not stall on a sub-agent question nobody watches."""
