@@ -120,6 +120,7 @@ nonisolated struct SystemFileOperations: FileOperations {
 
 /// 一次文件动作的结果：哪些路径做成了，哪些失败了以及原因。
 nonisolated struct FileActionResult: Sendable {
+    var journalNeedsRecovery = false
     var completed: [String] = []
     var failures: [FileActionFailure] = []
 }
