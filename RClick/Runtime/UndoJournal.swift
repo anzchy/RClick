@@ -21,6 +21,9 @@ nonisolated struct MoveJournal: Codable, Sendable {
     var previous: [MoveJournalEntry]
     var entries: [MoveJournalEntry]
     var inProgress: Bool
+    // Separate from the last Paste's undo record. Retain unresolved older work
+    // (and subsequently recovered moves) until its original 24-hour expiry.
+    var deferred: [MoveJournalEntry]?
     init(previous: [MoveJournalEntry] = [], entries: [MoveJournalEntry] = [], inProgress: Bool = false) {
         version = 1; self.previous = previous; self.entries = entries; self.inProgress = inProgress
     }
@@ -29,6 +32,24 @@ nonisolated struct MoveJournal: Codable, Sendable {
 nonisolated protocol UndoJournalStore: Sendable {
     func load() throws -> MoveJournal?
     func save(_ journal: MoveJournal) throws
+}
+
+nonisolated enum JournalFailure: Error {
+    case discarded, unreadable, writeFailed
+}
+
+extension UndoJournalStore {
+    nonisolated func persist(_ journal: MoveJournal) throws {
+        do { try save(journal) }
+        catch { throw JournalFailure.writeFailed }
+    }
+}
+
+nonisolated struct JournalRecoveryReport: Sendable {
+    var missingAccess = 0
+    var ambiguous = 0
+    var unreadable = 0
+    var pruned = 0
 }
 
 import Darwin
@@ -49,6 +70,16 @@ nonisolated struct AtomicUndoJournalStore: UndoJournalStore {
             guard journal.version == 1 else { throw CocoaError(.coderReadCorrupt) }
             return journal
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
+        catch {
+            // Rename does not require reading the damaged file. Keep exactly one
+            // quarantined predecessor, including for unknown schema versions.
+            let quarantine = url.appendingPathExtension("unrecoverable")
+            let result = url.withUnsafeFileSystemRepresentation { from in
+                quarantine.withUnsafeFileSystemRepresentation { to in rename(from, to) }
+            }
+            guard result == 0 else { throw JournalFailure.unreadable }
+            throw JournalFailure.discarded
+        }
     }
     func save(_ journal: MoveJournal) throws {
         let temporary = url.deletingLastPathComponent().appendingPathComponent(".paste-journal-\(UUID()).tmp")
@@ -89,25 +120,48 @@ extension FileOperations {
 extension MoveJournal {
     /// Recovery never moves files. An interrupted intent becomes eligible only
     /// when the destination is the recorded object and the original is absent.
-    nonisolated mutating func reconcile(using operations: any FileOperations, at now: Date) throws {
-        entries.removeAll { now.timeIntervalSince($0.timestamp) >= 86400 || $0.timestamp > now }
-        previous.removeAll { now.timeIntervalSince($0.timestamp) >= 86400 || $0.timestamp > now }
-        if inProgress {
-            for index in entries.indices where entries[index].outcome == .intended {
-                let entry = entries[index]
-                let source = try operations.stableIdentityIfPresent(URL(fileURLWithPath: entry.originalPath))
-                let destination = try operations.stableIdentityIfPresent(URL(fileURLWithPath: entry.movedToPath))
-                if source == nil && destination == entry.identity { entries[index].outcome = .moved }
-                else if source == entry.identity || destination == nil { entries[index].outcome = .failed }
-                // Both locations occupied, a replacement, or an inode reuse is
-                // ambiguous. Preserve the intent and refuse a new Paste.
+    @discardableResult
+    nonisolated mutating func reconcile(using operations: any FileOperations, at now: Date,
+        accessibleDirectories: Set<String>? = nil) throws -> JournalRecoveryReport {
+        var report = JournalRecoveryReport()
+        let before = entries.count + previous.count + (deferred?.count ?? 0)
+        func expired(_ entry: MoveJournalEntry) -> Bool {
+            now.timeIntervalSince(entry.timestamp) >= 86400 || entry.timestamp > now
+        }
+        entries.removeAll(where: expired)
+        previous.removeAll(where: expired)
+        var retained = deferred ?? []
+        retained.removeAll(where: expired)
+        report.pruned = before - entries.count - previous.count - retained.count
+        func recover(_ entry: inout MoveJournalEntry) {
+            guard entry.outcome == .intended else { return }
+            let source = URL(fileURLWithPath: entry.originalPath)
+            let destination = URL(fileURLWithPath: entry.movedToPath)
+            if let accessibleDirectories,
+               ![source, destination].allSatisfy({ accessibleDirectories.contains($0.deletingLastPathComponent().path) }) {
+                report.missingAccess += 1
+                return
             }
-            guard !entries.contains(where: { $0.outcome == .intended }) else { return }
+            do {
+                let original = try operations.stableIdentityIfPresent(source)
+                let moved = try operations.stableIdentityIfPresent(destination)
+                if original == nil && moved == entry.identity { entry.outcome = .moved }
+                else if original == entry.identity && moved == nil { entry.outcome = .failed }
+                else { report.ambiguous += 1 }
+            } catch { report.unreadable += 1 }
+        }
+        for index in retained.indices { recover(&retained[index]) }
+        retained.removeAll { $0.outcome == .failed }
+        if inProgress {
+            for index in entries.indices { recover(&entries[index]) }
+            retained += entries.filter { $0.outcome == .intended }
             let moved = entries.filter { $0.outcome == .moved }
             entries = moved.isEmpty ? previous : moved
             previous = []
             inProgress = false
         }
+        deferred = retained.isEmpty ? nil : retained
+        return report
     }
 }
 

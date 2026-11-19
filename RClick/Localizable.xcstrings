@@ -1,6 +1,210 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "A previous move could not be fully recovered; its undo information was discarded": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A previous move could not be fully recovered; its undo information was discarded"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "先前的移动未能完全恢复；其撤销信息已丢弃"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "以前の移動を完全に復旧できなかったため、取り消し情報を破棄しました"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No se pudo recuperar por completo un traslado anterior; se descartó su información para deshacer"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un déplacement précédent n’a pas pu être entièrement récupéré ; ses informations d’annulation ont été supprimées"
+        }
+      }
+    }
+  },
+  "The move journal could not be read or quarantined; check its folder access": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The move journal could not be read or quarantined; check its folder access"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "无法读取或隔离移动日志；请检查其文件夹访问权限"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "移動履歴を読み取りまたは隔離できませんでした。フォルダのアクセス権を確認してください"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No se pudo leer ni aislar el registro de traslados; comprueba el acceso a su carpeta"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le journal des déplacements n’a pas pu être lu ou isolé ; vérifiez l’accès à son dossier"
+        }
+      }
+    }
+  },
+  "The move journal could not be saved; no further files can be moved until it is writable": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The move journal could not be saved; no further files can be moved until it is writable"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "无法保存移动日志；在日志可写之前无法继续移动文件"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "移動履歴を保存できませんでした。書き込みが可能になるまでファイルを移動できません"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No se pudo guardar el registro; no se pueden trasladar más archivos hasta que se pueda escribir"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le journal n’a pas pu être enregistré ; aucun autre fichier ne peut être déplacé tant qu’il n’est pas accessible en écriture"
+        }
+      }
+    }
+  },
+  "A previous move is awaiting recovery because folder access is missing; its undo information is retained for 24 hours": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A previous move is awaiting recovery because folder access is missing; its undo information is retained for 24 hours"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "先前的移动因缺少文件夹访问权限而等待恢复；其撤销信息将保留24小时"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "フォルダのアクセス権がないため以前の移動の復旧を保留しています。取り消し情報は24時間保持されます"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un traslado anterior espera recuperación por falta de acceso a la carpeta; su información para deshacer se conserva durante 24 horas"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un déplacement précédent attend sa récupération faute d’accès au dossier ; ses informations d’annulation sont conservées pendant 24 heures"
+        }
+      }
+    }
+  },
+  "A previous move is awaiting recovery because its locations are ambiguous; its undo information is retained for 24 hours": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A previous move is awaiting recovery because its locations are ambiguous; its undo information is retained for 24 hours"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "先前的移动因位置不明确而等待恢复；其撤销信息将保留24小时"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "移動先を特定できないため以前の移動の復旧を保留しています。取り消し情報は24時間保持されます"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un traslado anterior espera recuperación porque sus ubicaciones son ambiguas; su información para deshacer se conserva durante 24 horas"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un déplacement précédent attend sa récupération car ses emplacements sont ambigus ; ses informations d’annulation sont conservées pendant 24 heures"
+        }
+      }
+    }
+  },
+  "A previous move is awaiting recovery because its files could not be read; its undo information is retained for 24 hours": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A previous move is awaiting recovery because its files could not be read; its undo information is retained for 24 hours"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "先前的移动因无法读取文件而等待恢复；其撤销信息将保留24小时"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "ファイルを読み取れないため以前の移動の復旧を保留しています。取り消し情報は24時間保持されます"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un traslado anterior espera recuperación porque no se pudieron leer sus archivos; su información para deshacer se conserva durante 24 horas"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un déplacement précédent attend sa récupération car ses fichiers sont illisibles ; ses informations d’annulation sont conservées pendant 24 heures"
+        }
+      }
+    }
+  },
     "The move completed, but its journal needs recovery at the next launch": {
       "extractionState": "manual",
       "localizations": {
