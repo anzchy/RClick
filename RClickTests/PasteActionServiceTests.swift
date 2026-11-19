@@ -70,6 +70,15 @@ struct PasteActionServiceTests {
         let date = Mutex(Date(timeIntervalSince1970: 100000))
         func now() -> Date { date.withLock { $0 } }
     }
+    @MainActor final class FailingCutBoard: CutPasteboard {
+        let board: NSPasteboard
+        var rejectWrites = false
+        init(_ board: NSPasteboard) { self.board = board }
+        var changeCount: Int { board.changeCount }
+        var types: [NSPasteboard.PasteboardType]? { board.types }
+        func prepareForNewContents(with options: NSPasteboard.ContentsOptions) -> Int { board.prepareForNewContents(with: options) }
+        func writeObjects(_ objects: [any NSPasteboardWriting]) -> Bool { !rejectWrites && board.writeObjects(objects) }
+    }
     @MainActor final class Fixture {
         let root: URL
         let source: URL
@@ -79,12 +88,13 @@ struct PasteActionServiceTests {
         let termination = ManualTermination()
         let clock = Clock()
         let journal = JournalStore()
+        lazy var cutBoard = FailingCutBoard(board)
         let permission = Permission()
         let leaser = Leaser()
         let operations = FaultInjectingFileOperations()
         var warnings: [String] = []
         lazy var service = ActionService(state: State(), permission: permission, confirmation: Confirmation(),
-            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: journal, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
+            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: journal, cutPasteboard: cutBoard, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
             cutWarning: { [weak self] in self?.warnings.append($0) })
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-paste-\(UUID())").resolvingSymlinksInPath()
@@ -297,6 +307,18 @@ struct PasteActionServiceTests {
         #expect(f.warnings.isEmpty)
         #expect(f.service.pendingCut == nil)
         #expect(f.journal.load()?.entries.count == 2)
+        #expect(f.leaser.balance == 0)
+    }
+
+    @Test func failedClipboardRewriteDisablesPendingPaste() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file(); await f.cut([file])
+        try FileManager.default.removeItem(at: file)
+        f.cutBoard.rejectWrites = true
+        await f.paste()
+        #expect(f.service.pendingCut == nil)
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(f.warnings.count == 1)
         #expect(f.leaser.balance == 0)
     }
 

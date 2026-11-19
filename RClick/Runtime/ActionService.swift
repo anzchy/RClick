@@ -27,6 +27,7 @@ final class ActionService {
     private var terminationPending = false
     private var terminationReply: (@MainActor () -> Void)?
     private let journalStore: (any UndoJournalStore)?
+    private let cutPasteboard: any CutPasteboard
     private let pasteboard: NSPasteboard
     private let cutWarning: (String) -> Void
     private let cutVolumeIsReadOnly: (URL) -> Bool
@@ -49,6 +50,7 @@ final class ActionService {
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
         revealNewFile: ((URL) -> Void)? = nil,
         journalStore: (any UndoJournalStore)? = nil,
+        cutPasteboard: (any CutPasteboard)? = nil,
         terminationBoundary: any MoveTerminationBoundary = SystemMoveTerminationBoundary(),
         quitWait: TimeInterval = 35,
         coordinationTimeout: TimeInterval = 30,
@@ -65,6 +67,7 @@ final class ActionService {
         self.quitWait = quitWait
         self.coordinationTimeout = coordinationTimeout
         self.journalStore = journalStore
+        self.cutPasteboard = cutPasteboard ?? pasteboard
         self.pasteboard = pasteboard
         self.now = now
         self.accessLeaser = accessLeaser
@@ -91,7 +94,7 @@ final class ActionService {
     private var cutRecord: CutRecord?
     private var preparingCut = false
     var pendingCut: CutRecord? {
-        guard let cutRecord, PendingCut(pasteboard: pasteboard).isStillPending(cutRecord.changeCount) else { return nil }
+        guard let cutRecord, PendingCut(pasteboard: cutPasteboard).isStillPending(cutRecord.changeCount) else { return nil }
         return cutRecord
     }
 
@@ -309,7 +312,7 @@ final class ActionService {
             guard await permission.promptForPermission(for: directory) != nil else { return }
         }
         guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
-        guard cutRecord?.changeCount == record.changeCount, pasteboard.changeCount == record.changeCount else {
+        guard cutRecord?.changeCount == record.changeCount, cutPasteboard.changeCount == record.changeCount else {
             cutRecord = nil
             cutWarning(AppLocalization.localized("The cut has ended"))
             return
@@ -402,14 +405,14 @@ final class ActionService {
             return result
         }
         // This is an ownership check, not a pasteboard compare-and-swap.
-        if pasteboard.changeCount != record.changeCount {
+        if cutPasteboard.changeCount != record.changeCount {
             cutRecord = nil
         } else if result.failures.isEmpty {
-            pasteboard.clearContents()
+            _ = cutPasteboard.prepareForNewContents(with: .currentHostOnly)
             cutRecord = nil
         } else {
             let failedPaths = result.failures.map(\.path)
-            if let count = PendingCut(pasteboard: pasteboard).writeCut(failedPaths) {
+            if let count = PendingCut(pasteboard: cutPasteboard).writeCut(failedPaths) {
                 let identities = failedPaths.compactMap { path in
                     record.paths.firstIndex(of: path).map { record.identities[$0] }
                 }
@@ -493,7 +496,7 @@ final class ActionService {
             logger.error("Cut failed: source identity could not be read; selection count: \(target.count)")
             return
         }
-        guard let count = PendingCut(pasteboard: pasteboard).writeCut(target) else {
+        guard let count = PendingCut(pasteboard: cutPasteboard).writeCut(target) else {
             logger.error("Cut failed: clipboard write was rejected or could not be verified; selection count: \(target.count)")
             return
         }
