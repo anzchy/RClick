@@ -105,14 +105,14 @@ extension FileOperations {
         // Walk canonical ancestors. Do not treat an inaccessible provider root
         // as absent: once its name is encountered, identity errors fail closed.
         for root in providerRootCandidates() {
-            if url.lastPathComponent == root.lastPathComponent, try sameItem(url, root) {
+            if url.lastPathComponent.caseInsensitiveCompare(root.lastPathComponent) == .orderedSame, try sameItem(url, root) {
                 facts.providerContainer = root
                 break
             }
             var ancestor = url.deletingLastPathComponent()
             var container = url
             while true {
-                if ancestor.lastPathComponent == root.lastPathComponent,
+                if ancestor.lastPathComponent.caseInsensitiveCompare(root.lastPathComponent) == .orderedSame,
                    try sameItem(ancestor, root) {
                     facts.providerContainer = container
                     break
@@ -145,8 +145,8 @@ extension FileOperations {
             // Detect the well-known Trash entry by name plus its PARENT identity,
             // avoiding a traversal into a privacy-protected Trash just to classify it.
             let parent = ancestor.deletingLastPathComponent()
-            if ancestor.lastPathComponent == ".Trash", try sameItem(parent, Self.realUserHome) { return .trash }
-            if ancestor.lastPathComponent == ".Trashes", try moveFacts(of: parent).mountPoint { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame, try sameItem(parent, Self.realUserHome) { return .trash }
+            if ancestor.lastPathComponent.caseInsensitiveCompare(".Trashes") == .orderedSame, try moveFacts(of: parent).mountPoint { return .trash }
             for trash in knownTrash where FileManager.default.fileExists(atPath: trash.path) {
                 if try sameItem(ancestor, trash) { return .trash }
             }
