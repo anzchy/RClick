@@ -287,7 +287,9 @@ nonisolated final class Messager: NSObject, Sendable {
             Task { @MainActor in
                 guard let self, self.hasReadableKey, message.session == self.currentSession else { return }
                 if let event = message.decode(ClickEventPayload.self) {
-                    self.sendActionAck(inReplyTo: message.id)
+                    guard self.sendActionAck(inReplyTo: message.id) else { return }
+                    // Already on MainActor: accept without another hop or suspension.
+                    // The ack means receipt; accepted work may finish after a rotation.
                     await handler(event)
                 } else {
                     self.recordDrop(.undecodableClick)
@@ -361,19 +363,20 @@ nonisolated final class Messager: NSObject, Sendable {
         guard let payload = try? data.map({ try JSONEncoder().encode($0) }) ?? Data() else { return }
         sendRaw(action, direction: direction, payload: payload, id: id, inReplyTo: inReplyTo)
     }
-    private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "") {
-        if receiver.checkClock() { resynchronize(); return }
-        guard let key = key(), let nonce = try? random.bytes(count: 16), isExtension || !currentSession.isEmpty else { return }
+    @discardableResult private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "") -> Bool {
+        if receiver.checkClock() { resynchronize(); return false }
+        guard let key = key(), let nonce = try? random.bytes(count: 16), isExtension || !currentSession.isEmpty else { return false }
         let envelope = IPCEnvelope(direction: direction, action: action, id: id, inReplyTo: inReplyTo,
                                    session: receiver.currentSession, timestamp: clock.wallTime, nonce: nonce, payload: payload)
         let wire = MessageSecurity.sign(envelope, key: key).wireString()
-        guard wire.utf8.count <= IPCEnvelope.maximumWireBytes else { recordDrop(.oversizedOutgoing); return }
+        guard wire.utf8.count <= IPCEnvelope.maximumWireBytes else { recordDrop(.oversizedOutgoing); return false }
         let name = Notification.Name(direction == .toMain ? Self.extensionToMainNotification : Self.mainToExtensionNotification)
         if let distributed = center as? DistributedNotificationCenter {
             distributed.postNotificationName(name, object: wire, userInfo: nil, deliverImmediately: true)
         } else {
             center.post(name: name, object: wire)
         }
+        return true
     }
     func sendToExtension<T: Encodable>(_ action: MainToExtensionAction, data: T? = nil, inReplyTo: String = "") {
         guard !isExtension else { return }
@@ -399,7 +402,11 @@ nonisolated final class Messager: NSObject, Sendable {
     }
     func sendRunningNotification(directories: [String] = []) { sendToExtension(.running, data: RunningPayload(directories: directories)) }
     func sendQuitNotification() { sendToExtension(.quit, data: Optional<Int>.none) }
-    func sendActionAck(inReplyTo: String) { sendToExtension(.actionAck, data: Optional<Int>.none, inReplyTo: inReplyTo) }
+    func sendActionAck(inReplyTo: String) -> Bool {
+        guard !isExtension else { return false }
+        return sendRaw(MainToExtensionAction.actionAck.rawValue, direction: .toExtension,
+                       payload: Data(), id: UUID().uuidString, inReplyTo: inReplyTo)
+    }
     func sendHeartbeat() { sendToMain(.heartbeat, data: Optional<Int>.none) }
     func requestMenuConfig() { sendToMain(.requestConfig, data: Optional<Int>.none) }
     @discardableResult func sendClickEvent(_ event: ClickEventPayload, id: String = UUID().uuidString) -> String {

@@ -21,7 +21,7 @@ final class MessagerIsolationTests: XCTestCase {
             guard let app else { return }
             if let event = app.decodeSignedData(data, as: ClickEventPayload.self) {
                 clicks.withLock { $0.append(event.itemId) }
-                app.sendActionAck(inReplyTo: data.id)
+                XCTAssertTrue(app.sendActionAck(inReplyTo: data.id))
             }
         }
         ext.onMainMessage(.running) { [weak ext] data in
