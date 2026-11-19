@@ -803,6 +803,81 @@ class ModifiersAreReleased(unittest.TestCase):
             self.assertRegex(source, r"trap '\"\$here/modifiers.sh\" release option[^']*' " + name + r'\n')
 
 
+class AStuckModifierIsRefused(unittest.TestCase):
+    """Fix r5 item 2: an acting command reads the HID modifier state (modifiers.sh state, nothing posted) and refuses
+    (65) when Shift, Control, Option or Command is held that it did not press: it selects, clicks and presses nothing.
+    The device run of 2026-11-18 had Option stuck, which turns Delete Direct into its skip-confirmation form."""
+    ALPHA = FOLDER + '/alpha.txt'
+    MASKS = (('Option', 0x80000), ('Shift', 0x20000), ('Control', 0x40000), ('Command', 0x100000))
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='rclick-run-')
+        self.addCleanup(temp.cleanup)
+        self.run_dir = Path(temp.name)
+        (self.run_dir / 'rclick.pid').write_text('28075\n')
+
+    def dirty(self, mask):
+        desktop = FakeDesktop()
+        desktop.hid_flags |= mask
+        return desktop
+
+    def assert_refused(self, desktop, code, err, name):
+        self.assertEqual(code, 65, err)
+        self.assertIn(f'{name} held down', err)
+        self.assertEqual((desktop.clicks, desktop.pressed, desktop.acted), ([], [], []))
+        self.assertFalse([call for call in desktop.calls if 'select chosen' in ' '.join(call)], 'it selected')
+
+    def test_choose_refuses_and_selects_clicks_and_presses_nothing(self):
+        for name, mask in self.MASKS:
+            for title in ('Delete Direct', 'Copy Path'):
+                with self.subTest(modifier=name, title=title):
+                    desktop = self.dirty(mask)
+                    code, _, err = drive(desktop, 'choose', title, '--target', self.ALPHA, *GROUP)
+                    self.assert_refused(desktop, code, err, name)
+
+    def test_the_openers_refuse_and_click_nothing(self):
+        for argv in (('open-menu', 'alpha.txt'), ('open-menu', '--background')):
+            with self.subTest(argv=argv):
+                desktop = self.dirty(0x80000)
+                code, out, err = drive(desktop, *argv)
+                self.assert_refused(desktop, code, err, 'Option')
+                self.assertNotIn('menu-point', out)
+
+    def test_press_button_and_grant_refuse_and_press_nothing(self):
+        for argv in (('press-button', '28075', 'Cancel', '--window-text', 'Permanently delete'),
+                     ('grant', '28075', '/tmp/run/fixtures/rclick-cal')):
+            with self.subTest(command=argv[0]):
+                desktop = self.dirty(0x80000)
+                desktop.windows = fixture('panel-grant-listview-assumed.jsonl') if argv[0] == 'grant' else desktop.windows
+                with mock.patch.dict(os.environ, RUN_DIR=str(self.run_dir)):
+                    code, _, err = drive(desktop, *argv)
+                self.assert_refused(desktop, code, err, 'Option')
+
+    def test_the_non_modifier_bit_the_device_showed_is_not_a_held_key(self):
+        desktop = FakeDesktop()
+        self.assertEqual(desktop.hid_flags, 0x20000000)
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assertEqual(code, 0, err)
+
+    def test_a_modifier_state_that_cannot_be_read_acts_on_nothing(self):
+        desktop = FakeDesktop()
+        desktop.modifiers = lambda argv: desktop.completed(argv, 'garbage\n')
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assertEqual(code, 70, err)
+        self.assertIn('modifier state is unknown', err)
+        self.assertEqual((desktop.clicks, desktop.pressed), ([], []))
+
+    def test_a_modifier_stuck_between_the_selection_and_the_click_is_refused_before_the_click(self):
+        def stick(desktop, n):
+            desktop.hid_flags |= 0x80000
+        desktop = FakeDesktop()
+        desktop.before_dump = stick
+        code, _, err = drive(desktop, 'choose', 'Delete Direct', '--target', self.ALPHA, *GROUP)
+        self.assertEqual(code, 65, err)
+        self.assertIn('Option held down', err)
+        self.assertEqual((desktop.clicks, desktop.pressed), ([], []))
+
+
 class CommandLine(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='rclick-ui-')
