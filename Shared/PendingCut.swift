@@ -42,6 +42,13 @@ struct PendingCut {
               pasteboard.changeCount == count else { return nil }
         return count
     }
+    /// Apply the captured Cut policy to a native item at the delivery/render boundary.
+    nonisolated static func renderCutEnablement(
+        on item: NSMenuItem, snapshotEnabled: Bool, delivery: IPCExtensionDelivery
+    ) {
+        item.isEnabled = snapshotEnabled && delivery.isHostAppRunning
+    }
+
     nonisolated struct MenuVisibility {
         let cut: Bool
         let cutEnabled: Bool

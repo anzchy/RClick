@@ -538,7 +538,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         }
         // 主程序离线时只有复制路径是快链路，其余动作需要主程序的授权与执行，置灰
         if action.id == "cut" {
-            item.isEnabled = cutEnabled
+            PendingCut.renderCutEnablement(on: item, snapshotEnabled: cutEnabled, delivery: delivery)
         } else if !isHostAppRunning && action.id != Self.copyPathActionId {
             item.isEnabled = false
         }
