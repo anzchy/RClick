@@ -11,6 +11,7 @@ import ctypes
 import hashlib
 import json
 import os
+import signal
 import stat
 import subprocess
 import sys
@@ -336,10 +337,56 @@ def menu_boundary(click):
         raise
 
 
+MODIFIERS = HERE / 'modifiers.sh'
+
+
+def modifier_state():
+    """(flags, held names) of the HID system state through `modifiers.sh state` (a read: no event is posted)."""
+    result = run([MODIFIERS, 'state'], timeout=10)
+    if result.returncode != 0:
+        raise ui.Environment('modifiers.sh state failed: ' + (result.stderr.strip() or f'exit {result.returncode}'))
+    return ui.held_modifiers(result.stdout)
+
+
+def release_modifiers(names):
+    """Release the modifiers this process pressed (`modifiers.sh release`: key-ups, then a flagsChanged event with no
+    flags) and read the state back: Environment when one of them still shows as held."""
+    result = run([MODIFIERS, 'release', *names], timeout=10)
+    flags, held = modifier_state()
+    still = [name for name in held if name.lower() in names]
+    if result.returncode != 0 or still:
+        raise ui.Environment(f'could not release {", ".join(names)} (modifiers.sh release: '
+                             f'{result.stderr.strip() or f"exit {result.returncode}"}; flags now 0x{flags:x}): press '
+                             'and release that key on the keyboard before anything else is clicked')
+
+
+@contextlib.contextmanager
+def pressing(names):
+    """Modifiers posted inside the block are released on EVERY exit: success, an exception, Ctrl-C (KeyboardInterrupt)
+    or SIGTERM (main turns it into Terminated). A release failure after another error is added to that error (whose
+    type, so its exit code, is kept); after success it is raised."""
+    if not names:
+        yield
+        return
+    try:
+        yield
+    except BaseException as error:
+        try:
+            release_modifiers(names)
+        except (ui.Environment, OSError) as problem:
+            if isinstance(error, Exception):
+                error.args = (f'{error}; and {problem}',)
+        raise
+    release_modifiers(names)
+
+
 def right_click(point, option=False):
-    click = run([HERE / 'rightclick.sh', *map(str, point), *(['option'] if option else [])], timeout=10)
-    if click.returncode != 0:
-        raise ui.Environment('rightclick.sh failed: ' + click.stderr.strip())
+    """rightclick.sh at `point`; with `option` the Option flag it posts is released here as well (pressing), whatever
+    happens to rightclick.sh (a failure, a timeout, a signal that kills it before its own release)."""
+    with pressing(['option'] if option else []):
+        click = run([HERE / 'rightclick.sh', *map(str, point), *(['option'] if option else [])], timeout=10)
+        if click.returncode != 0:
+            raise ui.Environment('rightclick.sh failed: ' + click.stderr.strip())
 
 
 DESELECT_SCRIPT = 'tell application "Finder" to set selection to {}'
@@ -630,12 +677,35 @@ def command(args):
     return ui.OK
 
 
+class Terminated(BaseException):
+    """SIGTERM, raised in the main thread so every `finally` (pressing: modifier release; menu_boundary: menu close;
+    the calibration teardown) runs before the process ends, as it does for Ctrl-C."""
+
+
+def terminated(signum, frame):
+    raise Terminated(f'signal {signum}')
+
+
 def main(argv):
     if argv[:1] == ['help'] or any(arg in ('-h', '--help') for arg in argv):
         print(ui.USAGE_TEXT)
         return ui.OK
+    previous = signal.signal(signal.SIGTERM, terminated)
+    try:
+        return dispatch(argv)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def dispatch(argv):
     try:
         return command(ui.parse_args(argv))
+    except KeyboardInterrupt:
+        print('INTERRUPTED: Ctrl-C (pressed modifiers released, an open menu closed)', file=sys.stderr)
+        return 130
+    except Terminated:
+        print('INTERRUPTED: SIGTERM (pressed modifiers released, an open menu closed)', file=sys.stderr)
+        return 143
     except ui.Usage as error:
         print(f'usage error: {error} (ui.sh --help lists the commands)', file=sys.stderr)
         return ui.USAGE

@@ -180,6 +180,23 @@ RCLICK_TITLES = (
     'RClick is not running', 'Restart RClick to restore the menu', 'RClick (loading...)',
 )
 SKIP_SUFFIX = ' (skip confirmation)'
+# The device-independent modifier bits of a CGEventFlags value (CGEventTypes.h). Other bits (0x20000000 was set
+# beside Option on the device run of 2026-11-18, the non-coalesced bit, the numeric-pad bit) are not keys held.
+MODIFIER_MASKS = (('Shift', 0x20000), ('Control', 0x40000), ('Option', 0x80000), ('Command', 0x100000))
+FLAGS_LINE = re.compile(r'flags=0x([0-9a-f]+)')
+
+
+def held_modifiers(text):
+    """`modifiers.sh state`'s `flags=0x<hex>` line → (flags, [names of the held modifiers among Shift, Control,
+    Option, Command]). Any other answer is an Environment error: the input state is unknown, so nothing may act."""
+    match = FLAGS_LINE.fullmatch(text.strip())
+    if not match:
+        raise Environment(f'modifiers.sh state printed {text.strip()[:80]!r}, not flags=0x<hex>: the modifier '
+                          'state is unknown')
+    flags = int(match.group(1), 16)
+    return flags, [name for name, mask in MODIFIER_MASKS if flags & mask]
+
+
 COMPRESS_ONE = re.compile(r'Compress “(.+)”')
 COMPRESS_MANY = re.compile(r'Compress (\d+) Items')
 

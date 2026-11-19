@@ -300,6 +300,21 @@ class CalibrationThroughTheRealDriver(unittest.TestCase):
         self.assertIn('Compress 2 Items', results['choose-multi'][1])
         self.assertTrue((self.run.folder / 'untitled.txt').exists())
 
+    def test_the_option_step_leaves_no_option_held_so_the_next_plain_menu_is_plain(self):
+        """Fix r5 item 1, the device run of 2026-11-18: after option-menu every plain right-click showed `Delete
+        Direct (skip confirmation)`; flags 0x20080000 were left in the HID system state."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            for name in ('row-order', 'context-menu', 'menu-read', 'rclick-group', 'close-menu', 'option-menu'):
+                self.run.step(name, getattr(self.run, name.replace('-', '_')))
+        self.assertEqual([status for _, status, _ in self.run.results], ['PASS'] * 6, self.run.results)
+        self.assertEqual(self.desktop.hid_flags & 0x80000, 0,
+                         f'Option left set after option-menu: flags 0x{self.desktop.hid_flags:x}')
+        out = self.run.cli('open-menu', 'beta.txt')
+        point = calibration.menu_point_of(out)
+        listing = self.run.cli('menu', point, *calibration.group_args(GROUP))
+        self.run.cli('close-menu', point)
+        self.assertNotIn('skip confirmation', listing)
+
 
 STEP_METHODS = ('row_order', 'select_readback', 'context_menu', 'menu_read', 'rclick_group', 'close_menu', 'choose',
                 'choose_multi', 'option_menu', 'background_menu', 'background_choose', 'dialog_read', 'press_button')
