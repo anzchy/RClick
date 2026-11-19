@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var createClash: Set<String> = []
         var failRemoving: Set<String> = []
         var unwritable: Set<String> = []
         var removeCalls: [String] = []
@@ -87,6 +88,17 @@ final class FaultInjectingFileOperations: FileOperations {
         try throwIfNameExists(at: destination)
         if kind == .copy { try failHalfwayIfAsked(from: source, to: destination) }
         try base.coordinatedTransfer(kind, from: source, to: destination)
+    }
+
+    func createClashAtRename(_ url: URL) {
+        faults.withLock { _ = $0.createClash.insert(url.path) }
+    }
+
+    func exclusiveRename(from source: URL, to destination: URL) throws {
+        if faults.withLock({ $0.createClash.remove(destination.path) != nil }) {
+            try Data("racing owner".utf8).write(to: destination, options: .withoutOverwriting)
+        }
+        try base.exclusiveRename(from: source, to: destination)
     }
 
     private func throwIfNameExists(at destination: URL) throws {

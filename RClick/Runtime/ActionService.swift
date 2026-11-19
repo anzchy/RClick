@@ -238,8 +238,19 @@ final class ActionService {
             for (path, identity) in zip(record.paths, record.identities) {
                 let source = URL(fileURLWithPath: path)
                 do {
-                    try operations.coordinatedExclusiveMove(from: source,
-                        to: destination.appendingPathComponent(source.lastPathComponent), expected: identity)
+                    let values = try source.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey, .isSymbolicLinkKey])
+                    let plainFolder = values.isDirectory == true && values.isPackage != true && values.isSymbolicLink != true
+                    var number = 1
+                    while true {
+                        let name = try MoveName.candidate(source.lastPathComponent, number: number, plainFolder: plainFolder)
+                        do {
+                            try operations.coordinatedExclusiveMove(from: source,
+                                to: destination.appendingPathComponent(name), expected: identity)
+                            break
+                        } catch let error as POSIXError where error.code == .EEXIST {
+                            number += 1
+                        }
+                    }
                     result.completed.append(path)
                 } catch { result.failures.append(FileActionFailure(path: path, error: error)) }
             }
