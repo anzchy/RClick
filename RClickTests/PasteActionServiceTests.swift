@@ -52,18 +52,38 @@ struct PasteActionServiceTests {
             value.withLock { $0 = journal }
         }
     }
+    @MainActor final class ManualTermination: MoveTerminationBoundary {
+        var date = Date(timeIntervalSince1970: 100000)
+        var scheduled: [(Date, @MainActor () -> Void)] = []
+        var balance = 0
+        func protectMutation() { balance += 1 }
+        func unprotectMutation() { balance -= 1 }
+        func scheduleDeadline(_ date: Date, action: @escaping @MainActor () -> Void) { scheduled.append((date, action)) }
+        func advance(by interval: TimeInterval) {
+            date.addTimeInterval(interval)
+            let ready = scheduled.filter { $0.0 <= date }
+            scheduled.removeAll { $0.0 <= date }
+            ready.forEach { $0.1() }
+        }
+    }
+    nonisolated final class Clock: Sendable {
+        let date = Mutex(Date(timeIntervalSince1970: 100000))
+        func now() -> Date { date.withLock { $0 } }
+    }
     @MainActor final class Fixture {
         let root: URL
         let source: URL
         let destination: URL
         let board = NSPasteboard(name: .init("RClickTests-paste-\(UUID())"))
+        let termination = ManualTermination()
+        let clock = Clock()
         let journal = JournalStore()
         let permission = Permission()
         let leaser = Leaser()
         let operations = FaultInjectingFileOperations()
         var warnings: [String] = []
         lazy var service = ActionService(state: State(), permission: permission, confirmation: Confirmation(),
-            fileOperations: operations, pasteboard: board, accessLeaser: leaser, journalStore: journal,
+            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: journal, terminationBoundary: termination,
             cutWarning: { [weak self] in self?.warnings.append($0) })
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-paste-\(UUID())").resolvingSymlinksInPath()
@@ -204,6 +224,38 @@ struct PasteActionServiceTests {
         #expect(f.journal.load()?.entries.first?.outcome == .moved)
         #expect(f.journal.load()?.inProgress == false)
         #expect(f.leaser.balance == 0)
+    }
+
+    @Test(arguments: ["cancel-panel", "cancel-task", "timeout"])
+    func deferredQuitRepliesExactlyOnceAndNeverWaitsForever(exit: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file(); await f.cut([file])
+        f.permission.allowed = false
+        var operation: Task<Void, Never>?
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            f.permission.onPrompt = { ready.resume() }
+            operation = Task { await f.paste() }
+        }
+        var replies = 0
+        #expect(f.service.deferTermination { replies += 1 })
+        #expect(replies == 0)
+        if exit == "timeout" {
+            f.termination.advance(by: 35)
+            #expect(replies == 1)
+        }
+        if exit == "cancel-task" { operation?.cancel() }
+        f.permission.hold?.resume(returning: nil)
+        f.permission.hold = nil
+        await operation?.value
+        #expect(replies == 1)
+        f.termination.advance(by: 100)
+        #expect(replies == 1)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(f.leaser.balance == 0)
+        #expect(f.termination.balance == 0)
+        let count = f.board.changeCount
+        await f.cut([file])
+        #expect(f.board.changeCount == count) // No new reservations once Quit is pending.
     }
 
 }

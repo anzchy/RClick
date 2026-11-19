@@ -229,6 +229,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Explicit Quit is deferred only as a courtesy. The journal, not the wait,
+    // protects interrupted moves; ActionService replies once or at its deadline.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        RCRuntime.shared.actionService.deferTermination {
+            NSApplication.shared.reply(toApplicationShouldTerminate: true)
+        } ? .terminateLater : .terminateNow
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
