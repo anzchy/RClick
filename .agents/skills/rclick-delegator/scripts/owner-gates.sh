@@ -15,6 +15,10 @@ emulate -R zsh
 #   gates  scripts/gates.sh (build, unit-tests, localization, skill-tooling). Its `GATE <lane> PASS|FAIL|SKIP`
 #          lines and its final `GATES PASS|FAIL` line are copied into the summary; the lane passes only on exit 0
 #          with `GATES PASS`. DerivedData stays inside the exported tree, so it is removed with it.
+#          For each lane a `GATE <lane> FAIL` line names, gates.sh's own lane log (.build/gates/<lane>.log in the
+#          exported tree: the traceback) is kept as <prefix>-<lane>-failure.log, at most its last 3000 lines, behind
+#          a header with the commit, the UTC time, uptime, vm.loadavg, hw.ncpu and the failing items; the summary
+#          gets `lane <lane> failure-log=<path>` (or `failure-log=none reason=…`). A passing run keeps no extra log.
 #   leak   the sentinel-secret grep over the gates log (sentinels listed in scripts/test-secrets.txt when that
 #          file exists; skipped with a reason otherwise)
 setopt err_return no_unset pipe_fail
