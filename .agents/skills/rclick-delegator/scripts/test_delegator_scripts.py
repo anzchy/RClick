@@ -1306,6 +1306,36 @@ class OwnerGatesTests(unittest.TestCase):
         self.assertIn("truncated: no (2 lines)", header)
         self.assertEqual(body, "line 1\nline 2\n")
 
+    def test_a_passing_run_keeps_no_failure_log(self):
+        self.commit_gates(self.write_lane_log("skill-tooling", "ok\n") + self.write_lane_log("build", "ok\n")
+                          + "echo 'GATE build PASS'\necho 'GATE skill-tooling PASS (3 test files)'\necho 'GATES PASS'\n")
+        result = self.run_gates("0")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("failure-log=", self.summary())
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), ["t99-r1-gates.log", "t99-r1-summary.txt"])
+
+    def test_two_failed_lanes_keep_two_logs(self):
+        self.commit_gates(self.write_lane_log("unit-tests", "unit failure\n")
+                          + self.write_lane_log("skill-tooling", self.TRACEBACK)
+                          + "echo 'GATE build PASS'\necho 'GATE unit-tests FAIL (exit 65; tests: 3 passed, 1 failed)'\n"
+                            "echo 'GATE localization PASS'\necho 'GATE skill-tooling FAIL (1 of 3 test files)'\n"
+                            "echo 'GATES FAIL'\n", exit_code=1)
+        result = self.run_gates("0")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        summary = self.summary()
+        for lane, text in (("unit-tests", "unit failure\n"), ("skill-tooling", self.TRACEBACK)):
+            self.assertIn(f"lane {lane} failure-log={self.failure_log(lane)}\n", summary)
+            self.assertTrue(self.failure_log(lane).read_text().endswith("---\n" + text), lane)
+        self.assertEqual(summary.count("failure-log="), 2, summary)
+        self.assertTrue(summary.rstrip().endswith("DONE overall=1"), summary)
+
+    def test_the_scratch_tree_is_removed_after_a_failing_run(self):
+        self.commit_gates(self.write_lane_log("skill-tooling", self.TRACEBACK)
+                          + "echo 'GATE skill-tooling FAIL (1 of 3 test files)'\necho 'GATES FAIL'\n", exit_code=1)
+        self.run_gates("0")
+        self.assertTrue(self.failure_log("skill-tooling").exists())
+        self.assertEqual(list(self.root.glob("rclick-gates.*")), [])
+
 
 class CodexNoQuestionsTests(unittest.TestCase):
     """Codex panes must not stall on a sub-agent question nobody watches."""
