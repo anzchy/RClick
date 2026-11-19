@@ -96,4 +96,22 @@ struct PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: file.path))
     }
 
+    @Test func partialFailureRewritesOnlyFailedItemsAndRefreshesPendingCount() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let good = try f.file("good.txt"), missing = try f.file("missing.txt")
+        await f.cut([good, missing])
+        let old = f.board.changeCount
+        try FileManager.default.removeItem(at: missing)
+        await f.paste()
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("good.txt")) == Data("original".utf8))
+        #expect(f.service.pendingCut?.paths == [missing.path])
+        #expect(f.service.pendingCut?.changeCount == f.board.changeCount)
+        #expect(f.board.changeCount != old)
+        #expect(f.board.pasteboardItems?.count == 1)
+        #expect(f.board.pasteboardItems?.first?.string(forType: .fileURL) == missing.absoluteString)
+        #expect(f.warnings.count == 1)
+        #expect(f.warnings.first?.contains("missing.txt") == true)
+        #expect(f.leaser.balance == 0)
+    }
+
 }

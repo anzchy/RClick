@@ -256,9 +256,24 @@ final class ActionService {
             }
             return result
         }
-        if result.failures.isEmpty {
-            if pasteboard.changeCount == record.changeCount { pasteboard.clearContents() }
+        // This is an ownership check, not a pasteboard compare-and-swap.
+        if pasteboard.changeCount != record.changeCount {
             cutRecord = nil
+        } else if result.failures.isEmpty {
+            pasteboard.clearContents()
+            cutRecord = nil
+        } else {
+            let failedPaths = result.failures.map(\.path)
+            if let count = PendingCut(pasteboard: pasteboard).writeCut(failedPaths) {
+                let identities = failedPaths.compactMap { path in
+                    record.paths.firstIndex(of: path).map { record.identities[$0] }
+                }
+                cutRecord = CutRecord(paths: failedPaths, identities: identities, changeCount: count)
+            } else { cutRecord = nil }
+        }
+        if !result.failures.isEmpty {
+            let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \($0.error.localizedDescription)" }
+            cutWarning(String(format: AppLocalization.localized("Some items could not be moved:\n%@"), lines.joined(separator: "\n")))
         }
     }
 
