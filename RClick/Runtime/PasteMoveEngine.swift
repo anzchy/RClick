@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Synchronization
 
 nonisolated enum PasteMoveError: Error {
     case changed, invalidDestination, crossVolume, insideSource, mountPoint, cloud, timeout
@@ -21,20 +22,46 @@ extension FileOperations {
     nonisolated func exclusiveRename(from source: URL, to destination: URL) throws {
         try SystemFileOperations().exclusiveRename(from: source, to: destination)
     }
-    nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity) throws {
-        let coordinator = NSFileCoordinator(filePresenter: nil)
-        var coordinationError: NSError?
-        var operationError: (any Error)?
-        coordinator.coordinate(writingItemAt: source, options: .forMoving,
-                               writingItemAt: destination, options: [], error: &coordinationError) { from, to in
-            do {
-                guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
-                try exclusiveRename(from: from, to: to)
-                coordinator.item(at: from, didMoveTo: to)
-            } catch { operationError = error }
+    nonisolated func prepareCoordinatedMove(_ source: URL) throws {}
+    nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, timeout: TimeInterval) throws {
+        let job = MoveCoordinationJob()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            var coordinationError: NSError?
+            job.coordinator.coordinate(writingItemAt: source, options: .forMoving,
+                writingItemAt: destination, options: [], error: &coordinationError) { from, to in
+                do {
+                    try prepareCoordinatedMove(from)
+                    let moved = try job.state.withLock { state in
+                        guard !state.cancelled else { throw PasteMoveError.timeout }
+                        guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
+                        try exclusiveRename(from: from, to: to)
+                        state.moved = true
+                        return true
+                    }
+                    if moved { job.coordinator.item(at: from, didMoveTo: to) }
+                } catch {
+                    job.state.withLock { $0.error = error }
+                }
+            }
+            job.state.withLock { state in
+                if !state.moved, state.error == nil { state.error = coordinationError }
+            }
+            done.signal()
         }
-        if let operationError { throw operationError }
-        if let coordinationError { throw coordinationError }
+        if done.wait(timeout: .now() + max(0, timeout)) == .timedOut {
+            let moved = job.state.withLock { state in
+                state.cancelled = true // A late accessor can no longer rename.
+                return state.moved
+            }
+            job.coordinator.cancel()
+            if moved { return }
+            throw PasteMoveError.timeout
+        }
+        try job.state.withLock { state in
+            if let error = state.error { throw error }
+            guard state.moved else { throw PasteMoveError.timeout }
+        }
     }
 }
 
@@ -112,4 +139,17 @@ extension FileOperations {
         }
         return nil
     }
+}
+
+/// NSFileCoordinator is used on one worker, with cancel() invoked by the waiter.
+/// Foundation does not annotate that supported cross-thread cancellation pattern
+/// as Sendable. Every mutable result/rename gate is protected by Mutex.
+nonisolated private final class MoveCoordinationJob: @unchecked Sendable {
+    struct State {
+        var cancelled = false
+        var moved = false
+        var error: (any Error)?
+    }
+    let coordinator = NSFileCoordinator(filePresenter: nil)
+    let state = Mutex(State())
 }

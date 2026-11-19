@@ -75,6 +75,7 @@ struct PasteActionServiceTests {
         let source: URL
         let destination: URL
         let board = NSPasteboard(name: .init("RClickTests-paste-\(UUID())"))
+        var coordinationTimeout: TimeInterval = 30
         let termination = ManualTermination()
         let clock = Clock()
         let journal = JournalStore()
@@ -83,7 +84,7 @@ struct PasteActionServiceTests {
         let operations = FaultInjectingFileOperations()
         var warnings: [String] = []
         lazy var service = ActionService(state: State(), permission: permission, confirmation: Confirmation(),
-            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: journal, terminationBoundary: termination,
+            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: journal, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
             cutWarning: { [weak self] in self?.warnings.append($0) })
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-paste-\(UUID())").resolvingSymlinksInPath()
@@ -217,7 +218,7 @@ struct PasteActionServiceTests {
         #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
         f.journal.failOutcomes.withLock { $0 = false }
         let relaunched = ActionService(state: State(), permission: f.permission, confirmation: Confirmation(),
-            fileOperations: f.operations, pasteboard: f.board, accessLeaser: f.leaser, journalStore: f.journal,
+            fileOperations: f.operations, pasteboard: f.board, now: { [clock = f.clock] in clock.now() }, accessLeaser: f.leaser, journalStore: f.journal,
             cutWarning: { _ in })
         // Any action waits for the initialization recovery, just as a launch-delivered click does.
         await relaunched.actionHandler(rid: "cut", target: [], trigger: "ctx-items")
@@ -256,6 +257,27 @@ struct PasteActionServiceTests {
         let count = f.board.changeCount
         await f.cut([file])
         #expect(f.board.changeCount == count) // No new reservations once Quit is pending.
+    }
+
+    @Test func coordinationTimeoutPreventsALateRenameAndNextPasteWorks() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.coordinationTimeout = 0.05
+        let file = try f.file()
+        let gate = DispatchSemaphore(value: 0)
+        f.operations.onNextCoordination { _ in _ = gate.wait(timeout: .now() + 2) }
+        // The red implementation eventually returns, so RED is an assertion failure,
+        // never a hung test. The timeout implementation cancels before this release.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { gate.signal() }
+        await f.cut([file]); await f.paste()
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(f.warnings.first?.contains("timed out") == true)
+        #expect(f.service.pendingCut?.paths == [file.path])
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(FileManager.default.fileExists(atPath: file.path)) // Late accessor cannot mutate.
+        await f.paste()
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(f.leaser.balance == 0)
+        #expect(f.termination.balance == 0)
     }
 
 }
