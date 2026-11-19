@@ -150,8 +150,8 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.actions.map(\.id), ["safe"])
         delivery.registerClick("first")
         delivery.registerClick("second")
-        app.sendActionAck(inReplyTo: "unknown")
-        app.sendActionAck(inReplyTo: "second")
+        XCTAssertTrue(app.sendActionAck(inReplyTo: "unknown"))
+        XCTAssertTrue(app.sendActionAck(inReplyTo: "second"))
         XCTAssertTrue(delivery.expireClick("first"))
         XCTAssertFalse(delivery.expireClick("second"), "the actual ack handler must resolve its own deadline")
         app.sendQuitNotification()
@@ -683,7 +683,7 @@ final class IPCAuthenticationTests: XCTestCase {
         app.onExtensionMessage(.requestConfig) { message in actions.withLock { $0.append(message.action) } }
         app.sendRunningNotification()
         app.sendQuitNotification()
-        app.sendActionAck(inReplyTo: "click-id")
+        XCTAssertTrue(app.sendActionAck(inReplyTo: "click-id"))
         ext.sendHeartbeat()
         ext.requestMenuConfig()
         XCTAssertEqual(actions.withLock { $0 }, ["quit", "click-id", "heartbeat", "request-config"])
@@ -749,6 +749,43 @@ final class IPCAuthenticationTests: XCTestCase {
 
 }
 
+
+@MainActor
+final class ClickAckAdmissionTests: XCTestCase {
+    func testAckClockBarrierDropsAcceptedClick() async throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        let acks = Mutex<[String]>([])
+        ext.onMainMessage(.actionAck) { message in acks.withLock { $0.append(message.inReplyTo) } }
+        let dropped = expectation(description: "barrier must drop accepted click")
+        dropped.isInverted = true
+        app.onClickEvent { _ in dropped.fulfill() }
+        app.sendRunningNotification()
+        let session = app.currentSession
+        let event = ClickEventPayload(itemId: "delete-direct", itemType: .action,
+                                      target: ["/tmp/disposable-selection"], trigger: .contextualItems, optionKeyPressed: true)
+        // Posting accepts/authenticates synchronously; the MainActor task cannot
+        // attempt its ack until this test yields. Only sendRaw sees the step.
+        ext.sendClickEvent(event, id: "barrier-click")
+        clock.step(wall: 0, monotonic: 16)
+        await fulfillment(of: [dropped], timeout: 0.05)
+        XCTAssertNotEqual(app.currentSession, session)
+        XCTAssertEqual(acks.withLock { $0 }, [])
+
+        app.sendRunningNotification() // Re-announce after the extension observed the same barrier.
+        let received = expectation(description: "control executes exactly once")
+        let events = Mutex<[String]>([])
+        app.onClickEvent { event in events.withLock { $0.append(event.itemId) }; received.fulfill() }
+        ext.sendClickEvent(event, id: "control-click")
+        await fulfillment(of: [received], timeout: 1)
+        XCTAssertEqual(events.withLock { $0 }, ["delete-direct"])
+        XCTAssertEqual(acks.withLock { $0 }, ["control-click"])
+    }
+
+}
 
 nonisolated final class TestIPCClock: IPCClock {
     private let time: Mutex<(Double, Double)>
