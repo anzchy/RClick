@@ -56,6 +56,15 @@ struct PendingCut {
         let undo = false
     }
 
+    /// Finder context boundary: a container click must never borrow a selection.
+    nonisolated static func targetsForPaste(menuKind: MenuTrigger?, selection: [String], targetedPath: String?) -> [String] {
+        switch menuKind {
+        case .contextualContainer: return targetedPath.map { [$0] } ?? []
+        case .contextualItems: return selection.count == 1 ? selection : []
+        default: return []
+        }
+    }
+
     /// Pure menu policy; counters are hints checked against the live pasteboard count.
     nonisolated static func menuVisibility(
         config: MenuConfigPayload, menuKind: MenuTrigger?, selection: [String],
