@@ -27,6 +27,7 @@ final class FaultInjectingFileOperations: FileOperations {
         var destinationRefusals: [String: DestinationRefusal] = [:]
         var facts: [String: MoveFacts] = [:]
         var renames: [String] = []
+        var moveEvents: [String] = []
         var createClash: Set<String> = []
         var failRemoving: Set<String> = []
         var unwritable: Set<String> = []
@@ -129,6 +130,11 @@ final class FaultInjectingFileOperations: FileOperations {
         try hook?(source)
     }
 
+    var moveEvents: [String] { faults.withLock { $0.moveEvents } }
+    func notifyMove(_ notification: MoveNotification, using coordinator: NSFileCoordinator, from source: URL, to destination: URL) {
+        faults.withLock { $0.moveEvents.append(notification.rawValue) }
+        base.notifyMove(notification, using: coordinator, from: source, to: destination)
+    }
     var renameCalls: [String] { faults.withLock { $0.renames } }
     func refuseDestination(_ url: URL, reason: DestinationRefusal) {
         faults.withLock { $0.destinationRefusals[url.path] = reason }
@@ -159,7 +165,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     func exclusiveRename(from source: URL, to destination: URL) throws {
-        faults.withLock { $0.renames.append(source.path) }
+        faults.withLock { $0.renames.append(source.path); $0.moveEvents.append("rename") }
         if let code = faults.withLock({ $0.renameErrors[source.path] }) { throw POSIXError(code) }
         if faults.withLock({ $0.createClash.remove(destination.path) != nil }) {
             try Data("racing owner".utf8).write(to: destination, options: .withoutOverwriting)

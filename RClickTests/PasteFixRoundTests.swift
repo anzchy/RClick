@@ -107,3 +107,13 @@ extension PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 }
+
+extension PasteActionServiceTests {
+    @Test func coordinatedMoveAnnouncesBeforeRenameAndCompletion() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        await f.cut([item]); await f.paste()
+        #expect(f.operations.moveEvents == ["willMoveTo", "rename", "didMoveTo"])
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes.txt")) == Data("original".utf8))
+    }
+}
