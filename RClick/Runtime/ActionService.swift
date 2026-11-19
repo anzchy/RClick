@@ -22,6 +22,7 @@ final class ActionService {
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
     private let terminationBoundary: any MoveTerminationBoundary
+    private let coordinationTimeout: TimeInterval
     private let quitWait: TimeInterval
     private var terminationPending = false
     private var terminationReply: (@MainActor () -> Void)?
@@ -50,6 +51,7 @@ final class ActionService {
         journalStore: (any UndoJournalStore)? = nil,
         terminationBoundary: any MoveTerminationBoundary = SystemMoveTerminationBoundary(),
         quitWait: TimeInterval = 35,
+        coordinationTimeout: TimeInterval = 30,
         cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) },
         cutVolumeIsReadOnly: @escaping (URL) -> Bool = {
             (try? $0.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) == true
@@ -61,6 +63,7 @@ final class ActionService {
         self.fileOperations = fileOperations
         self.terminationBoundary = terminationBoundary
         self.quitWait = quitWait
+        self.coordinationTimeout = coordinationTimeout
         self.journalStore = journalStore
         self.pasteboard = pasteboard
         self.now = now
@@ -318,6 +321,7 @@ final class ActionService {
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
         catch { cutWarning(error.localizedDescription); return }
         let timestamp = now()
+        let timeout = coordinationTimeout
         terminationBoundary.protectMutation()
         defer { terminationBoundary.unprotectMutation() }
         let result = await executor.run { () -> FileActionResult in
@@ -365,7 +369,7 @@ final class ActionService {
                             identity: stableIdentity, timestamp: timestamp, outcome: .intended))
                         try store.save(journal) // Write-ahead: no rename may precede this durable intent.
                         do {
-                            try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity)
+                            try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity, timeout: timeout)
                             result.completed.append(path)
                             journal.entries[journal.entries.count - 1].outcome = .moved
                             do { try store.save(journal) }

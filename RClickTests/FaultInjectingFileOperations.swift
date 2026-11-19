@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var coordinationHook: (@Sendable (URL) throws -> Void)?
         var destinationRefusals: [String: DestinationRefusal] = [:]
         var facts: [String: MoveFacts] = [:]
         var renames: [String] = []
@@ -91,6 +92,18 @@ final class FaultInjectingFileOperations: FileOperations {
         try throwIfNameExists(at: destination)
         if kind == .copy { try failHalfwayIfAsked(from: source, to: destination) }
         try base.coordinatedTransfer(kind, from: source, to: destination)
+    }
+
+    func onNextCoordination(_ action: @escaping @Sendable (URL) throws -> Void) {
+        faults.withLock { $0.coordinationHook = action }
+    }
+    func prepareCoordinatedMove(_ source: URL) throws {
+        let hook = faults.withLock { state in
+            let value = state.coordinationHook
+            state.coordinationHook = nil
+            return value
+        }
+        try hook?(source)
     }
 
     var renameCalls: [String] { faults.withLock { $0.renames } }
