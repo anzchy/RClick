@@ -33,7 +33,7 @@ FAKE_OSASCRIPT = r"""#!/usr/bin/env node
 const fs = require('fs'); const vm = require('vm');
 const file = process.env.FAKE_HID_STATE;
 const load = () => JSON.parse(fs.readFileSync(file, 'utf8'));
-const save = (s) => fs.writeFileSync(file, JSON.stringify(s));
+const save = (s) => { fs.writeFileSync(file + '.new', JSON.stringify(s)); fs.renameSync(file + '.new', file); };  // atomic: the test polls it
 const args = process.argv.slice(2);
 if (args[0] !== '-l' || args[1] !== 'JavaScript' || args[2] !== '-') {
   process.stderr.write('fake osascript: expected -l JavaScript -\n'); process.exit(64);

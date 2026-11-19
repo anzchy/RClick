@@ -161,13 +161,18 @@ an rclick run, axprobe build failed, no single Finder process).
   disclose it. For the window background: `$DT/ui.sh open-menu --background [--option]` deselects, reads the empty
   selection back and right-clicks the empty list below the rows (refused if the list has no empty space). For a
   sidebar entry, right-click with `$DT/rightclick.sh X Y` at a point read from a dump, then probe with `ui.sh menu`.
-- **Modifier state:** `$DT/modifiers.sh state` prints `flags=0x<hex>` (the HID system state, read without posting
-  an event; 0x20000 Shift, 0x40000 Control, 0x80000 Option, 0x100000 Command; other bits such as 0x20000000 are not
-  keys). `choose`, `open-menu`, `press-button` and `grant` refuse (65) while one of the four is held, because a
+  The raw `rightclick.sh` and `click.sh` refuse (65) while a modifier is held and post nothing (70 when the state
+  cannot be read); with `option`, `rightclick.sh` releases only the Option it pressed, however it ends.
+- **Modifier state:** `$DT/modifiers.sh state` prints `flags=0x<hex> hid=0x<hex> session=0x<hex>` (the HID and the
+  combined session state, read without posting an event; `flags` is their union, which every check reads, because
+  the extension takes Option as held when either has it; 0x20000 Shift, 0x40000 Control, 0x80000 Option, 0x100000
+  Command; other bits such as 0x20000000 are not keys). `choose`, `open-menu`, `press-button`, `grant` and the raw
+  click scripts refuse (65) while one of the four is held, because a
   stuck Option turns Delete Direct into its skip-confirmation form on every menu (device run, 2026-11-18: Option
   stayed set after calibration's Option step, flags 0x20080000). If one is stuck and no one is holding it,
-  `$DT/modifiers.sh release <option|shift|control|command>` posts its key-ups and a flagsChanged event with no flags
-  (what cleared it on that run), then `modifiers.sh state` must show none; record it under "Script problems".
+  `$DT/modifiers.sh release <option|shift|control|command>` posts its key-ups and a flagsChanged event with the HID
+  state minus that key (on that run a flagsChanged with no flags cleared it), then `modifiers.sh state` must show
+  none; record it under "Script problems".
 - **Read the menu:** `$DT/ui.sh menu X,Y` (the `menu-point`) prints every item as
   `<index>|<title>|<enabled>|<x>,<y>|<submenu count>`, then `compress: <Finder's Compress title>` and
   `rclick-group (heuristic, never used to choose): <titles>`; with `--group` it also prints where that exact group

@@ -292,6 +292,16 @@ def close_menu(point):
                          'hand (Finder answers no AppleScript until it is closed)')
 
 
+def add_problem(error, problem):
+    """A cleanup that failed while `error` was unwinding: named in the error's message (an Exception keeps its type, so
+    its exit code), or, for Ctrl-C and SIGTERM (BaseException), kept in `cleanup_problems` for dispatch to report
+    instead of claiming the cleanup was done."""
+    if isinstance(error, Exception):
+        error.args = (f'{error}; and {problem}',)
+    else:
+        error.cleanup_problems = [*getattr(error, 'cleanup_problems', []), problem]
+
+
 class Opened:
     """What one right-click of this process may have opened: the click point, the menu point once found, the axprobe
     session once it holds the menu, and whether that menu is another process's (never ours to close)."""
@@ -333,8 +343,8 @@ def menu_boundary(click):
         yield opened
     except BaseException as error:
         problems = opened.release()
-        if problems and isinstance(error, Exception):
-            error.args = (f'{error}; and the menu could not be closed: {"; ".join(problems)}',)
+        if problems:
+            add_problem(error, f'the menu could not be closed: {"; ".join(problems)}')
         raise
 
 
@@ -385,8 +395,7 @@ def pressing(names):
         try:
             release_modifiers(names)
         except (ui.Environment, OSError) as problem:
-            if isinstance(error, Exception):
-                error.args = (f'{error}; and {problem}',)
+            add_problem(error, str(problem))
         raise
     release_modifiers(names)
 
@@ -715,14 +724,23 @@ def main(argv):
         signal.signal(signal.SIGTERM, previous)
 
 
+def interrupted(what, error):
+    """The Ctrl-C / SIGTERM report: the cleanup is claimed only when nothing failed (opus L2, confirm r5)."""
+    problems = getattr(error, 'cleanup_problems', [])
+    if problems:
+        return (f'INTERRUPTED: {what}; the cleanup did not finish: {"; ".join(problems)}. Check `modifiers.sh state` '
+                'and close any open menu before anything else is clicked')
+    return f'INTERRUPTED: {what} (pressed modifiers released, an open menu closed)'
+
+
 def dispatch(argv):
     try:
         return command(ui.parse_args(argv))
-    except KeyboardInterrupt:
-        print('INTERRUPTED: Ctrl-C (pressed modifiers released, an open menu closed)', file=sys.stderr)
+    except KeyboardInterrupt as error:
+        print(interrupted('Ctrl-C', error), file=sys.stderr)
         return 130
-    except Terminated:
-        print('INTERRUPTED: SIGTERM (pressed modifiers released, an open menu closed)', file=sys.stderr)
+    except Terminated as error:
+        print(interrupted('SIGTERM', error), file=sys.stderr)
         return 143
     except ui.Usage as error:
         print(f'usage error: {error} (ui.sh --help lists the commands)', file=sys.stderr)
