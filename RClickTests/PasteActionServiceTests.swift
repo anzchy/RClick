@@ -445,4 +445,22 @@ struct PasteActionServiceTests {
         #expect(f.warnings.last?.contains("itself") == true)
     }
 
+    @Test func everyPastePublishesRefreshedPendingStateToMenuObserver() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let good = try f.file("good.txt"), missing = try f.file("missing.txt")
+        await f.cut([good, missing])
+        try FileManager.default.removeItem(at: missing)
+        let signals = Counter()
+        let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: f.service, queue: nil) { _ in
+            signals.value.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        await f.paste()
+        #expect(signals.value.withLock { $0 } == 1)
+        #expect(f.service.pendingCut?.paths == [missing.path])
+        #expect(f.service.pendingCut?.changeCount == f.board.changeCount)
+        await f.paste()
+        #expect(signals.value.withLock { $0 } == 2)
+    }
+
 }

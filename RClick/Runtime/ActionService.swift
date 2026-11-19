@@ -290,7 +290,7 @@ final class ActionService {
     }
 
     private func pasteMove(_ target: [String], trigger: String) async {
-        defer { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: nil) }
+        defer { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self) }
         guard !preparingCut, !terminationPending else {
             cutWarning(AppLocalization.localized("A move is already in progress"))
             return
