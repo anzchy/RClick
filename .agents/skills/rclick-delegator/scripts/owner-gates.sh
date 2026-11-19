@@ -63,6 +63,10 @@ lane() {
 keep_failure_log() {
   local name=$1 gates_log=$2
   local src=$scratch/.build/gates/$name.log kept=$out/$prefix-$name-failure.log
+  if [[ ! -f $src ]]; then
+    print "lane $name failure-log=none reason=no .build/gates/$name.log in the scratch tree" | tee -a "$summary"
+    return 0
+  fi
   {
     print "owner-gates failure log $prefix"
     print "commit: $full"

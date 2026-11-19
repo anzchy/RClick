@@ -1278,6 +1278,15 @@ class OwnerGatesTests(unittest.TestCase):
         self.assertIn(".agents/skills/rclick-delegator/scripts/test_delegator_scripts.py", header)
         self.assertIn(self.TRACEBACK, body)
 
+    def test_a_failed_lane_without_a_lane_log_is_reported_not_a_crash(self):
+        self.commit_gates("echo 'GATE skill-tooling FAIL (1 of 3 test files)'\necho 'GATES FAIL'\n", exit_code=1)
+        result = self.run_gates("0")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        summary = self.summary()
+        self.assertTrue(summary.rstrip().endswith("DONE overall=1"), summary)
+        self.assertIn("lane skill-tooling failure-log=none reason=no .build/gates/skill-tooling.log", summary)
+        self.assertFalse(self.failure_log("skill-tooling").exists())
+
 
 class CodexNoQuestionsTests(unittest.TestCase):
     """Codex panes must not stall on a sub-agent question nobody watches."""
