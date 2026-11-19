@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Copy Path is text-only and no longer attempts the file-URL write that caused a sandbox error in the Finder extension; absence of that log message awaits a real-device check
+- Recheck Paste destination identity, volume and safety inside coordination to refuse changed folders; device race validation remains pending
 - Quarantine damaged Paste journals and retain unresolved move history for up to 24 hours so it cannot lock out later Pastes
 - Allow ubiquitous Paste destinations when an iCloud sync root cannot be determined; device validation remains pending
 - Built-in new-file format and Apple product names now resolve in every supported language without missing-localization warnings

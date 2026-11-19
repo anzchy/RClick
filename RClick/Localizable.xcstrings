@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "The destination changed": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The destination changed"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "目标文件夹已更改"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "移動先が変更されました"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "El destino ha cambiado"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La destination a changé"
+        }
+      }
+    }
+  },
   "A previous move could not be fully recovered; its undo information was discarded": {
     "localizations": {
       "en": {
