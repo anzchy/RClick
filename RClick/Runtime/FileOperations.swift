@@ -11,7 +11,8 @@ import Foundation
 
 nonisolated protocol FileOperations: Sendable {
     func volumeUUID(of url: URL) throws -> String
-    func providerRootCandidates() -> [URL]
+    func accountHomeDirectory() throws -> URL
+    func providerRootCandidates() throws -> [URL]
     func moveFacts(of url: URL) throws -> MoveFacts
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal?
     func exclusiveRename(from source: URL, to destination: URL) throws
