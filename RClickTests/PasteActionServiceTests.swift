@@ -341,4 +341,108 @@ struct PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 
+    // test only, already enforced: the final verification runs targeted mutants.
+    @Test func newerClipboardSurvivesMoveAndSecondPasteIsRefused() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        let gate = DispatchSemaphore(value: 0)
+        var operation: Task<Void, Never>?
+        await f.cut([file])
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            f.operations.onNextCoordination { _ in
+                ready.resume()
+                _ = gate.wait(timeout: .now() + 5)
+            }
+            operation = Task { await f.paste() }
+        }
+        await f.paste()
+        #expect(f.warnings.first?.contains("in progress") == true)
+        let count = f.board.changeCount
+        await f.cut([file])
+        #expect(f.board.changeCount == count)
+        f.board.clearContents(); f.board.setString("new owner", forType: .string)
+        let newer = f.board.changeCount
+        gate.signal(); await operation?.value
+        #expect(f.board.changeCount == newer)
+        #expect(f.board.string(forType: .string) == "new owner")
+        #expect(f.service.pendingCut == nil)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
+        #expect(f.operations.renameCalls.count == 1)
+    }
+
+    @Test func identityIsCheckedInsideCoordinationAfterAReplacement() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file])
+        f.operations.onNextCoordination { source in
+            try FileManager.default.moveItem(at: source, to: source.appendingPathExtension("old"))
+            try Data("replacement".utf8).write(to: source)
+        }
+        await f.paste()
+        #expect(try Data(contentsOf: file) == Data("replacement".utf8))
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(f.warnings.first?.localizedCaseInsensitiveContains("changed since cut") == true)
+        #expect(f.service.pendingCut?.paths == [file.path])
+    }
+
+    @Test func staleCutRefusesBeforeAnyRename() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file(); await f.cut([file])
+        f.board.clearContents(); f.board.setString("other copy", forType: .string)
+        await f.paste()
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(f.warnings.first?.contains("cut has ended") == true)
+        #expect(f.board.string(forType: .string) == "other copy")
+    }
+
+    @Test func undoRecordSurvivesZeroSuccessIsReplacedBySuccessAndExpiresAt24Hours() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let first = try f.file("first.txt")
+        await f.cut([first]); await f.paste()
+        let previous = try #require(f.journal.load()?.entries.first)
+        let second = try f.file("second.txt")
+        await f.cut([second]); await f.paste(f.source)
+        #expect(f.journal.load()?.entries.first?.originalPath == previous.originalPath)
+        await f.cut([second]); await f.paste()
+        #expect(f.journal.load()?.entries.count == 1)
+        #expect(f.journal.load()?.entries.first?.originalPath == second.path)
+        f.clock.date.withLock { $0.addTimeInterval(86400) }
+        let relaunched = ActionService(state: State(), permission: f.permission, confirmation: Confirmation(),
+            fileOperations: f.operations, pasteboard: f.board, now: { [clock = f.clock] in clock.now() },
+            accessLeaser: f.leaser, journalStore: f.journal, terminationBoundary: f.termination, cutWarning: { _ in })
+        await relaunched.actionHandler(rid: "cut", target: [], trigger: "ctx-items")
+        #expect(f.journal.load()?.entries.isEmpty == true)
+    }
+
+    @Test(arguments: ["Report.pages", "Foo.app", "Project.v2"])
+    func numberedDirectoryAndPackageClashesKeepTheirMeaning(name: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = f.source.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: f.destination.appendingPathComponent(name), withIntermediateDirectories: true)
+        await f.cut([item]); await f.paste()
+        let expected: String = name == "Report.pages" ? "Report 2.pages" : (name == "Foo.app" ? "Foo 2.app" : "Project.v2 2")
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent(expected).path))
+        #expect(f.journal.load()?.entries.first?.movedToPath == f.destination.appendingPathComponent(expected).path)
+    }
+
+    @Test func caseOnlyClashNeverReplacesAndDifferentCaseDescendantIsRefused() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file("Notes.txt")
+        try Data("existing".utf8).write(to: f.destination.appendingPathComponent("notes.txt"))
+        await f.cut([file]); await f.paste()
+        let caseSensitive = try f.destination.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames == true
+        if !caseSensitive {
+            #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes.txt")) == Data("existing".utf8))
+            #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("Notes 2.txt").path))
+        }
+        let folder = f.source.appendingPathComponent("Folder")
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("child"), withIntermediateDirectories: true)
+        await f.cut([folder])
+        await f.paste(f.source.appendingPathComponent(caseSensitive ? "Folder/child" : "folder/child"))
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+        #expect(f.warnings.last?.contains("itself") == true)
+    }
+
 }
