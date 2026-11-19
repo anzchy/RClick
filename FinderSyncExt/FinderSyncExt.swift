@@ -378,12 +378,16 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             && config.actions.contains { $0.id == "cut" }
         let cutSelection = shouldReadCutSelection
             ? (FIFinderSyncController.default().selectedItemURLs() ?? []).map(\.path) : []
-        let cutChangeCount = shouldReadCutSelection ? NSPasteboard.general.changeCount : 0
+        let cutChangeCount = NSPasteboard.general.changeCount
         let cutVisibility = PendingCut.menuVisibility(
-            config: config, menuKind: menuKind == .contextualMenuForItems ? .contextualItems : nil,
+            config: config, menuKind: menuKind == .contextualMenuForItems ? .contextualItems :
+                (menuKind == .contextualMenuForContainer ? .contextualContainer : nil),
             selection: cutSelection, currentChangeCount: cutChangeCount, hostOnline: !offline
         )
-        let visibleActions = config.actions.filter { $0.id != "cut" || cutVisibility.cut }
+        var visibleActions = config.actions.filter { $0.id != "cut" || cutVisibility.cut }
+        if cutVisibility.paste {
+            visibleActions.append(ActionMenuItem(id: "paste-move", name: "Paste (move here)", icon: "doc.on.clipboard", tag: 6))
+        }
         // 构建动作菜单
         if !visibleActions.isEmpty {
             if config.actionsCollapsed {
@@ -523,7 +527,9 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         // 标题是用户唯一能看到的契约，handleActionClick 用同一个状态驱动行为，
         // 两者不会分叉。
         let title: String
-        if action.id == "cut" {
+        if action.id == "paste-move" {
+            title = AppLocalization.localized("Paste (move here)")
+        } else if action.id == "cut" {
             title = AppLocalization.localized("Cut")
         } else if menuOptionPressed, action.id == Self.deleteDirectActionId {
             title = String(format: AppLocalization.localized("%@ (skip confirmation)"), action.name)
@@ -537,8 +543,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             item.image = icon
         }
         // 主程序离线时只有复制路径是快链路，其余动作需要主程序的授权与执行，置灰
-        if action.id == "cut" {
-            PendingCut.renderCutEnablement(on: item, snapshotEnabled: cutEnabled, delivery: delivery)
+        if RCAction.entityID(for: action.id) == "cut" {
+            PendingCut.renderCutEnablement(on: item, snapshotEnabled: action.id == "paste-move" || cutEnabled, delivery: delivery)
         } else if !isHostAppRunning && action.id != Self.copyPathActionId {
             item.isEnabled = false
         }
@@ -604,8 +610,12 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     // MARK: - Menu Action Handlers
 
     @objc private func handleActionClick(_ sender: NSMenuItem) {
-        guard let config = cachedMenuConfig,
-              let action = config.actions.first(where: { hashForAction($0) == sender.tag }) else {
+        guard let config = cachedMenuConfig else { return }
+        let paste = ActionMenuItem(id: "paste-move", name: "Paste (move here)", icon: "doc.on.clipboard", tag: 6)
+        let clickedPaste = sender.tag == hashForAction(paste)
+        guard let action = config.actions.first(where: {
+            clickedPaste ? $0.id == RCAction.entityID(for: paste.id) : hashForAction($0) == sender.tag
+        }) else {
             logger.warning("Action not found for tag: \(sender.tag)")
             return
         }
@@ -626,9 +636,9 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         // 不在点击瞬间重新检测按键，避免标题与实际行为分叉。
         let optionPressed = menuOptionPressed
         let event = ClickEventPayload(
-            itemId: action.id,
+            itemId: clickedPaste ? paste.id : action.id,
             itemType: .action,
-            target: itemPaths,
+            target: clickedPaste && currentMenuKind == .contextualMenuForContainer ? newFileTargetPaths() : itemPaths,
             trigger: getTriggerForMenuKind(),
             optionKeyPressed: optionPressed
         )

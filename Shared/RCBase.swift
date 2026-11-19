@@ -209,6 +209,10 @@ struct RCAction: @MainActor RCBase {
 
 
 extension RCAction {
+    static func entityID(for clickID: String) -> String {
+        clickID == "paste-move" ? "cut" : clickID
+    }
+
 
     static let copyPath = RCAction(id: "copy-path", name: "Copy Path", enabled: true, idx: 0, icon: "doc.on.doc")
     static let copyFileName = RCAction(id: "copy-file-name", name: "Copy File Name", enabled: true, idx: 1, icon: "doc.text")
