@@ -322,4 +322,23 @@ struct PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 
+    @Test func journalOutcomeFailurePreservesUnattemptedItemsAndDurableIntent() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let first = try f.file("first.txt"), second = try f.file("second.txt")
+        let journal = f.journal
+        let intentSeen = Counter()
+        f.operations.onNextCoordination { _ in
+            if journal.load()?.entries.last?.outcome == .intended { intentSeen.value.withLock { $0 += 1 } }
+        }
+        f.journal.failOutcomes.withLock { $0 = true }
+        await f.cut([first, second]); await f.paste()
+        #expect(intentSeen.value.withLock { $0 } == 1)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("first.txt").path))
+        #expect(FileManager.default.fileExists(atPath: second.path))
+        #expect(f.service.pendingCut?.paths == [second.path])
+        #expect(f.journal.load()?.entries.first?.outcome == .intended)
+        #expect(f.warnings.count == 1)
+        #expect(f.leaser.balance == 0)
+    }
+
 }

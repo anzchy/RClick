@@ -1,6 +1,41 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The move completed, but its journal needs recovery at the next launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The move completed, but its journal needs recovery at the next launch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动已完成，但其日志需要在下次启动时恢复"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動は完了しましたが、次回起動時にジャーナルの復旧が必要です"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El movimiento terminó, pero su registro debe recuperarse al reiniciar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le déplacement est terminé, mais son journal doit être récupéré au prochain lancement"
+          }
+        }
+      }
+    },
     "The cut has ended": {
       "extractionState": "manual",
       "localizations": {

@@ -386,7 +386,16 @@ final class ActionService {
                             result.completed.append(path)
                             journal.entries[journal.entries.count - 1].outcome = .moved
                             do { try store.save(journal) }
-                            catch { return result } // Intent remains durable; launch reconciliation resolves it.
+                            catch {
+                                // The rename happened. Never mark that item pending again.
+                                // Preserve every unattempted item and stop the batch.
+                                for remaining in selection.map(\.0) where !result.completed.contains(remaining)
+                                    && !result.failures.contains(where: { $0.path == remaining }) {
+                                    result.failures.append(FileActionFailure(path: remaining, error: error))
+                                }
+                                result.journalNeedsRecovery = true
+                                return result
+                            }
                             break
                         } catch let error as POSIXError where error.code == .EEXIST {
                             journal.entries[journal.entries.count - 1].outcome = .failed
@@ -401,7 +410,7 @@ final class ActionService {
             journal.previous = []
             journal.inProgress = false
             do { try store.save(journal) }
-            catch { /* Durable intents/outcomes remain available for launch reconciliation. */ }
+            catch { result.journalNeedsRecovery = true }
             return result
         }
         // This is an ownership check, not a pasteboard compare-and-swap.
@@ -422,6 +431,8 @@ final class ActionService {
         if !result.failures.isEmpty {
             let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
             cutWarning(String(format: AppLocalization.localized("Some items could not be moved:\n%@"), lines.joined(separator: "\n")))
+        } else if result.journalNeedsRecovery {
+            cutWarning(AppLocalization.localized("The move completed, but its journal needs recovery at the next launch"))
         }
     }
 
