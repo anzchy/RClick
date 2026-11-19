@@ -752,6 +752,78 @@ final class IPCAuthenticationTests: XCTestCase {
 
 @MainActor
 final class ClickAckAdmissionTests: XCTestCase {
+    func testKeyLossBeforeAckDropsClickWithoutAcknowledging() async {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = MutableIPCKeyProvider()
+        let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let acks = Mutex(0)
+        ext.onMainMessage(.actionAck) { _ in acks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        let dropped = expectation(description: "key loss at ack must drop handler")
+        dropped.isInverted = true
+        app.onClickEvent { _ in dropped.fulfill() }
+        ext.sendClickEvent(ClickEventPayload(itemId: "delete-direct", itemType: .action, trigger: .contextualItems))
+        provider.data.withLock { $0 = nil }
+        clock.advance(10) // Make the next send refresh its cached key, without a clock barrier.
+        await fulfillment(of: [dropped], timeout: 0.05)
+        XCTAssertFalse(app.hasReadableKey)
+        XCTAssertEqual(acks.withLock { $0 }, 0)
+    }
+
+    func testUnsentAckWithUnchangedSessionDropsClick() async {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let random = AckTestRandom()
+        let app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock, random: random)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        let acks = Mutex(0)
+        ext.onMainMessage(.actionAck) { _ in acks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        let session = app.currentSession
+        let dropped = expectation(description: "unsent ack must drop even with a valid session and key")
+        dropped.isInverted = true
+        app.onClickEvent { _ in dropped.fulfill() }
+        ext.sendClickEvent(ClickEventPayload(itemId: "delete-direct", itemType: .action, trigger: .contextualItems))
+        random.failNext.withLock { $0 = true }
+        await fulfillment(of: [dropped], timeout: 0.05)
+        XCTAssertTrue(app.hasReadableKey)
+        XCTAssertEqual(app.currentSession, session)
+        XCTAssertEqual(acks.withLock { $0 }, 0)
+    }
+
+    func testAcceptedHandlerCompletesAfterSessionRotation() async {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        let acks = Mutex(0)
+        ext.onMainMessage(.actionAck) { _ in acks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        let session = app.currentSession
+        let started = expectation(description: "accepted handler started")
+        let completed = expectation(description: "accepted handler completes after rotation")
+        let resume = Mutex<CheckedContinuation<Void, Never>?>(nil)
+        app.onClickEvent { _ in
+            await withCheckedContinuation { continuation in
+                resume.withLock { $0 = continuation }
+                started.fulfill()
+            }
+            completed.fulfill()
+        }
+        ext.sendClickEvent(ClickEventPayload(itemId: "delete-direct", itemType: .action, trigger: .contextualItems))
+        await fulfillment(of: [started], timeout: 1)
+        clock.step(wall: 0, monotonic: 16)
+        app.sendRunningNotification()
+        XCTAssertNotEqual(app.currentSession, session)
+        resume.withLock { $0 }?.resume()
+        await fulfillment(of: [completed], timeout: 1)
+        XCTAssertEqual(acks.withLock { $0 }, 1)
+    }
+
     func testSessionInvalidatedWhilePostingAckDropsHandler() async {
         let center = NotificationCenter()
         let clock = TestIPCClock(wall: 100, monotonic: 200)
@@ -810,6 +882,16 @@ final class ClickAckAdmissionTests: XCTestCase {
         XCTAssertEqual(acks.withLock { $0 }, ["control-click"])
     }
 
+}
+
+nonisolated final class AckTestRandom: IPCRandom {
+    let failNext = Mutex(false)
+    private let counter = Mutex<UInt8>(0)
+    func bytes(count: Int) throws -> Data {
+        let fail = failNext.withLock { value in let result = value; value = false; return result }
+        if fail { throw IPCSecurityError.noKey }
+        return counter.withLock { value in value &+= 1; return Data(repeating: value, count: count) }
+    }
 }
 
 nonisolated final class TestIPCClock: IPCClock {
