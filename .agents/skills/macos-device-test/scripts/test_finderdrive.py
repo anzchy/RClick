@@ -95,6 +95,10 @@ class FakeDesktop:
         self.cancelled = []  # owner pid of every menu a cancel (AXCancel) closed
         self.menu_at_errors = 0  # menu-at answers an AX error (exit 70) this many times while a menu is open
         self.abort_hangs = self.session_fails = False  # a session abort times out; a session ends with an AX error
+        self.before_click = None  # called (desktop, x, y) as a right-click lands, before Finder handles it
+        self.before_dump = None  # called (desktop, n) before the n-th dump of the Finder window (1-based)
+        self.finder_dumps = 0
+        self.window_error_with_menu = None  # what axprobe answers for the Finder window while a menu is open
         self.calls, self.requests, self.pressed, self.clicks, self.timeouts, self.keys = [], [], [], [], [], []
         self.windows, self.acted, self.after_act = fixture('dialog-delete-confirm.jsonl'), [], []
 
@@ -129,6 +133,8 @@ class FakeDesktop:
 
     def right_click(self, x, y, option):
         self.clicks.append((x, y, option))
+        if self.before_click:
+            self.before_click(self, x, y)
         hit = next((row for row in self.rows() if inside(row.frame, (x, y))), None)
         if hit is None:
             self.selection = []
@@ -196,6 +202,11 @@ class FakeDesktop:
             return self.completed(argv, 'cancelled\n')
         if command == 'dump':
             if argv[2] == str(FINDER) and argv[3] == '0':
+                self.finder_dumps += 1
+                if self.before_dump:
+                    self.before_dump(self, self.finder_dumps)
+                if self.menu is not None and self.window_error_with_menu:
+                    return self.completed(argv, '', 70, self.window_error_with_menu)
                 return self.completed(argv, self.finder_window())
             return self.completed(argv, self.windows)
         if command == 'act':
@@ -454,6 +465,123 @@ class ChooseAtTheActingBoundary(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertTrue(desktop.clicks[0][2])
         self.assertEqual(desktop.pressed[0]['title'], 'Delete Direct (skip confirmation)')
+
+
+def row_at(desktop, x, y):
+    return next(row.url for row in desktop.rows() if inside(row.frame, (x, y)))
+
+
+def shifted(window, dy):
+    """The window dump with every file-list row (and what it holds) moved down by `dy` points."""
+    lines = []
+    for line in window.splitlines():
+        if line.strip():
+            node = json.loads(line)
+            if len(node['path']) > 4 and node['path'][:4] == [0, 0, 2, 0] and node['frame']:
+                node['frame'][1] += dy
+            lines.append(json.dumps(node, ensure_ascii=False))
+    return '\n'.join(lines) + '\n'
+
+
+class TheMenuIsBoundToTheVerifiedRows(unittest.TestCase):
+    """After the menu opens and BEFORE the press, inside the held session, the front Finder window is read again
+    through AX (no AppleScript) and must still hold exactly what was verified before the click (audit r3 gpt F1 /
+    opus M3): the selected rows' AXURL set is the target set and the clicked row is where it was; for a background
+    menu, the front folder. A Compress title proves only a basename or a count, so a change after the last read
+    before the click (another window in front with an equal name, or a same-size selection that keeps the clicked
+    row) passed every check and the press acted on other files."""
+    ALPHA, BETA, PCT41 = FOLDER + '/alpha.txt', FOLDER + '/beta.txt', FOLDER + '/%41.txt'
+
+    def assert_refused_unpressed(self, desktop, code, err):
+        self.assertEqual(code, 65, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertEqual(len(desktop.clicks), 1)
+        self.assertTrue(desktop.menu is None, 'the Finder menu was left open: ' + err)
+        self.assertEqual(desktop.cancelled, [FINDER])
+        self.assertEqual(desktop.timeouts, [])
+        self.assertIn('with the menu open', err)
+
+    def test_a_same_size_selection_that_keeps_the_clicked_row_is_not_pressed(self):
+        # {alpha, beta} verified; as the click lands the selection is {clicked row, %41}: Finder's menu still says
+        # `Compress 2 Items` and the clicked row is still selected.
+        def change(desktop, x, y):
+            clicked = row_at(desktop, x, y)
+            desktop.selection = [clicked, self.PCT41]
+
+        desktop = FakeDesktop()
+        desktop.before_click = change
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, '--target', self.BETA, *GROUP)
+        self.assert_refused_unpressed(desktop, code, err)
+        self.assertIn('%41.txt', err)
+
+    def test_a_same_basename_row_of_another_window_is_not_pressed(self):
+        # As the click lands another window comes to the front with its own alpha.txt at the same place: Finder's menu
+        # is `Compress “alpha.txt”` for /tmp/other-window/alpha.txt. Option: the skip-confirmation delete.
+        def change(desktop, x, y):
+            desktop.window = desktop.window.replace(FOLDER, '/tmp/other-window')
+            desktop.selection = []
+
+        desktop = FakeDesktop()
+        desktop.before_click = change
+        code, _, err = drive(desktop, 'choose', 'Delete Direct (skip confirmation)', '--option', '--target',
+                             self.ALPHA, *GROUP)
+        self.assert_refused_unpressed(desktop, code, err)
+        self.assertIn('/tmp/other-window/alpha.txt', err)
+
+    def test_another_front_folder_behind_a_background_menu_is_not_pressed(self):
+        def change(desktop, x, y):
+            desktop.window = desktop.window.replace(FOLDER, '/tmp/other-window')
+
+        desktop = FakeDesktop()
+        desktop.before_click = change
+        code, _, err = drive(desktop, 'choose', 'New File', '--sub', 'TXT', *GROUP, '--background', FOLDER)
+        self.assert_refused_unpressed(desktop, code, err)
+        self.assertIn('/tmp/other-window', err)
+
+    def test_a_window_that_cannot_be_read_with_the_menu_open_is_refused_not_pressed(self):
+        # Whether Finder answers AX for its window while its menu is open is UNVERIFIED on a device: if it does not,
+        # nothing is pressed (the calibration's choose step then fails and says so).
+        desktop = FakeDesktop()
+        desktop.window_error_with_menu = 'axprobe: cannot read the windows of pid 415: AXError -25204\n'
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assert_refused_unpressed(desktop, code, err)
+        self.assertIn('AXError -25204', err)
+
+    def test_the_verified_menu_is_pressed_after_the_window_was_read_again_with_it_open(self):
+        reads = []
+        desktop = FakeDesktop()
+        desktop.before_dump = lambda desktop, n: reads.append(desktop.menu is not None)
+        code, out, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(desktop.pressed), 1)
+        self.assertEqual(reads[-1], True, 'the window was not read with the menu open')
+        self.assertIn('with the menu open', out)
+
+    def test_a_clicked_row_found_elsewhere_with_the_menu_open_is_not_pressed(self):
+        # Same files, same selection, but the clicked row is no longer under the click point (another window of the
+        # same folder in front, or the list scrolled): the menu is not proven to be the clicked row's.
+        def move(desktop, n):
+            if desktop.menu is not None:
+                desktop.window = shifted(desktop.window, 6)
+
+        desktop = FakeDesktop()
+        desktop.before_dump = move
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assert_refused_unpressed(desktop, code, err)
+        self.assertIn('not at the click point', err)
+
+    def test_a_row_that_moves_between_the_two_reads_before_the_click_is_not_clicked(self):
+        # audit r3 opus M4: the "row did not move" re-read had no test.
+        def move(desktop, n):
+            if n == 2:
+                desktop.window = shifted(desktop.window, 6)
+
+        desktop = FakeDesktop()
+        desktop.before_dump = move
+        code, _, err = drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+        self.assertEqual(code, 65, err)
+        self.assertEqual((desktop.clicks, desktop.pressed), ([], []))
+        self.assertIn('moved', err)
 
 
 class CleanupFromTheClickOnward(unittest.TestCase):

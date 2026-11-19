@@ -146,6 +146,11 @@ effects in `finderdrive.py` and `calibration.py`.
 - `ui.sh open-menu --background` clicks the middle of the empty list below the rows (`finderui.background_point`);
   that this opens the background menu, and that axprobe's `menu-session` re-check holds on a live menu, are proven
   by calibration steps `background-menu`, `background-choose` and `choose`.
+- `ui.sh choose` reads Finder's front window through AX (`axprobe dump`) while its context menu is open, to bind the
+  menu to the verified rows before the press (fix r4). Finder answering AX for its MENU while the menu is open is
+  shown by the device run, 2026-11-18; answering AX for its WINDOW then is not. If it does not, `choose` refuses
+  (65, nothing pressed) and calibration's `choose` step fails saying `cannot read the front Finder window through AX
+  with the menu open`: that is the correct failure, not a reason to drop the check.
 - The osascript `display alert` stands in for RClick's alerts in `dialog-read`/`press-button`; the real Delete Direct
   confirmation was read through AX the same way (i5-device-20261117d).
 
@@ -166,6 +171,19 @@ effects in `finderdrive.py` and `calibration.py`.
   and it left a menu open for the next call to hang on. Test: `test_finderdrive.FakeDesktop` times out Finder
   AppleScript while a menu is open; `test_calibration.CalibrationThroughTheRealDriver`.
 - Evidence: device run, 2026-11-18 ("Hypothesis settled", "Script problems").
+
+### 2026-11-18 — the Compress title proves only a basename or a count (audit r3, offline)
+
+- Symptom (offline, FakeDesktop): a change after the last AX read before the click, either another window in front
+  with an equal file name at the click point or a same-size selection that keeps the clicked row, made Finder's
+  menu act on other files while its title stayed `Compress “alpha.txt”` / `Compress 2 Items`; the guard passed and
+  the press (Option: the skip-confirmation delete) was requested.
+- Cause: the full-path identity was proven only BEFORE the right-click; after it only the title was checked.
+- Fix (#32 fix round 4): with the menu open and held, `choose` reads the front window again through AX and requires
+  the same selected `AXURL` set and the clicked row at the click point (`finderui.bound_menu`; background: the same
+  front folder), else 65 and the menu closed. A gap remains between that read and `AXPress` (one AX dump, then the
+  session's own owner and title re-check): it is milliseconds, not the seconds of the old gap. Test:
+  `test_finderdrive.TheMenuIsBoundToTheVerifiedRows`.
 
 ### 2026-11-18 — `ui.sh close-menu` refused while a menu was open
 

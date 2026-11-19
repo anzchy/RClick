@@ -467,11 +467,28 @@ def prepare_background(folder):
     return ui.background_point(nodes), front
 
 
+def still_bound(click, targets, background):
+    """finderui.bound_menu on the front Finder window read through AX while the menu is open (Finder answers no
+    AppleScript then). If that read cannot be made, or disagrees: Refused, nothing pressed."""
+    try:
+        nodes = finder_nodes()
+    except ui.Environment as error:
+        raise ui.Refused(f'cannot read the front Finder window through AX with the menu open ({error}): the menu '
+                         'cannot be tied to the targets, nothing pressed') from error
+    try:
+        return ui.bound_menu(nodes, click, targets, background)
+    except ui.Refused as error:
+        raise ui.Refused(f'read again with the menu open: {error}; the menu may act on other items than were '
+                         'verified before the click, nothing pressed') from error
+
+
 def choose(title, group, sub=None, targets=(), background=None, option=False):
     """`ui.sh choose`, ONE process from selection to press, with no Finder AppleScript once the menu can be open:
     select and verify (prepare_targets / prepare_background), right-click, wait for the menu, then inside one axprobe
     menu session: Finder owns the menu, finderui.check_guard against the evidence read before the click, the item in
-    RClick's group; the same axprobe process re-checks the held menu and presses. From the right-click on, any
+    RClick's group, then the front window read AGAIN through AX with the menu open must still hold exactly the
+    verified targets (still_bound: the title alone proves only a basename or a count); the same axprobe process
+    re-checks the held menu and presses. From the right-click on, any
     refusal or failure (an AX or transport error, a session that cannot start or end) presses nothing and closes the
     menu (menu_boundary: AXCancel, Esc fallback); another process's menu is left open. Returns (guard reason, item)."""
     if background:
@@ -492,8 +509,9 @@ def choose(title, group, sub=None, targets=(), background=None, option=False):
         items = ui.menu_items(session.nodes)
         reason = ui.check_guard(targets, selected, items, background=background, front=front)
         item, sub_path = ui.find_group_item(items, title, sub, group)
+        bound = still_bound(point, targets, background)
         session.press(item, sub_path, sub)
-    return reason, item
+    return f'{reason}; {bound}', item
 
 
 def print_menu(items, also=(), expected=()):
