@@ -463,4 +463,38 @@ struct PasteActionServiceTests {
         #expect(signals.value.withLock { $0 } == 2)
     }
 
+    @Test(arguments: ["success", "partial", "refusal", "cancel-panel", "cancel-task", "timeout"])
+    func delegateDefersAndRepliesOnceOnEveryExit(exit: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let first = try f.file(), second = try f.file("second.txt")
+        await f.cut(exit == "partial" ? [first, second] : [first])
+        if exit == "partial" { try FileManager.default.removeItem(at: second) }
+        if exit == "refusal" { f.operations.refuseDestination(f.destination, reason: .trash) }
+        f.permission.allowed = false
+        var operation: Task<Void, Never>?
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            f.permission.onPrompt = { ready.resume() }
+            operation = Task { await f.paste() }
+        }
+        var replies = 0
+        let delegate = AppDelegate(isTestHost: true, sendQuit: {}, terminationService: f.service, replyToTermination: { replies += 1 })
+        #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateLater)
+        #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateLater)
+        #expect(replies == 0)
+        if exit == "timeout" { f.termination.advance(by: 35); #expect(replies == 1) }
+        if exit == "cancel-task" { operation?.cancel() }
+        f.permission.allowed = true
+        f.permission.hold?.resume(returning: ["cancel-panel", "timeout"].contains(exit) ? nil : f.destination)
+        f.permission.hold = nil
+        await operation?.value
+        #expect(replies == 1)
+        f.termination.advance(by: 100)
+        #expect(replies == 1)
+        #expect(f.leaser.balance == 0)
+        #expect(f.termination.balance == 0)
+        if ["success", "partial"].contains(exit) {
+            #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
+        } else { #expect(FileManager.default.fileExists(atPath: first.path)) }
+    }
+
 }

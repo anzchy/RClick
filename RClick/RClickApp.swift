@@ -83,6 +83,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Records entry into the real launch side-effect section, including in a hosted test.
     private(set) static var launchSideEffectsStarted = false
     private var isTestHost = TestHost.isActive
+    private var terminationActionService: ActionService?
+    private var replyToTermination: @MainActor () -> Void = {
+        NSApplication.shared.reply(toApplicationShouldTerminate: true)
+    }
     private var sendQuit: () -> Void = { Messager.shared.sendQuitNotification() }
 
     /// 惰性求值：`AppState.shared` 会一路构造到 `ModelContext(sharedModelContainer)`，
@@ -111,10 +115,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Inject the outbound system boundary without launching a second app instance.
-    convenience init(isTestHost: Bool, sendQuit: @escaping () -> Void) {
+    convenience init(isTestHost: Bool, sendQuit: @escaping () -> Void,
+                     terminationService: ActionService? = nil,
+                     replyToTermination: @escaping @MainActor () -> Void = {
+                         NSApplication.shared.reply(toApplicationShouldTerminate: true)
+                     }) {
         self.init()
         self.isTestHost = isTestHost
         self.sendQuit = sendQuit
+        self.terminationActionService = terminationService
+        self.replyToTermination = replyToTermination
     }
 
     // MARK: - 重连机制状态
@@ -232,9 +242,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Explicit Quit is deferred only as a courtesy. The journal, not the wait,
     // protects interrupted moves; ActionService replies once or at its deadline.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        RCRuntime.shared.actionService.deferTermination {
-            NSApplication.shared.reply(toApplicationShouldTerminate: true)
-        } ? .terminateLater : .terminateNow
+        let service: ActionService
+        if let terminationActionService { service = terminationActionService }
+        else {
+            guard !isTestHost else { return .terminateNow }
+            service = RCRuntime.shared.actionService
+        }
+        return service.deferTermination(reply: replyToTermination) ? .terminateLater : .terminateNow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
