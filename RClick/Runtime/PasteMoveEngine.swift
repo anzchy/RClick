@@ -5,7 +5,7 @@ import Synchronization
 nonisolated enum MoveNotification: String, Sendable { case willMoveTo, didMoveTo }
 
 nonisolated enum PasteMoveError: Error {
-    case changed, invalidDestination, crossVolume, insideSource, mountPoint, cloud, timeout
+    case changed, destinationChanged, invalidDestination, crossVolume, insideSource, mountPoint, cloud, timeout
 }
 
 extension SystemFileOperations {
@@ -34,7 +34,7 @@ extension FileOperations {
         completion.wait(timeout: .now() + max(0, timeout))
     }
     nonisolated func prepareCoordinatedMove(_ source: URL) throws {}
-    nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, timeout: TimeInterval) throws {
+    nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, expectedDestination: FileIdentity, timeout: TimeInterval) throws {
         let job = MoveCoordinationJob()
         let done = DispatchSemaphore(value: 0)
         // A dedicated Foundation thread keeps blocking file presenters off both
@@ -49,6 +49,20 @@ extension FileOperations {
                         guard !state.cancelled else { throw PasteMoveError.timeout }
                         guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
                         notifyMove(.willMoveTo, using: job.coordinator, from: from, to: to)
+                        // Classification may predate an fsync and a presenter wait.
+                        // Revalidate the coordinated parent, including symlink swaps,
+                        // under the cancellation gate immediately before renaming.
+                        do {
+                            // Rebuild the coordinator's bridged NSURL as a canonical
+                            // file URL before walking its ancestors.
+                            let folder = URL(fileURLWithPath: to.deletingLastPathComponent().path).standardizedFileURL
+                            guard try fileIdentity(of: folder) == expectedDestination,
+                                  expectedDestination.volume == expected.volume,
+                                  try volumeIdentity(of: folder) == expected.volume,
+                                  try destinationRefusal(folder) == nil else {
+                                throw PasteMoveError.destinationChanged
+                            }
+                        } catch { throw PasteMoveError.destinationChanged }
                         try exclusiveRename(from: from, to: to)
                         state.moved = true
                         return true
@@ -130,7 +144,7 @@ extension FileOperations {
                 facts.providerContainer = root
                 break
             }
-            var ancestor = url.deletingLastPathComponent()
+            var ancestor = url.deletingLastPathComponent().standardizedFileURL
             var container = url
             while true {
                 if ancestor.lastPathComponent.caseInsensitiveCompare(root.lastPathComponent) == .orderedSame,
@@ -140,7 +154,7 @@ extension FileOperations {
                 }
                 if ancestor.path == "/" { break }
                 container = ancestor
-                ancestor = ancestor.deletingLastPathComponent()
+                ancestor = ancestor.deletingLastPathComponent().standardizedFileURL
             }
             if facts.providerContainer != nil { break }
         }
@@ -153,7 +167,7 @@ extension FileOperations {
                 guard values.isUbiquitousItem == true else { break }
                 facts.providerContainer = ancestor
                 if ancestor.path == "/" { break }
-                ancestor = ancestor.deletingLastPathComponent()
+                ancestor = ancestor.deletingLastPathComponent().standardizedFileURL
             }
         }
         return facts
@@ -186,7 +200,7 @@ extension FileOperations {
             if try moveFacts(of: ancestor).package { return .package }
             // Detect the well-known Trash entry by name plus its PARENT identity,
             // avoiding a traversal into a privacy-protected Trash just to classify it.
-            let parent = ancestor.deletingLastPathComponent()
+            let parent = ancestor.deletingLastPathComponent().standardizedFileURL
             if ancestor.lastPathComponent.caseInsensitiveCompare(".Trash") == .orderedSame,
                try sameItem(parent, accountHomeDirectory()),
                try ancestor.lastPathComponent == ".Trash" || !moveFacts(of: parent).caseSensitiveNames { return .trash }

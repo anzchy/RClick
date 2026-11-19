@@ -368,8 +368,10 @@ final class ActionService {
         defer { terminationBoundary.unprotectMutation() }
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
+            let expectedDestination: FileIdentity
             do {
                 if let refusal = try operations.destinationRefusal(destination) { throw refusal }
+                expectedDestination = try operations.fileIdentity(of: destination)
             } catch {
                 result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
                 return result
@@ -425,7 +427,7 @@ final class ActionService {
                             identity: stableIdentity, timestamp: timestamp, outcome: .intended))
                         try store.persist(journal) // Write-ahead: no rename may precede this durable intent.
                         do {
-                            try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity, timeout: timeout)
+                            try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity, expectedDestination: expectedDestination, timeout: timeout)
                             result.completed.append(path)
                             journal.entries[journal.entries.count - 1].outcome = .moved
                             do { try store.persist(journal) }
@@ -512,6 +514,7 @@ final class ActionService {
         case PasteMoveError.mountPoint: key = "A volume root cannot be moved"
         case PasteMoveError.cloud: key = "Moving items outside their cloud container is not supported yet"
         case PasteMoveError.changed: key = "Changed since cut"
+        case PasteMoveError.destinationChanged: key = "The destination changed"
         case PasteMoveError.timeout: key = "File coordination timed out"
         case MoveName.Failure.tooLong: key = "The numbered name would exceed 255 UTF-8 bytes"
         case MoveName.Failure.exhausted: key = "No available numbered name was found"

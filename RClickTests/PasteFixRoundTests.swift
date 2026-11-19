@@ -1,4 +1,5 @@
 import AppKit
+import Synchronization
 import Testing
 @testable import RClick
 
@@ -115,5 +116,63 @@ extension PasteActionServiceTests {
         await f.cut([item]); await f.paste()
         #expect(f.operations.moveEvents == ["willMoveTo", "rename", "didMoveTo"])
         #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes.txt")) == Data("original".utf8))
+    }
+}
+
+extension PasteActionServiceTests {
+    @Test(arguments: ["symlink", "package", "replacement", "moved-away", "later-item", "volume"])
+    func destinationChangedInsideCoordinationNeverReceivesTheItem(_ kind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let first = try f.file("first.txt")
+        let second = try f.file("second.txt")
+        let destination = f.destination
+        let parked = f.root.appendingPathComponent("original-destination")
+        let elsewhere = f.root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        let operations = f.operations
+        let swap: @Sendable (URL) throws -> Void = { _ in
+            if kind == "package" {
+                operations.setMoveFacts(MoveFacts(directory: true, package: true), for: destination)
+            } else if kind == "volume" {
+                operations.placeOnOtherVolume(destination.path)
+            } else {
+                try FileManager.default.moveItem(at: destination, to: parked)
+                if kind == "symlink" || kind == "later-item" {
+                    try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: elsewhere)
+                } else if kind == "replacement" {
+                    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+                }
+            }
+        }
+        if kind == "later-item" {
+            operations.onNextCoordination { _ in operations.onNextCoordination(swap) }
+        } else { operations.onNextCoordination(swap) }
+        await f.cut(kind == "later-item" ? [first, second] : [first])
+        await f.paste()
+        let refused = kind == "later-item" ? second : first
+        #expect(FileManager.default.fileExists(atPath: refused.path))
+        #expect(!FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent(refused.lastPathComponent).path))
+        #expect(operations.renameCalls.count == (kind == "later-item" ? 1 : 0))
+        #expect(f.service.pendingCut?.paths == [refused.path])
+        #expect(f.warnings.first?.contains("The destination changed") == true)
+        if kind == "later-item" {
+            #expect(try Data(contentsOf: parked.appendingPathComponent("first.txt")) == Data("original".utf8))
+        }
+        #expect(f.leaser.balance == 0)
+    }
+}
+
+extension PasteActionServiceTests {
+    @Test func crossVolumeRefusalPrecedesJournalIntentAndCoordination() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let entered = Counter()
+        f.operations.placeOnOtherVolume(f.destination.path)
+        f.operations.onNextCoordination { _ in entered.value.withLock { $0 += 1 } }
+        await f.cut([item]); await f.paste()
+        #expect(entered.value.withLock { $0 } == 0)
+        #expect(!f.journal.history.withLock { $0.contains { $0.entries.contains { $0.outcome == .intended } } })
+        #expect(f.warnings.first?.contains("Moving between disks is not supported yet") == true)
+        #expect(FileManager.default.fileExists(atPath: item.path))
     }
 }
