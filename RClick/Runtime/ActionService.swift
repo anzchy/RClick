@@ -235,11 +235,30 @@ final class ActionService {
         let operations = fileOperations
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
+            do {
+                if let refusal = try operations.destinationRefusal(destination) { throw refusal }
+            } catch {
+                result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
+                return result
+            }
             for (path, identity) in zip(record.paths, record.identities) {
-                let source = URL(fileURLWithPath: path)
+                let raw = URL(fileURLWithPath: path)
+                let source = raw.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(raw.lastPathComponent)
                 do {
-                    let values = try source.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey, .isSymbolicLinkKey])
-                    let plainFolder = values.isDirectory == true && values.isPackage != true && values.isSymbolicLink != true
+                    if try operations.sameItem(source.deletingLastPathComponent(), destination) {
+                        result.completed.append(path)
+                        continue
+                    }
+                    let facts = try operations.moveFacts(of: source)
+                    if facts.mountPoint { throw PasteMoveError.mountPoint }
+                    if facts.directory, try operations.contains(source, destination) { throw PasteMoveError.insideSource }
+                    guard try operations.volumeIdentity(of: source) == operations.volumeIdentity(of: destination) else {
+                        throw PasteMoveError.crossVolume
+                    }
+                    if let container = facts.providerContainer {
+                        guard try operations.contains(container, destination) else { throw PasteMoveError.cloud }
+                    } else if facts.ubiquitous { throw PasteMoveError.cloud }
+                    let plainFolder = facts.directory && !facts.package
                     var number = 1
                     while true {
                         let name = try MoveName.candidate(source.lastPathComponent, number: number, plainFolder: plainFolder)
@@ -272,9 +291,30 @@ final class ActionService {
             } else { cutRecord = nil }
         }
         if !result.failures.isEmpty {
-            let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \($0.error.localizedDescription)" }
+            let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
             cutWarning(String(format: AppLocalization.localized("Some items could not be moved:\n%@"), lines.joined(separator: "\n")))
         }
+    }
+
+    private func moveFailureDescription(_ error: any Error) -> String {
+        let key: String
+        switch error {
+        case DestinationRefusal.systemRoot: key = "System roots cannot be a move destination"
+        case DestinationRefusal.trash: key = "Use Finder’s Move to Trash"
+        case DestinationRefusal.package: key = "Packages and their contents cannot be a move destination"
+        case DestinationRefusal.notFolder: key = "Choose a folder as the destination"
+        case PasteMoveError.crossVolume: key = "Moving between disks is not supported yet"
+        case PasteMoveError.insideSource: key = "A folder cannot be moved into itself"
+        case PasteMoveError.mountPoint: key = "A volume root cannot be moved"
+        case PasteMoveError.cloud: key = "Moving items outside their cloud container is not supported yet"
+        case PasteMoveError.changed: key = "Changed since cut"
+        case PasteMoveError.timeout: key = "File coordination timed out"
+        case MoveName.Failure.tooLong: key = "The numbered name would exceed 255 UTF-8 bytes"
+        case MoveName.Failure.exhausted: key = "No available numbered name was found"
+        case let posix as POSIXError where posix.code == .ENOTSUP: key = "This disk does not support exclusive moves"
+        default: return error.localizedDescription
+        }
+        return AppLocalization.localized(key)
     }
 
     private func prepareCut(_ target: [String]) async {

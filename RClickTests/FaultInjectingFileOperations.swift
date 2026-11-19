@@ -18,6 +18,9 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var destinationRefusals: [String: DestinationRefusal] = [:]
+        var facts: [String: MoveFacts] = [:]
+        var renames: [String] = []
         var createClash: Set<String> = []
         var failRemoving: Set<String> = []
         var unwritable: Set<String> = []
@@ -90,11 +93,28 @@ final class FaultInjectingFileOperations: FileOperations {
         try base.coordinatedTransfer(kind, from: source, to: destination)
     }
 
+    var renameCalls: [String] { faults.withLock { $0.renames } }
+    func refuseDestination(_ url: URL, reason: DestinationRefusal) {
+        faults.withLock { $0.destinationRefusals[url.path] = reason }
+    }
+    func setMoveFacts(_ facts: MoveFacts, for url: URL) {
+        self.faults.withLock { $0.facts[url.path] = facts }
+    }
+    func moveFacts(of url: URL) throws -> MoveFacts {
+        if let value = faults.withLock({ $0.facts[url.path] }) { return value }
+        return try base.moveFacts(of: url)
+    }
+    func destinationRefusal(_ url: URL) throws -> DestinationRefusal? {
+        if let value = faults.withLock({ $0.destinationRefusals[url.path] }) { return value }
+        return try base.destinationRefusal(url)
+    }
+
     func createClashAtRename(_ url: URL) {
         faults.withLock { _ = $0.createClash.insert(url.path) }
     }
 
     func exclusiveRename(from source: URL, to destination: URL) throws {
+        faults.withLock { $0.renames.append(source.path) }
         if faults.withLock({ $0.createClash.remove(destination.path) != nil }) {
             try Data("racing owner".utf8).write(to: destination, options: .withoutOverwriting)
         }
