@@ -23,6 +23,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import finderui as ui  # noqa: E402
 
+CLICKING = ('choose', 'open-menu')  # refused up front on a stuck modifier (require_clean_input)
 ACTING = ('select', 'open-menu', 'close-menu', 'choose', 'press-button', 'grant', 'calibrate', 'lock-check')
 SELECT_SCRIPT = '''on run argv
   set chosen to {}
@@ -348,6 +349,15 @@ def modifier_state():
     return ui.held_modifiers(result.stdout)
 
 
+def require_clean_input(doing):
+    """Fail closed (Refused, 65) when the HID system state holds Shift, Control, Option or Command: at every check
+    this process holds none of its own (pressing releases them before it returns), so a held one is stuck or someone
+    else's, and it would change what the click or press does. A read only: nothing is posted."""
+    flags, held = modifier_state()
+    if held:
+        raise ui.dirty_input(flags, held, doing)
+
+
 def release_modifiers(names):
     """Release the modifiers this process pressed (`modifiers.sh release`: key-ups, then a flagsChanged event with no
     flags) and read the state back: Environment when one of them still shows as held."""
@@ -383,6 +393,7 @@ def pressing(names):
 def right_click(point, option=False):
     """rightclick.sh at `point`; with `option` the Option flag it posts is released here as well (pressing), whatever
     happens to rightclick.sh (a failure, a timeout, a signal that kills it before its own release)."""
+    require_clean_input('nothing clicked')
     with pressing(['option'] if option else []):
         click = run([HERE / 'rightclick.sh', *map(str, point), *(['option'] if option else [])], timeout=10)
         if click.returncode != 0:
@@ -601,6 +612,7 @@ def allowed_process(pid, extra_pids=()):
 
 
 def press_button(pid, title, window_text=None, extra_pids=()):
+    require_clean_input('nothing pressed')
     allowed_process(pid, extra_pids)
     path = ui.find_button(app_nodes(pid), title, window_text)
     probe('act', pid, dotted(path), 'press', 'AXButton', title)
@@ -610,6 +622,7 @@ def grant(pid, folder, button='Grant Access', extra_pids=()):
     """finderui.panel_plan from full paths, select the target (row mode: an AXRow in list view, the entry's AXGroup
     in column view), re-read the panel and require finderui.panel_ready (list view: the target the only selected
     row; column view: the browser now shows the target; current mode: unchanged), press, wait for it to close."""
+    require_clean_input('nothing selected or pressed')
     allowed_process(pid, extra_pids)
     plan = ui.panel_plan(app_nodes(pid, 20), folder, button)
     if plan.mode == 'row':
@@ -639,6 +652,10 @@ def command(args):
         import calibration
         return calibration.calibrate(Path(args.run_dir), args.dry_run, args.group, args.background_group)
     require_trust()
+    # A stuck modifier refuses choose and open-menu before anything is selected; right_click checks again before the
+    # click, and press_button and grant check inside (calibration calls them directly).
+    if args.command in CLICKING:
+        require_clean_input('nothing selected, clicked or pressed')
     if args.command == 'rows':
         nodes = finder_nodes()
         print('window: ' + next((n.get('title') or '' for n in nodes if n['path'] == (0,)), ''))

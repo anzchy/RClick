@@ -197,6 +197,15 @@ def held_modifiers(text):
     return flags, [name for name, mask in MODIFIER_MASKS if flags & mask]
 
 
+def dirty_input(flags, held, doing):
+    """The refusal when a modifier is held that this process did not just press (device run, 2026-11-18: an Option
+    flag left set by a synthetic right-click made every later plain menu show `Delete Direct (skip confirmation)`)."""
+    return Refused(f'{" and ".join(held)} held down in the HID system state (flags 0x{flags:x}) that this command '
+                   f'did not press: {doing}. A stuck modifier changes what a click does (Option makes Delete Direct '
+                   'skip its confirmation). Press and release that key on the keyboard, check `modifiers.sh state` '
+                   'shows no modifier, then rerun')
+
+
 COMPRESS_ONE = re.compile(r'Compress “(.+)”')
 COMPRESS_MANY = re.compile(r'Compress (\d+) Items')
 
@@ -729,7 +738,9 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   lock-check                             exit 0 only if the GUI lock is this run's (axprobe runs it before acting)
   calibrate RUN_DIR --group TITLE... --background-group TITLE... [--dry-run]
                                          the calibration run (calibrate.sh); the groups are RClick's configured
-                                         top-level items of a file menu and of a window-background menu"""
+                                         top-level items of a file menu and of a window-background menu
+choose, open-menu, press-button and grant refuse (65) while Shift, Control, Option or Command is held in the HID
+system state (`modifiers.sh state`); an Option the driver posts is released before it returns"""
 
 
 class ArgumentParser(argparse.ArgumentParser):
