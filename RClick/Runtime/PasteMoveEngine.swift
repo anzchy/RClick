@@ -2,6 +2,8 @@ import Foundation
 import Darwin
 import Synchronization
 
+nonisolated enum MoveNotification: String, Sendable { case willMoveTo, didMoveTo }
+
 nonisolated enum PasteMoveError: Error {
     case changed, invalidDestination, crossVolume, insideSource, mountPoint, cloud, timeout
 }
@@ -19,6 +21,12 @@ extension SystemFileOperations {
 }
 
 extension FileOperations {
+    nonisolated func notifyMove(_ notification: MoveNotification, using coordinator: NSFileCoordinator, from source: URL, to destination: URL) {
+        switch notification {
+        case .willMoveTo: coordinator.item(at: source, willMoveTo: destination)
+        case .didMoveTo: coordinator.item(at: source, didMoveTo: destination)
+        }
+    }
     nonisolated func exclusiveRename(from source: URL, to destination: URL) throws {
         try SystemFileOperations().exclusiveRename(from: source, to: destination)
     }
@@ -40,11 +48,12 @@ extension FileOperations {
                     let moved = try job.state.withLock { state in
                         guard !state.cancelled else { throw PasteMoveError.timeout }
                         guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
+                        notifyMove(.willMoveTo, using: job.coordinator, from: from, to: to)
                         try exclusiveRename(from: from, to: to)
                         state.moved = true
                         return true
                     }
-                    if moved { job.coordinator.item(at: from, didMoveTo: to) }
+                    if moved { notifyMove(.didMoveTo, using: job.coordinator, from: from, to: to) }
                 } catch {
                     job.state.withLock { $0.error = error }
                 }

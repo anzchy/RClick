@@ -17,6 +17,7 @@ nonisolated protocol FileOperations: Sendable {
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal?
     func exclusiveRename(from source: URL, to destination: URL) throws
     func waitForCoordination(_ completion: DispatchSemaphore, timeout: TimeInterval) -> DispatchTimeoutResult
+    func notifyMove(_ notification: MoveNotification, using coordinator: NSFileCoordinator, from source: URL, to destination: URL)
     func prepareCoordinatedMove(_ source: URL) throws
     func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, timeout: TimeInterval) throws
     func moveItem(at source: URL, to destination: URL) throws
