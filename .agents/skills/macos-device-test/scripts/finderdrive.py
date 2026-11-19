@@ -367,7 +367,8 @@ def release_modifiers(names):
     if result.returncode != 0 or still:
         raise ui.Environment(f'could not release {", ".join(names)} (modifiers.sh release: '
                              f'{result.stderr.strip() or f"exit {result.returncode}"}; flags now 0x{flags:x}): press '
-                             'and release that key on the keyboard before anything else is clicked')
+                             'and release that key on the keyboard before anything else is clicked (every acting '
+                             'ui.sh command refuses until `modifiers.sh state` shows no modifier)')
 
 
 @contextlib.contextmanager

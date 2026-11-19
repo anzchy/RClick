@@ -104,7 +104,8 @@ settings or grants a folder:
 $DT/doctor.sh "$RUN_DIR" --expected-sha "$(git rev-parse --short=8 HEAD)"
 ```
 
-Prints exactly one `PASS <check>` or `FAIL <check> — <why>` per line, saves `doctor.txt` and `doctor-input.json`, and
+`--expected-sha` takes the 8-character short sha (`--short=8`, as `build.json` records it): the 7-character form
+fails `bundle-hash` (device run, 2026-11-18). Prints exactly one `PASS <check>` or `FAIL <check> — <why>` per line, saves `doctor.txt` and `doctor-input.json`, and
 exits non-zero on any FAIL. Collection errors become FAIL on the affected lines.
 
 | Check | Pass when |
@@ -154,11 +155,19 @@ an rclick run, axprobe build failed, no single Finder process).
   POSIX paths back (exit 65 if they differ); `$DT/ui.sh selection` prints them.
 - **Open the context menu on a row:** `$DT/ui.sh open-menu "<exact name>" [--option]` finds the one visible row with
   that exact name (case, spaces and percent signs significant), sets `AXSelected` on it and right-clicks the centre
-  of its name cell (`rightclick.sh`; `--option` sets the Option flag, for Delete Direct's skip title). It prints
+  of its name cell (`rightclick.sh`; `--option` sets the Option flag, for Delete Direct's skip title, and releases
+  it afterwards on every path, see **Modifier state**). It prints
   `row: <index> <name> <x>,<y>` and `menu-point X,Y`. `AXShowMenu` does not work on Finder rows. Synthetic input:
   disclose it. For the window background: `$DT/ui.sh open-menu --background [--option]` deselects, reads the empty
   selection back and right-clicks the empty list below the rows (refused if the list has no empty space). For a
   sidebar entry, right-click with `$DT/rightclick.sh X Y` at a point read from a dump, then probe with `ui.sh menu`.
+- **Modifier state:** `$DT/modifiers.sh state` prints `flags=0x<hex>` (the HID system state, read without posting
+  an event; 0x20000 Shift, 0x40000 Control, 0x80000 Option, 0x100000 Command; other bits such as 0x20000000 are not
+  keys). `choose`, `open-menu`, `press-button` and `grant` refuse (65) while one of the four is held, because a
+  stuck Option turns Delete Direct into its skip-confirmation form on every menu (device run, 2026-11-18: Option
+  stayed set after calibration's Option step, flags 0x20080000). If one is stuck and no one is holding it,
+  `$DT/modifiers.sh release <option|shift|control|command>` posts its key-ups and a flagsChanged event with no flags
+  (what cleared it on that run), then `modifiers.sh state` must show none; record it under "Script problems".
 - **Read the menu:** `$DT/ui.sh menu X,Y` (the `menu-point`) prints every item as
   `<index>|<title>|<enabled>|<x>,<y>|<submenu count>`, then `compress: <Finder's Compress title>` and
   `rclick-group (heuristic, never used to choose): <titles>`; with `--group` it also prints where that exact group
@@ -187,7 +196,11 @@ an rclick run, axprobe build failed, no single Finder process).
 - **Press a button:** `$DT/ui.sh press-button <pid> "<title>" [--window-text "<text in that window>"]` presses the one
   button with that exact title; two candidates are refused. The PID must be Finder, RClick's FinderSyncExt or this
   run's RClick (`$RUN_DIR/rclick.pid`): a system prompt is refused. Prefer it to `kc.sh "$RUN_DIR" 36` (Return).
-- **Folder permission panel:** `$DT/ui.sh grant <rclick pid> <abs folder> [--button "Grant Access"]` presses the
+- **Folder permission panel:** `ui.sh grant` is **distrusted** (device run, 2026-11-18: on the calibration's
+  osascript panel row mode failed `axprobe: select failed: AXError -25205` and current-folder mode `axprobe: press
+  failed: AXError -25204`; a follow-up issue tracks it). What worked: when RClick's panel opens at the folder to
+  grant, `$DT/ui.sh press-button <rclick pid> "Grant Access"` (read the panel with `ui.sh dialog` first). What
+  `grant` is meant to do: `$DT/ui.sh grant <rclick pid> <abs folder> [--button "Grant Access"]` presses the
   button through AX, no typing, so the input source does not matter. The open panel seen on the device (device run,
   2026-11-18) is a column browser: the folder it shows is the folder of its deepest column, proven by each entry's
   full path (`AXURL`) and by each column listing an entry of the column before it; the `Where:` pop-up must agree.
@@ -223,7 +236,7 @@ this order, then a summary:
 
 | Step | PASS means | Distrust on FAIL/SKIP |
 |---|---|---|
-| `gui-lock`, `axprobe`, `accessibility` | lock held by rclick, probe compiled, host terminal AX-trusted | every `ui.sh` command (exit 70: fix and rerun) |
+| `gui-lock`, `axprobe`, `accessibility`, `modifiers-start` | lock held by rclick, probe compiled, host terminal AX-trusted, no Shift/Control/Option/Command held (`modifiers.sh state`) | every `ui.sh` command (exit 70: fix and rerun) |
 | `row-order` | every fixture name found once, visible, in display order; prints the display and AppleScript orders | `ui.sh rows` |
 | `select-readback` | AppleScript select of `beta.txt` reads back exactly | `ui.sh select` |
 | `context-menu` | `open-menu %2541.txt` opened a menu that the element-at-position probe finds | `ui.sh open-menu` |
@@ -233,14 +246,19 @@ this order, then a summary:
 | `choose` | `ui.sh choose Copy Path --group … --target alpha.txt` puts that fixture path on the pasteboard | `ui.sh choose` |
 | `choose-multi` | `ui.sh choose Copy Path … --target %41.txt --target %2541.txt`: `Compress 2 Items`, both paths on the pasteboard | `ui.sh choose` (several targets) |
 | `option-menu` | `ui.sh open-menu %2541.txt --option`: the menu shows `Delete Direct (skip confirmation)` | `ui.sh open-menu --option` |
+| `modifiers-after-option` | right after `option-menu` (also when it failed): no modifier held, so the Option it posted was released | `ui.sh choose --option` and `ui.sh open-menu --option` |
 | `background-menu` | `ui.sh open-menu --background` on the fixture window; `--background-group` found; closed with `close-menu` | `ui.sh open-menu --background` |
 | `background-choose` | `ui.sh choose … "New File" --sub TXT --background <fixture>` creates one new file in the fixture, or opens RClick's folder panel (saved, then Cancel) | `ui.sh choose --background --sub` |
 | `dialog-read` | the calibration alert's text is read through AX | `ui.sh dialog` |
 | `press-button` | pressing `OK` by title returns `OK` to its osascript | `ui.sh press-button` |
 | `panel-grant-row` | an `osascript choose folder` panel showing the fixture: `grant … "folder a" --button Choose` returns that folder | `ui.sh grant` (row mode) |
 | `panel-grant-current` | the same panel: `grant <fixture folder>` returns the shown folder | `ui.sh grant` (current-folder mode) |
+| `modifiers-end` | the last step: no modifier held | every `ui.sh` command that clicks or presses |
 
-Summary: `CALIBRATION PASS (18 steps) — NOT covered: RClick's own sandboxed folder panel (the grant steps use an
+The two `panel-grant-*` steps FAILED on the device run of 2026-11-18 (AXError -25205 / -25204, see **Folder
+permission panel**): until the follow-up lands, expect them to FAIL and do not use `grant`.
+
+Summary (21 steps; `--dry-run` prints the count): `CALIBRATION PASS (21 steps) — NOT covered: RClick's own sandboxed folder panel (the grant steps use an
 osascript panel); PERM-01 on the device proves it` → exit 0; `CALIBRATION FAIL — distrust: <commands>` → exit 65; `CALIBRATION
 FAIL — environment (<step>): fix it and rerun; distrust: every ui.sh command` → exit 70. A step whose prerequisite
 failed is `SKIP` and counts as not proven. The output is saved to `$RUN_DIR/calibration/calibration.txt` with the AX
@@ -268,7 +286,9 @@ Names with spaces and non-ASCII catch quoting and path-encoding defects in Copy 
   point not driven is NOT VERIFIED for that criterion.
 - **A second view of every effect:** `pbpaste` for Copy Path / File Name (then restore nothing: tell the user the
   pasteboard was used); `ls -la`, `ls -lO` (hidden flag), `stat` and `shasum` for files; `log show` for the app
-  side.
+  side. `log show` can return nothing for RClick (device run, 2026-11-18: only the header line), so a click such as
+  Cut needs another view of its effect too: the pasteboard (`pbpaste`, the pasteboard types and change count) and
+  the absence of the "RClick did not respond" alert (`ui.sh dialog <FinderSyncExt pid>` shows no window).
 - **Tagged artifacts:** `shots/<recipe-id>-<entry-point>-<state>.png`.
 
 ## 10. Evidence
@@ -295,7 +315,10 @@ $DT/cleanup.sh "$RUN_DIR"          # SIGCONT then SIGTERM to the recorded PID on
 $DT/gui-lock.sh release "$RUN_ID" --acquisition-id <uuid>
 ```
 
-No kill by name, no SIGKILL; a process that doesn't exit within 5 s is reported. A retired record can't drive
+No kill by name, no SIGKILL; a process that doesn't exit within 5 s is reported. SIGTERM does not make the extension
+show the offline menu at once: on the device run of 2026-11-18 the menu still looked online right after it and turned
+offline after about 35 s (the 30 s cache). When the immediate offline state matters (CONN-01), quit RClick through its
+own menu bar item first. A retired record can't drive
 anything again. Close the fixture Finder windows the run opened. Restore the settings backup if §5 made one. The
 build in `.build/device-<run-id>/` stays registered with LaunchServices; tell the user its path in the record (they
 decide whether to remove it).
