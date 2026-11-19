@@ -803,7 +803,8 @@ class ModifiersAreReleased(unittest.TestCase):
         self.assertIn('CGEventSetFlags(changed, keep)', release)
         self.assertRegex(release, r'\[58, 61\]')  # both Option keys up
         for name in ('INT', 'TERM', 'HUP'):
-            self.assertRegex(source, r"trap '\"\$here/modifiers.sh\" release option[^']*' " + name + r'\n')
+            # fix r6 (confirm r5 gpt F2): the trap stops osascript, then releases (test_raw_clicks sends the signals)
+            self.assertRegex(source, r"trap 'interrupted \d+' " + name + r'\n')
 
 
 class AStuckModifierIsRefused(unittest.TestCase):
