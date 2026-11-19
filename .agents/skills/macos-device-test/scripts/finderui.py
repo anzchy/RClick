@@ -183,16 +183,18 @@ SKIP_SUFFIX = ' (skip confirmation)'
 # The device-independent modifier bits of a CGEventFlags value (CGEventTypes.h). Other bits (0x20000000 was set
 # beside Option on the device run of 2026-11-18, the non-coalesced bit, the numeric-pad bit) are not keys held.
 MODIFIER_MASKS = (('Shift', 0x20000), ('Control', 0x40000), ('Option', 0x80000), ('Command', 0x100000))
-FLAGS_LINE = re.compile(r'flags=0x([0-9a-f]+)')
+FLAGS_LINE = re.compile(r'flags=0x([0-9a-f]+) hid=0x([0-9a-f]+) session=0x([0-9a-f]+)')
 
 
 def held_modifiers(text):
-    """`modifiers.sh state`'s `flags=0x<hex>` line → (flags, [names of the held modifiers among Shift, Control,
-    Option, Command]). Any other answer is an Environment error: the input state is unknown, so nothing may act."""
+    """`modifiers.sh state`'s `flags=0x<hex> hid=0x<hex> session=0x<hex>` line → (flags, [names of the held
+    modifiers among Shift, Control, Option, Command]). `flags` is the union of the HID and the combined session state:
+    the extension takes Option as held when either has it. Any other answer, or a `flags` that is not that union, is
+    an Environment error: the input state is unknown, so nothing may act."""
     match = FLAGS_LINE.fullmatch(text.strip())
-    if not match:
-        raise Environment(f'modifiers.sh state printed {text.strip()[:80]!r}, not flags=0x<hex>: the modifier '
-                          'state is unknown')
+    if not match or int(match.group(1), 16) != int(match.group(2), 16) | int(match.group(3), 16):
+        raise Environment(f'modifiers.sh state printed {text.strip()[:80]!r}, not flags=0x<hex> hid=0x<hex> '
+                          'session=0x<hex> with flags = hid | session: the modifier state is unknown')
     flags = int(match.group(1), 16)
     return flags, [name for name, mask in MODIFIER_MASKS if flags & mask]
 
@@ -200,8 +202,8 @@ def held_modifiers(text):
 def dirty_input(flags, held, doing):
     """The refusal when a modifier is held that this process did not just press (device run, 2026-11-18: an Option
     flag left set by a synthetic right-click made every later plain menu show `Delete Direct (skip confirmation)`)."""
-    return Refused(f'{" and ".join(held)} held down in the HID system state (flags 0x{flags:x}) that this command '
-                   f'did not press: {doing}. A stuck modifier changes what a click does (Option makes Delete Direct '
+    return Refused(f'{" and ".join(held)} held down in the modifier state (flags 0x{flags:x}, HID | session) that '
+                   f'this command did not press: {doing}. A stuck modifier changes what a click does (Option makes Delete Direct '
                    'skip its confirmation). Release it (press and release that key on the keyboard, or `modifiers.sh '
                    'release <key>` when no one is holding it), check `modifiers.sh state` shows no modifier, record it '
                    'under Script problems, then rerun')
@@ -740,8 +742,8 @@ USAGE_TEXT = """usage: ui.sh COMMAND ...   (exit 0 ok, 64 usage, 65 refused: tar
   calibrate RUN_DIR --group TITLE... --background-group TITLE... [--dry-run]
                                          the calibration run (calibrate.sh); the groups are RClick's configured
                                          top-level items of a file menu and of a window-background menu
-choose, open-menu, press-button and grant refuse (65) while Shift, Control, Option or Command is held in the HID
-system state (`modifiers.sh state`); an Option the driver posts is released before it returns"""
+choose, open-menu, press-button and grant refuse (65) while Shift, Control, Option or Command is held in the HID or
+the combined session state (`modifiers.sh state`); an Option the driver posts is released before it returns"""
 
 
 class ArgumentParser(argparse.ArgumentParser):
