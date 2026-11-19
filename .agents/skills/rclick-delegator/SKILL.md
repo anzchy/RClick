@@ -80,6 +80,9 @@ Full reference: [references/guide.md](references/guide.md). Read it once before 
    - Audit only when the summary says `DONE overall=0`.
    - Otherwise send a fix. A `unit-tests` lane that exits 70 (no GUI session for the test runner) is an environment
      failure: rerun the gates from a logged-in desktop session, don't send it as a code fix.
+   - A failed lane's own log is kept: the summary's `lane <lane> failure-log=<path>` line names it. For a
+     `skill-tooling` failure that looks flaky (the branch touches nothing it tests), read that log BEFORE rerunning
+     and paste the exception and the header's load lines into issue #17, then rerun under a new prefix.
 5. **Audit.** Fill [audit-request-template.md](references/templates/audit-request-template.md) once per auditor,
    with the same range, tier, inputs and gate summary for both.
    - Reset or `/clear` each auditor, dispatch it, and start one listener per auditor. Neither sees the other's

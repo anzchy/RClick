@@ -359,9 +359,15 @@ Xcode build, `RClickTests`, the localization check, the roster tooling tests; De
 tree), copies its `GATE` / `GATES` lines, runs the sentinel-secret grep when `scripts/test-secrets.txt` exists, and
 writes `~/.rclick-roster/gates/i12-r1-summary.txt` ending in `DONE overall=<0|1>`. `overall=1` means a lane failed:
 send it back as a fix before auditing, unless the `unit-tests` lane failed for the environment (exit 70: run it again
-from a logged-in desktop session). A summary without `DONE` is no evidence. With less than 8 GiB free under
-`$TMPDIR` or `$HOME` (`RCLICK_GATES_MIN_FREE_GIB`) it refuses before exporting, writing `refused: low disk …` and
-`DONE overall=1`: tell the user and ask them to free space; never delete anything to make room yourself.
+from a logged-in desktop session). A summary without `DONE` is no evidence. For each failed lane the summary has a
+`lane <lane> failure-log=<path>` line: `~/.rclick-roster/gates/<prefix>-<lane>-failure.log` keeps the last 3000
+lines of `scripts/gates.sh`'s own lane log (the traceback, which the scratch tree takes with it) behind a header
+with the commit, the UTC time, `uptime`, `vm.loadavg`, `hw.ncpu` and the failing items; `failure-log=none` means the
+lane wrote no log. A passing run keeps none. When `skill-tooling` fails on a file the branch does not touch (the
+#17 flake), read that failure log BEFORE rerunning and paste the exception and the load lines into issue #17; then
+rerun under a new prefix (`i12-r1b`) and give the auditors both summaries and the failure log. With less than 8 GiB
+free under `$TMPDIR` or `$HOME` (`RCLICK_GATES_MIN_FREE_GIB`) it refuses before exporting, writing `refused: low
+disk …` and `DONE overall=1`: tell the user and ask them to free space; never delete anything to make room yourself.
 
 Save the evidence comment verbatim for gpt-auditor, whose sandbox cannot reach GitHub:
 `gh api repos/anzchy/RClick/issues/comments/<id> --jq .body > ~/.rclick-roster/herdr/gpt-auditor/<item>-evidence-<round>.md`

@@ -25,7 +25,9 @@ Inputs:
   `.agents/skills/rclick-verify/SKILL.md` §4 on origin/main): a claim to test against the code and the brief's
   expectations;
 - gate evidence: ~/.rclick-roster/gates/<prefix>-summary.txt (rerun by the delegator at <head7>; `DONE overall=0`
-  means every lane passed; the `GATE` lines name each lane).
+  means every lane passed; the `GATE` lines name each lane). <If a gate flake needed a rerun: also the failing
+  run's summary and its `lane <lane> failure-log=<path>` file; read both and judge whether the failure is this
+  diff's.>
 
 Beyond the dimensions, judge these specifically:
 - <5–10 bullets on the risky points: both IPC sides changed together and still signed; one ack per click;
