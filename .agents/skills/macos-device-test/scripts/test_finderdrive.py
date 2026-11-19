@@ -1141,6 +1141,67 @@ class Source(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class RecipesMatchTheDriver(unittest.TestCase):
+    """The recipes a tester follows use `choose` the way it works since fix round 3 (audit r3 opus F1): `choose` opens
+    its own menu, so a recipe never runs it while a menu it opened with `open-menu` is still open (its first
+    AppleScript call to Finder would time out, exit 70); a menu is dismissed with `ui.sh close-menu X,Y`, never a bare
+    Esc; and a `(skip confirmation)` title is chosen with `--option`. Read per step: a numbered item, a bullet, a
+    table row or a heading starts a new one."""
+    DOCS = ('features/*.md', 'SKILL.md', 'references/device-runbook.md')
+    STEP = re.compile(r'^(?:\d+\.|-|#+|\|) ', re.M)
+    COMMAND = re.compile(r'(?P<open>(?<!no `)open-menu\b)|(?P<close>close-menu\b)|(?P<choose>ui\.sh choose\b|`choose\b)')
+
+    def steps(self):
+        for pattern in self.DOCS:
+            for path in sorted(SKILL.glob(pattern)):
+                text = path.read_text(encoding='utf-8')
+                starts = [m.start() for m in self.STEP.finditer(text)] + [len(text)]
+                for start, end in zip([0] + starts, starts):
+                    yield path.relative_to(SKILL), text[start:end]
+
+    def test_no_recipe_runs_choose_with_a_menu_it_left_open(self):
+        for name, step in self.steps():
+            menu_open = False
+            for match in self.COMMAND.finditer(step):
+                if match.group('open'):
+                    menu_open = True
+                elif match.group('close'):
+                    menu_open = False
+                elif menu_open:
+                    self.fail(f'{name}: `choose` after `open-menu` with no `close-menu` between: {step.strip()[:300]}')
+
+    def test_a_menu_is_dismissed_with_close_menu_not_a_bare_esc(self):
+        for path in sorted(SKILL.glob('features/*.md')):
+            for line in path.read_text(encoding='utf-8').splitlines():
+                with self.subTest(path=path.name, line=line):
+                    self.assertIsNone(re.search(r'\bEsc\b(?! to Finder)', line))
+
+    def test_the_act_05_sequence_runs_on_the_fake_desktop(self):
+        # read with open-menu --option + menu, close-menu, then choose --option (alpha.txt stands in for delete-2.txt)
+        desktop = FakeDesktop()
+        code, out, err = drive(desktop, 'open-menu', 'alpha.txt', '--option')
+        self.assertEqual(code, 0, err)
+        point = out.split('menu-point ')[1].strip()
+        code, out, err = drive(desktop, 'menu', point)
+        self.assertEqual(code, 0, err)
+        self.assertIn('Delete Direct (skip confirmation)', out)
+        self.assertEqual(drive(desktop, 'close-menu', point)[0], 0)
+        code, out, err = drive(desktop, 'choose', 'Delete Direct (skip confirmation)', '--option', '--target',
+                               FOLDER + '/alpha.txt', *GROUP)
+        self.assertEqual(code, 0, err)
+        self.assertIn('GUARD PASS', out)
+        self.assertEqual([request['title'] for request in desktop.pressed], ['Delete Direct (skip confirmation)'])
+        self.assertEqual(desktop.timeouts, [])
+
+    def test_a_skip_confirmation_title_is_chosen_with_option(self):
+        found = 0
+        for name, step in self.steps():
+            for match in re.finditer(r'`[^`]*\bchoose "[^"]*\(skip confirmation\)"[^`]*`', step):  # the command's code span
+                found += 1
+                self.assertIn(' --option', match.group(0), f'{name}: {match.group(0)}')
+        self.assertGreater(found, 0, 'ACT-05 names the skip-confirmation title it chooses')
+
+
 class CloseMenuAndBackground(unittest.TestCase):
     """`ui.sh close-menu X,Y` closes Finder's menu through AX (AXCancel), with Esc to Finder only while AX still
     shows that Finder menu (fix r3 item 5: the old frontmost check through System Events did not see Finder with a

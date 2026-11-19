@@ -27,14 +27,15 @@ Preconditions: baseline; doctor PASS including `extension-registered`, `extensio
    is inside `$RUN_DIR`'s bundle.
 2. `EXT-02`: `ui.sh open-menu alpha.txt`, then `ui.sh menu X,Y > "$RUN_DIR/menus/EXT-02-file.txt"`; region
    screenshot `EXT-02-file-menu` if Screen Recording is granted. Result: the Actions items (Copy Path, Copy File Name, Delete Direct, AirDrop, Hide, Unhide — or
-   the **Actions** submenu), Open With apps, **New File**, Common Dirs. Esc.
-3. `EXT-03`: right-click `folder a`; then select `alpha.txt` and `folder a` (⌘-click) and right-click the selection.
-   Result: the items appear both times. Esc.
+   the **Actions** submenu), Open With apps, **New File**, Common Dirs. `ui.sh close-menu X,Y`.
+3. `EXT-03`: right-click `folder a` (`ui.sh open-menu "folder a"`); `ui.sh close-menu X,Y`; then select `alpha.txt`
+   and `folder a` (⌘-click) and right-click the selection. Result: the items appear both times. Close each menu with
+   `ui.sh close-menu X,Y` at its menu point before the next step.
 4. `EXT-04`: right-click empty space below the last row (`ui.sh open-menu --background`, then `ui.sh menu X,Y`).
    Result: the items for the container trigger. `ui.sh close-menu X,Y`.
 5. `EXT-05`: right-click the fixture folder's entry in the sidebar (drag it into Favorites only with the owner's
    consent; otherwise use an existing sidebar entry such as Desktop and only read the menu, never choose an action).
-   Result: the items for the sidebar trigger. Esc.
+   Result: the items for the sidebar trigger. `ui.sh close-menu X,Y` at the point the menu was read at.
 6. `EXT-06`: if the owner added the RClick toolbar button, click it. Result: the same sections; the Settings → Apps
    toolbar visibility is respected. Otherwise NOT VERIFIED (toolbar button not added; adding it changes Finder's
    toolbar, an owner step).
