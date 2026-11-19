@@ -14,6 +14,7 @@ nonisolated protocol FileOperations: Sendable {
     func accountHomeDirectory() throws -> URL
     func providerRootCandidates() throws -> [URL]
     func moveFacts(of url: URL) throws -> MoveFacts
+    func trashDirectories() -> [URL]
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal?
     func exclusiveRename(from source: URL, to destination: URL) throws
     func waitForCoordination(_ completion: DispatchSemaphore, timeout: TimeInterval) -> DispatchTimeoutResult
