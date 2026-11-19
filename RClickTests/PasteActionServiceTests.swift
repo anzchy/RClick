@@ -282,18 +282,28 @@ struct PasteActionServiceTests {
 
     @Test func coordinationTimeoutPreventsALateRenameAndNextPasteWorks() async throws {
         let f = try Fixture(); defer { f.clean() }
-        f.coordinationTimeout = 0.05
         let file = try f.file()
-        let gate = DispatchSemaphore(value: 0)
-        f.operations.onNextCoordination { _ in _ = gate.wait(timeout: .now() + 2) }
-        // The red implementation eventually returns, so RED is an assertion failure,
-        // never a hung test. The timeout implementation cancels before this release.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { gate.signal() }
+        let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+        let observed = Counter()
+        let ended = AsyncStream<Void> { end in
+            f.operations.onNextCoordination { _ in
+                entered.signal()
+                _ = release.wait(timeout: .now() + 2) // Test watchdog; never the production timeout.
+                end.yield(())
+                end.finish()
+            }
+        }
+        f.operations.onNextCoordinationWait { _, _ in
+            if entered.wait(timeout: .now() + 2) == .success { observed.value.withLock { $0 += 1 } }
+            return .timedOut // Deterministic injected deadline, after the accessor entered.
+        }
         await f.cut([file]); await f.paste()
         #expect(FileManager.default.fileExists(atPath: file.path))
         #expect(f.warnings.first?.contains("timed out") == true)
         #expect(f.service.pendingCut?.paths == [file.path])
-        try await Task.sleep(for: .milliseconds(350))
+        release.signal()
+        for await _ in ended { break }
+        #expect(observed.value.withLock { $0 } == 1)
         #expect(FileManager.default.fileExists(atPath: file.path)) // Late accessor cannot mutate.
         await f.paste()
         #expect(!FileManager.default.fileExists(atPath: file.path))
