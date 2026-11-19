@@ -79,3 +79,36 @@ extension FileOperations {
         return StableMoveIdentity(volumeUUID: uuid, inode: identity.fileNumber, creationDate: birth)
     }
 }
+
+extension MoveJournal {
+    /// Recovery never moves files. An interrupted intent becomes eligible only
+    /// when the destination is the recorded object and the original is absent.
+    nonisolated mutating func reconcile(using operations: any FileOperations, at now: Date) throws {
+        entries.removeAll { now.timeIntervalSince($0.timestamp) >= 86400 || $0.timestamp > now }
+        previous.removeAll { now.timeIntervalSince($0.timestamp) >= 86400 || $0.timestamp > now }
+        if inProgress {
+            for index in entries.indices where entries[index].outcome == .intended {
+                let entry = entries[index]
+                let source = try operations.stableIdentityIfPresent(URL(fileURLWithPath: entry.originalPath))
+                let destination = try operations.stableIdentityIfPresent(URL(fileURLWithPath: entry.movedToPath))
+                if source == nil && destination == entry.identity { entries[index].outcome = .moved }
+                else if source == entry.identity || destination == nil { entries[index].outcome = .failed }
+                // Both locations occupied, a replacement, or an inode reuse is
+                // ambiguous. Preserve the intent and refuse a new Paste.
+            }
+            guard !entries.contains(where: { $0.outcome == .intended }) else { return }
+            let moved = entries.filter { $0.outcome == .moved }
+            entries = moved.isEmpty ? previous : moved
+            previous = []
+            inProgress = false
+        }
+    }
+}
+
+extension FileOperations {
+    nonisolated func stableIdentityIfPresent(_ url: URL) throws -> StableMoveIdentity? {
+        do { return try stableMoveIdentity(of: url) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
+        catch let error as POSIXError where error.code == .ENOENT { return nil }
+    }
+}

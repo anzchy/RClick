@@ -43,8 +43,14 @@ struct PasteActionServiceTests {
     }
     nonisolated final class JournalStore: UndoJournalStore {
         let value = Mutex<MoveJournal?>(nil)
+        let failOutcomes = Mutex(false)
         func load() -> MoveJournal? { value.withLock { $0 } }
-        func save(_ journal: MoveJournal) { value.withLock { $0 = journal } }
+        func save(_ journal: MoveJournal) throws {
+            if failOutcomes.withLock({ $0 }), journal.entries.contains(where: { $0.outcome == .moved }) {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            value.withLock { $0 = journal }
+        }
     }
     @MainActor final class Fixture {
         let root: URL
@@ -180,6 +186,24 @@ struct PasteActionServiceTests {
         let json = try #require(String(data: encoded, encoding: .utf8))
         #expect(!json.contains("st_dev"))
         #expect(!json.contains("fileResourceIdentifier"))
+    }
+
+    @Test func launchReconcilesCrashBetweenIntentAndOutcome() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        f.journal.failOutcomes.withLock { $0 = true }
+        await f.cut([file]); await f.paste()
+        #expect(f.journal.load()?.entries.first?.outcome == .intended)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
+        f.journal.failOutcomes.withLock { $0 = false }
+        let relaunched = ActionService(state: State(), permission: f.permission, confirmation: Confirmation(),
+            fileOperations: f.operations, pasteboard: f.board, accessLeaser: f.leaser, journalStore: f.journal,
+            cutWarning: { _ in })
+        // Any action waits for the initialization recovery, just as a launch-delivered click does.
+        await relaunched.actionHandler(rid: "cut", target: [], trigger: "ctx-items")
+        #expect(f.journal.load()?.entries.first?.outcome == .moved)
+        #expect(f.journal.load()?.inProgress == false)
+        #expect(f.leaser.balance == 0)
     }
 
 }

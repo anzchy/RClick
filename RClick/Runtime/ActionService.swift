@@ -60,6 +60,14 @@ final class ActionService {
         self.revealNewFile = revealNewFile
         self.cutWarning = cutWarning
         self.cutVolumeIsReadOnly = cutVolumeIsReadOnly
+        // Normal runtime construction happens during launch. Hosted tests that
+        // exercise Paste always inject a store; other hosted tests stay inert.
+        if journalStore != nil || !TestHost.isActive {
+            journalRecovery = Task { [weak self] in
+                guard let self else { return }
+                await self.restoreMoveJournal()
+            }
+        }
     }
 
     struct CutRecord: Sendable {
@@ -68,6 +76,7 @@ final class ActionService {
         let changeCount: Int
     }
 
+    private var journalRecovery: Task<Void, Never>?
     private var cutRecord: CutRecord?
     private var preparingCut = false
     var pendingCut: CutRecord? {
@@ -176,6 +185,7 @@ final class ActionService {
 
     /// 动作分发入口
     func actionHandler(rid: String, target: [String], trigger: String, optionKeyPressed: Bool = false) async {
+        await journalRecovery?.value
         guard let rcitem = state.getActionItem(rid: RCAction.entityID(for: rid)) else {
             logger.warning("when actionHandler, but not have action \(rid)")
             return
@@ -215,6 +225,30 @@ final class ActionService {
             await showAirDrop(target, trigger)
         default:
             logger.warning("no action id matched")
+        }
+    }
+
+    private func restoreMoveJournal() async {
+        let store: any UndoJournalStore
+        do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
+        catch { return }
+        let loaded = try? await executor.run { try store.load() }
+        guard let loaded else { return }
+        // Recorded paths grant no access. Recovery uses existing bookmarks only,
+        // never an unsolicited permission panel at launch.
+        let directories = (loaded.entries + loaded.previous).flatMap {
+            [URL(fileURLWithPath: $0.originalPath).deletingLastPathComponent(),
+             URL(fileURLWithPath: $0.movedToPath).deletingLastPathComponent()]
+        }
+        guard directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        let lease = accessLeaser.beginAccess(covering: directories)
+        defer { lease.end() }
+        let operations = fileOperations
+        let timestamp = now()
+        try? await executor.run {
+            var journal = loaded
+            try journal.reconcile(using: operations, at: timestamp)
+            try store.save(journal)
         }
     }
 
