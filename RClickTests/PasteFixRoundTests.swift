@@ -176,3 +176,21 @@ extension PasteActionServiceTests {
         #expect(FileManager.default.fileExists(atPath: item.path))
     }
 }
+
+extension PasteActionServiceTests {
+    @Test(arguments: ["/", "/System", "/Library", "/usr", "/bin", "/sbin"])
+    func realSystemRootClassifierRefusesEveryRoot(_ path: String) throws {
+        #expect(try SystemFileOperations().readDestinationRefusal(URL(fileURLWithPath: path)) == .systemRoot)
+    }
+
+    @Test func realPerVolumeTrashClassifierRefusesDescendants() throws {
+        let f = try Fixture(); defer { f.clean() }
+        let trash = f.destination.appendingPathComponent(".Trashes")
+        let child = trash.appendingPathComponent("501/subfolder")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        f.operations.setMoveFacts(MoveFacts(directory: true, mountPoint: true), for: f.destination)
+        #expect(try f.operations.readDestinationRefusal(trash) == .trash)
+        #expect(try f.operations.readDestinationRefusal(child) == .trash)
+        #expect(f.operations.renameCalls.isEmpty)
+    }
+}
