@@ -59,6 +59,30 @@ lane() {
   (( rc == 0 )) || overall=1
 }
 
+# Copy a failed lane's log out of the scratch tree, behind a header that records the machine load at failure time.
+keep_failure_log() {
+  local name=$1 gates_log=$2
+  local src=$scratch/.build/gates/$name.log kept=$out/$prefix-$name-failure.log
+  {
+    print "owner-gates failure log $prefix"
+    print "commit: $full"
+    print "time: $(date -u +%FT%TZ)"
+    print "lane: $name"
+    print "uptime: $(uptime 2>/dev/null || print unavailable)"
+    print "loadavg: $(sysctl -n vm.loadavg 2>/dev/null || print unavailable)"
+    print "ncpu: $(sysctl -n hw.ncpu 2>/dev/null || print unavailable)"
+    # The failing items: the lane's GATE line and the indented lines gates.sh prints under it.
+    awk -v lane="$name" '
+      index($0, "GATE " lane " FAIL") == 1 { on = 1; print "gate: " $0; next }
+      on && /^  / { print "item: " substr($0, 3); next }
+      { on = 0 }' "$gates_log"
+    print "source: .build/gates/$name.log"
+    print -- "---"
+    cat "$src"
+  } > "$kept"
+  print "lane $name failure-log=$kept" | tee -a "$summary"
+}
+
 if [[ -x $scratch/scripts/gates.sh ]]; then
   lane gates ./scripts/gates.sh
   log=$out/$prefix-gates.log
@@ -68,6 +92,11 @@ if [[ -x $scratch/scripts/gates.sh ]]; then
     print "lane gates verdict=missing-or-fail reason=no 'GATES PASS' line in $log" | tee -a "$summary"
     overall=1
   fi
+  # The trap below removes the scratch tree, and with it gates.sh's own lane logs (.build/gates/<lane>.log): the only
+  # copy of a failure's traceback. Keep each failed lane's log first (#17).
+  for failed in ${(u)${(f)"$(sed -nE 's/^GATE ([A-Za-z0-9._-]+) FAIL.*/\1/p' "$log")"}}; do
+    keep_failure_log "$failed" "$log"
+  done
 else
   print "lane gates rc=127 reason=scripts/gates.sh missing at ${full[1,12]}" | tee -a "$summary"
   overall=1
