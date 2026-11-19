@@ -635,10 +635,17 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         // 是否跳过确认以菜单构建时的标记为准——标题上写了「（跳过确认）」才跳过，
         // 不在点击瞬间重新检测按键，避免标题与实际行为分叉。
         let optionPressed = menuOptionPressed
+        let targets: [String]
+        if clickedPaste {
+            let kind: MenuTrigger? = currentMenuKind == .contextualMenuForContainer ? .contextualContainer :
+                (currentMenuKind == .contextualMenuForItems ? .contextualItems : nil)
+            targets = PendingCut.targetsForPaste(menuKind: kind, selection: itemPaths,
+                targetedPath: FIFinderSyncController.default().targetedURL()?.path)
+        } else { targets = itemPaths }
         let event = ClickEventPayload(
             itemId: clickedPaste ? paste.id : action.id,
             itemType: .action,
-            target: clickedPaste && currentMenuKind == .contextualMenuForContainer ? newFileTargetPaths() : itemPaths,
+            target: targets,
             trigger: getTriggerForMenuKind(),
             optionKeyPressed: optionPressed
         )

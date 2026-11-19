@@ -120,4 +120,15 @@ struct PendingCutTests {
         }
     }
 
+    @Test func pasteTargetsRequireTheClickedContainerOrExactlyOneItem() {
+        #expect(PendingCut.targetsForPaste(menuKind: .contextualContainer, selection: ["/selected-folder"], targetedPath: nil) == [])
+        #expect(PendingCut.targetsForPaste(menuKind: .contextualContainer, selection: ["/selected-folder"], targetedPath: "/clicked-folder") == ["/clicked-folder"])
+        #expect(PendingCut.targetsForPaste(menuKind: .contextualItems, selection: ["/selected-folder"], targetedPath: "/parent") == ["/selected-folder"])
+        #expect(PendingCut.targetsForPaste(menuKind: .contextualItems, selection: ["/a", "/b"], targetedPath: "/parent") == [])
+        #expect(PendingCut.targetsForPaste(menuKind: .contextualItems, selection: [], targetedPath: "/parent") == [])
+        for kind: MenuTrigger? in [.contextualSidebar, .toolbar, nil] {
+            #expect(PendingCut.targetsForPaste(menuKind: kind, selection: ["/selected-folder"], targetedPath: "/parent") == [])
+        }
+    }
+
 }
