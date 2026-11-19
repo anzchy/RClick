@@ -21,6 +21,7 @@ final class ActionService {
     private let permission: PermissionProviding
     private let confirmation: DeleteConfirmationProviding
     private let fileOperations: any FileOperations
+    private let journalStore: (any UndoJournalStore)?
     private let pasteboard: NSPasteboard
     private let cutWarning: (String) -> Void
     private let cutVolumeIsReadOnly: (URL) -> Bool
@@ -42,6 +43,7 @@ final class ActionService {
         now: @escaping @Sendable () -> Date = { Date() },
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
         revealNewFile: ((URL) -> Void)? = nil,
+        journalStore: (any UndoJournalStore)? = nil,
         cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) },
         cutVolumeIsReadOnly: @escaping (URL) -> Bool = {
             (try? $0.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) == true
@@ -51,6 +53,7 @@ final class ActionService {
         self.permission = permission
         self.confirmation = confirmation
         self.fileOperations = fileOperations
+        self.journalStore = journalStore
         self.pasteboard = pasteboard
         self.now = now
         self.accessLeaser = accessLeaser
@@ -233,10 +236,24 @@ final class ActionService {
         let lease = accessLeaser.beginAccess(covering: directories)
         defer { lease.end() }
         let operations = fileOperations
+        let store: any UndoJournalStore
+        do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
+        catch { cutWarning(error.localizedDescription); return }
+        let timestamp = now()
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
             do {
                 if let refusal = try operations.destinationRefusal(destination) { throw refusal }
+            } catch {
+                result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
+                return result
+            }
+            var journal: MoveJournal
+            do {
+                let old = try store.load()
+                guard old?.inProgress != true else { throw CocoaError(.fileWriteUnknown) }
+                let previous = (old?.entries ?? []).filter { $0.outcome == .moved && timestamp.timeIntervalSince($0.timestamp) < 86400 }
+                journal = MoveJournal(previous: previous, inProgress: true)
             } catch {
                 result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
                 return result
@@ -259,20 +276,35 @@ final class ActionService {
                         guard try operations.contains(container, destination) else { throw PasteMoveError.cloud }
                     } else if facts.ubiquitous { throw PasteMoveError.cloud }
                     let plainFolder = facts.directory && !facts.package
+                    let stableIdentity = try operations.stableMoveIdentity(of: source)
                     var number = 1
                     while true {
                         let name = try MoveName.candidate(source.lastPathComponent, number: number, plainFolder: plainFolder)
+                        let to = destination.appendingPathComponent(name)
+                        journal.entries.append(MoveJournalEntry(originalPath: source.path, movedToPath: to.path,
+                            identity: stableIdentity, timestamp: timestamp, outcome: .intended))
+                        try store.save(journal) // Write-ahead: no rename may precede this durable intent.
                         do {
-                            try operations.coordinatedExclusiveMove(from: source,
-                                to: destination.appendingPathComponent(name), expected: identity)
+                            try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity)
+                            result.completed.append(path)
+                            journal.entries[journal.entries.count - 1].outcome = .moved
+                            do { try store.save(journal) }
+                            catch { return result } // Intent remains durable; launch reconciliation resolves it.
                             break
                         } catch let error as POSIXError where error.code == .EEXIST {
+                            journal.entries[journal.entries.count - 1].outcome = .failed
+                            try store.save(journal)
                             number += 1
                         }
                     }
-                    result.completed.append(path)
                 } catch { result.failures.append(FileActionFailure(path: path, error: error)) }
             }
+            let moved = journal.entries.filter { $0.outcome == .moved }
+            journal.entries = moved.isEmpty ? journal.previous : moved
+            journal.previous = []
+            journal.inProgress = false
+            do { try store.save(journal) }
+            catch { /* Durable intents/outcomes remain available for launch reconciliation. */ }
             return result
         }
         // This is an ownership check, not a pasteboard compare-and-swap.

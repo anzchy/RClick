@@ -41,17 +41,23 @@ struct PasteActionServiceTests {
             return ScopedAccessLease(directories: directories) { counter.value.withLock { $0 -= 1 } }
         }
     }
+    nonisolated final class JournalStore: UndoJournalStore {
+        let value = Mutex<MoveJournal?>(nil)
+        func load() -> MoveJournal? { value.withLock { $0 } }
+        func save(_ journal: MoveJournal) { value.withLock { $0 = journal } }
+    }
     @MainActor final class Fixture {
         let root: URL
         let source: URL
         let destination: URL
         let board = NSPasteboard(name: .init("RClickTests-paste-\(UUID())"))
+        let journal = JournalStore()
         let permission = Permission()
         let leaser = Leaser()
         let operations = FaultInjectingFileOperations()
         var warnings: [String] = []
         lazy var service = ActionService(state: State(), permission: permission, confirmation: Confirmation(),
-            fileOperations: operations, pasteboard: board, accessLeaser: leaser,
+            fileOperations: operations, pasteboard: board, accessLeaser: leaser, journalStore: journal,
             cutWarning: { [weak self] in self?.warnings.append($0) })
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-paste-\(UUID())").resolvingSymlinksInPath()
@@ -152,6 +158,28 @@ struct PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
         if kind == "same-folder" { #expect(f.warnings.isEmpty) }
         else { #expect(f.warnings.count == 1) }
+    }
+
+    @Test func successfulPastePersistsOneRestartStableUndoRecord() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        let inode = try #require(attributes[.systemFileNumber] as? NSNumber).uint64Value
+        let uuid = try #require(file.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString)
+        await f.cut([file]); await f.paste()
+        let record = try #require(f.journal.load())
+        #expect(record.version == 1)
+        #expect(record.entries.count == 1)
+        let entry = try #require(record.entries.first)
+        #expect(entry.originalPath == file.path)
+        #expect(entry.movedToPath == f.destination.appendingPathComponent("notes.txt").path)
+        #expect(entry.identity.inode == inode)
+        #expect(entry.identity.volumeUUID == uuid)
+        #expect(entry.outcome == .moved)
+        let encoded = try JSONEncoder().encode(record)
+        let json = try #require(String(data: encoded, encoding: .utf8))
+        #expect(!json.contains("st_dev"))
+        #expect(!json.contains("fileResourceIdentifier"))
     }
 
 }
