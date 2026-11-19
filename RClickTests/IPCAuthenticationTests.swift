@@ -752,6 +752,31 @@ final class IPCAuthenticationTests: XCTestCase {
 
 @MainActor
 final class ClickAckAdmissionTests: XCTestCase {
+    func testSessionInvalidatedWhilePostingAckDropsHandler() async {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        app.sendRunningNotification()
+        let session = app.currentSession
+        let acks = Mutex(0)
+        // NotificationCenter posts synchronously. A peer callback invalidates
+        // the session during the ack attempt, before it returns to admission.
+        ext.onMainMessage(.actionAck) { _ in
+            acks.withLock { $0 += 1 }
+            clock.step(wall: 0, monotonic: 16)
+            app.sendRunningNotification()
+        }
+        let dropped = expectation(description: "session invalidation during ack must drop handler")
+        dropped.isInverted = true
+        app.onClickEvent { _ in dropped.fulfill() }
+        ext.sendClickEvent(ClickEventPayload(itemId: "delete-direct", itemType: .action, trigger: .contextualItems))
+        await fulfillment(of: [dropped], timeout: 0.05)
+        XCTAssertNotEqual(app.currentSession, session)
+        XCTAssertEqual(acks.withLock { $0 }, 1, "the ack was posted before the synchronous invalidation")
+    }
+
     func testAckClockBarrierDropsAcceptedClick() async throws {
         let center = NotificationCenter()
         let clock = TestIPCClock(wall: 100, monotonic: 200)

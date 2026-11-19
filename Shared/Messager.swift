@@ -287,7 +287,8 @@ nonisolated final class Messager: NSObject, Sendable {
             Task { @MainActor in
                 guard let self, self.hasReadableKey, message.session == self.currentSession else { return }
                 if let event = message.decode(ClickEventPayload.self) {
-                    guard self.sendActionAck(inReplyTo: message.id) else { return }
+                    guard self.sendActionAck(inReplyTo: message.id),
+                          self.hasReadableKey, message.session == self.currentSession else { return }
                     // Already on MainActor: accept without another hop or suspension.
                     // The ack means receipt; accepted work may finish after a rotation.
                     await handler(event)
