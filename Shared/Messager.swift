@@ -287,7 +287,7 @@ nonisolated final class Messager: NSObject, Sendable {
             Task { @MainActor in
                 guard let self, self.hasReadableKey, message.session == self.currentSession else { return }
                 if let event = message.decode(ClickEventPayload.self) {
-                    guard self.sendActionAck(inReplyTo: message.id),
+                    guard self.sendActionAck(inReplyTo: message.id, expectedSession: message.session),
                           self.hasReadableKey, message.session == self.currentSession else { return }
                     // Already on MainActor: accept without another hop or suspension.
                     // The ack means receipt; accepted work may finish after a rotation.
@@ -364,9 +364,12 @@ nonisolated final class Messager: NSObject, Sendable {
         guard let payload = try? data.map({ try JSONEncoder().encode($0) }) ?? Data() else { return }
         sendRaw(action, direction: direction, payload: payload, id: id, inReplyTo: inReplyTo)
     }
-    @discardableResult private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "") -> Bool {
+    @discardableResult private func sendRaw(_ action: String, direction: IPCDirection, payload: Data, id: String, inReplyTo: String = "", expectedSession: String? = nil) -> Bool {
         if receiver.checkClock() { resynchronize(); return false }
         guard let key = key(), let nonce = try? random.bytes(count: 16), isExtension || !currentSession.isEmpty else { return false }
+        // A readable replacement key can rotate the session during key().
+        // Do not acknowledge a click that admission will reject after this send.
+        guard expectedSession == nil || expectedSession == currentSession else { return false }
         let envelope = IPCEnvelope(direction: direction, action: action, id: id, inReplyTo: inReplyTo,
                                    session: receiver.currentSession, timestamp: clock.wallTime, nonce: nonce, payload: payload)
         let wire = MessageSecurity.sign(envelope, key: key).wireString()
@@ -403,10 +406,10 @@ nonisolated final class Messager: NSObject, Sendable {
     }
     func sendRunningNotification(directories: [String] = []) { sendToExtension(.running, data: RunningPayload(directories: directories)) }
     func sendQuitNotification() { sendToExtension(.quit, data: Optional<Int>.none) }
-    func sendActionAck(inReplyTo: String) -> Bool {
+    func sendActionAck(inReplyTo: String, expectedSession: String? = nil) -> Bool {
         guard !isExtension else { return false }
         return sendRaw(MainToExtensionAction.actionAck.rawValue, direction: .toExtension,
-                       payload: Data(), id: UUID().uuidString, inReplyTo: inReplyTo)
+                       payload: Data(), id: UUID().uuidString, inReplyTo: inReplyTo, expectedSession: expectedSession)
     }
     func sendHeartbeat() { sendToMain(.heartbeat, data: Optional<Int>.none) }
     func requestMenuConfig() { sendToMain(.requestConfig, data: Optional<Int>.none) }
