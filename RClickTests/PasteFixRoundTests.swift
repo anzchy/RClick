@@ -194,3 +194,27 @@ extension PasteActionServiceTests {
         #expect(f.operations.renameCalls.isEmpty)
     }
 }
+
+extension PasteActionServiceTests {
+    @Test func failedRecoverySaveCannotDropAnOlderInterruptedIntent() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let first = try f.file("first.txt")
+        f.journal.failOutcomes.withLock { $0 = true }
+        await f.cut([first]); await f.paste()
+        let older = try #require(f.journal.load()?.entries.first)
+        #expect(older.outcome == .intended)
+        let second = try f.file("second.txt")
+        await f.cut([second]); await f.paste()
+        // Recovery found the first move, but saving that outcome still failed.
+        // The second write-ahead intent must retain the first durable intent.
+        #expect(f.journal.load()?.deferred?.first?.originalPath == first.path)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("second.txt").path))
+        f.journal.failOutcomes.withLock { $0 = false }
+        let third = try f.file("third.txt")
+        await f.cut([third]); await f.paste()
+        #expect(f.journal.load()?.deferred?.first?.identity == older.identity)
+        #expect(f.journal.load()?.deferred?.first?.outcome == .moved)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("third.txt").path))
+        #expect(f.leaser.balance == 0)
+    }
+}
