@@ -91,30 +91,40 @@ extension FileOperations {
         return relationship == .contains
     }
 
-    nonisolated func moveFacts(of url: URL) throws -> MoveFacts {
+    nonisolated func providerRootCandidates() -> [URL] {
+        let home = Self.realUserHome
+        return [home.appendingPathComponent("Library/Mobile Documents"), home.appendingPathComponent("Library/CloudStorage")]
+    }
+    nonisolated func moveFacts(of url: URL) throws -> MoveFacts { try readMoveFacts(of: url) }
+    nonisolated func readMoveFacts(of url: URL) throws -> MoveFacts {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let directory = attributes[.type] as? FileAttributeType == .typeDirectory
         let values = try url.resourceValues(forKeys: [.isPackageKey, .isVolumeKey, .isUbiquitousItemKey])
         var facts = MoveFacts(directory: directory, package: directory && values.isPackage == true,
                               mountPoint: directory && values.isVolume == true, ubiquitous: values.isUbiquitousItem == true)
-        let home = Self.realUserHome
-        for root in [home.appendingPathComponent("Library/Mobile Documents"), home.appendingPathComponent("Library/CloudStorage")] {
-            guard FileManager.default.fileExists(atPath: root.path), try contains(root, url) else { continue }
+        // Walk canonical ancestors. Do not treat an inaccessible provider root
+        // as absent: once its name is encountered, identity errors fail closed.
+        for root in providerRootCandidates() {
+            var ancestor = url.deletingLastPathComponent()
             var container = url
-            while container.path != "/" {
-                let parent = container.deletingLastPathComponent()
-                if try sameItem(parent, root) { break }
-                container = parent
+            while true {
+                if ancestor.lastPathComponent == root.lastPathComponent,
+                   try sameItem(ancestor, root) {
+                    facts.providerContainer = container
+                    break
+                }
+                if ancestor.path == "/" { break }
+                container = ancestor
+                ancestor = ancestor.deletingLastPathComponent()
             }
-            facts.providerContainer = container
-            break
+            if facts.providerContainer != nil { break }
         }
         return facts
     }
 
     nonisolated static var realUserHome: URL {
-        if let directory = getpwuid(getuid())?.pointee.pw_dir {
-            return URL(fileURLWithPath: String(cString: directory), isDirectory: true)
+        if let home = NSHomeDirectoryForUser(NSUserName()) {
+            return URL(fileURLWithPath: home, isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser
     }

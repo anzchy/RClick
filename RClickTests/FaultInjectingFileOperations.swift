@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var providerRoots: [URL]?
         var coordinationHook: (@Sendable (URL) throws -> Void)?
         var destinationRefusals: [String: DestinationRefusal] = [:]
         var facts: [String: MoveFacts] = [:]
@@ -113,9 +114,13 @@ final class FaultInjectingFileOperations: FileOperations {
     func setMoveFacts(_ facts: MoveFacts, for url: URL) {
         self.faults.withLock { $0.facts[url.path] = facts }
     }
+    func setProviderRoots(_ roots: [URL]) { faults.withLock { $0.providerRoots = roots } }
+    func providerRootCandidates() -> [URL] {
+        faults.withLock { $0.providerRoots } ?? base.providerRootCandidates()
+    }
     func moveFacts(of url: URL) throws -> MoveFacts {
         if let value = faults.withLock({ $0.facts[url.path] }) { return value }
-        return try base.moveFacts(of: url)
+        return try readMoveFacts(of: url)
     }
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal? {
         if let value = faults.withLock({ $0.destinationRefusals[url.path] }) { return value }
