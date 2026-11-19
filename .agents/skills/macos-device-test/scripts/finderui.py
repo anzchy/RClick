@@ -873,6 +873,7 @@ CALIBRATION_STEPS = (
     ('gui-lock', 'every ui.sh command'),
     ('axprobe', 'every ui.sh command'),
     ('accessibility', 'every ui.sh command'),
+    ('modifiers-start', 'every ui.sh command'),
     ('row-order', 'ui.sh rows'),
     ('select-readback', 'ui.sh select'),
     ('context-menu', 'ui.sh open-menu'),
@@ -882,14 +883,16 @@ CALIBRATION_STEPS = (
     ('choose', 'ui.sh choose'),
     ('choose-multi', 'ui.sh choose (several targets)'),
     ('option-menu', 'ui.sh open-menu --option'),
+    ('modifiers-after-option', 'ui.sh open-menu --option and choose --option (Option not released)'),
     ('background-menu', 'ui.sh open-menu --background'),
     ('background-choose', 'ui.sh choose --background --sub'),
     ('dialog-read', 'ui.sh dialog'),
     ('press-button', 'ui.sh press-button'),
     ('panel-grant-row', 'ui.sh grant (row mode)'),
     ('panel-grant-current', 'ui.sh grant (current-folder mode)'),
+    ('modifiers-end', 'every ui.sh command that clicks or presses (a modifier was left held)'),
 )
-ENVIRONMENT_STEPS = ('gui-lock', 'axprobe', 'accessibility')
+ENVIRONMENT_STEPS = ('gui-lock', 'axprobe', 'accessibility', 'modifiers-start')
 NOT_COVERED = ("NOT covered: RClick's own sandboxed folder panel (the grant steps use an osascript panel); "
                'PERM-01 on the device proves it')
 

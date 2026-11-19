@@ -8,6 +8,10 @@ targets, open-menu --option and --background, choose --background --sub), each a
 itself. No step calls Finder through AppleScript while a menu it opened may be open (Finder answers none then:
 device run, 2026-11-18); a failed step closes its menus through `close-menu` (AXCancel, Esc fallback).
 
+The HID modifier state (`modifiers.sh state`, a read) is checked three times: before anything (modifiers-start, an
+environment step: a held Shift, Control, Option or Command stops the calibration), right after option-menu
+(modifiers-after-option: the Option it posted was released) and last (modifiers-end). 21 steps in all.
+
 Side effects on the desktop, all under the GUI lock: opens and closes one Finder window on the fixture folder (list
 view), selects in it, opens context menus there (one with Option held, two on the window background), chooses
 RClick's Copy Path twice (one and two targets; the pasteboard is overwritten with fixture paths) and New File → TXT once on the fixture's
@@ -113,7 +117,8 @@ class Fixture:
 
 
 def plan_lines(run_dir):
-    lines = [f'calibration plan (dry run, nothing touched); fixture folder {run_dir}/fixtures/calibration-<random>/',
+    lines = [f'calibration plan (dry run, nothing touched): {len(ui.CALIBRATION_STEPS)} steps; fixture folder '
+             f'{run_dir}/fixtures/calibration-<random>/',
              '  files: ' + ', '.join(repr(name) for name in FILES)]
     lines += [f'  step {step}: proves {command}' for step, command in ui.CALIBRATION_STEPS]
     return lines + ['  ' + ui.NOT_COVERED]
@@ -187,10 +192,12 @@ class Run:
     def environment(self):
         checks = (('gui-lock', drive.require_lock, 'held by an rclick run'),
                   ('axprobe', lambda: drive.probe_binary(), 'compiled into its private cache'),
-                  ('accessibility', drive.require_trust, 'host terminal is AX-trusted'))
+                  ('accessibility', drive.require_trust, 'host terminal is AX-trusted'),
+                  ('modifiers-start', self.modifiers_start, None))
         for name, check, detail in checks:
             try:
-                check()
+                result = check()
+                detail = detail or result
             except (ui.Environment, OSError) as error:
                 self.record(name, 'FAIL', str(error))
                 for step, _ in ui.CALIBRATION_STEPS:
@@ -330,6 +337,26 @@ class Run:
             raise ui.Refused(f'ui.sh choose did not verify `Compress 2 Items`: {out!r}')
         self.pasted(targets)
         return 'ui.sh choose with two targets: Compress 2 Items; pbpaste holds both paths, one per line'
+
+    def modifiers_clean(self, when):
+        """The HID modifier state read through `modifiers.sh state` (no event posted): Refused when Shift, Control,
+        Option or Command is held (device run, 2026-11-18: Option stayed set after option-menu)."""
+        flags, held = drive.modifier_state()
+        if held:
+            raise ui.dirty_input(flags, held, f'{when}; every later click or press refuses until it is released')
+        return f'no Shift, Control, Option or Command held {when} (flags 0x{flags:x})'
+
+    def modifiers_start(self):
+        try:
+            return self.modifiers_clean('before the calibration')
+        except ui.Refused as error:
+            raise ui.Environment(str(error)) from error
+
+    def modifiers_after_option(self):
+        return self.modifiers_clean('after the Option menu')
+
+    def modifiers_end(self):
+        return self.modifiers_clean('at the end of the calibration')
 
     def option_menu(self):
         wanted = 'Delete Direct' + ui.SKIP_SUFFIX
@@ -475,12 +502,14 @@ def calibrate(run_dir, dry_run=False, group=(), background_group=()):
                     run.step('choose', run.choose, needs=('rclick-group',))
                     run.step('choose-multi', run.choose_multi, needs=('choose',))
                     run.step('option-menu', run.option_menu, needs=('rclick-group',))
+                    run.step('modifiers-after-option', run.modifiers_after_option)  # also after a failed option-menu
                     run.step('background-menu', run.background_menu)
                     run.step('background-choose', run.background_choose, needs=('background-menu',))
                     run.step('dialog-read', run.dialog_read)
                     run.step('press-button', run.press_button, needs=('dialog-read',))
                     run.step('panel-grant-row', lambda: run.panel(run.path('folder a'), 'row'))
                     run.step('panel-grant-current', lambda: run.panel(str(run.folder), 'current'))
+                    run.step('modifiers-end', run.modifiers_end)
             finally:
                 run.teardown()
     finally:

@@ -948,8 +948,10 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         for step in ('row-order', 'select-readback', 'context-menu', 'menu-read', 'choose-multi', 'choose', 'dialog-read',
                      'press-button', 'panel-grant-row', 'panel-grant-current', 'option-menu', 'background-menu',
-                     'background-choose', 'close-menu'):
+                     'background-choose', 'close-menu', 'modifiers-start', 'modifiers-after-option', 'modifiers-end'):
             self.assertIn(f'step {step}:', result.stdout)
+        self.assertIn('21 steps', result.stdout.splitlines()[0])
+        self.assertEqual(result.stdout.count('\n  step '), 21)
         self.assertIn("NOT covered: RClick's own sandboxed folder panel", result.stdout)
         self.assertFalse(run.exists())
         self.assertEqual(self.run_script('calibrate.sh', 'relative-run', '--dry-run').returncode, 64)
