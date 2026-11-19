@@ -93,6 +93,8 @@ class FakeDesktop:
         self.cancel_works = self.esc_works = True
         self.menu_at_press = None
         self.cancelled = []  # owner pid of every menu a cancel (AXCancel) closed
+        self.menu_at_errors = 0  # menu-at answers an AX error (exit 70) this many times while a menu is open
+        self.abort_hangs = self.session_fails = False  # a session abort times out; a session ends with an AX error
         self.calls, self.requests, self.pressed, self.clicks, self.timeouts, self.keys = [], [], [], [], [], []
         self.windows, self.acted, self.after_act = fixture('dialog-delete-confirm.jsonl'), [], []
 
@@ -176,6 +178,9 @@ class FakeDesktop:
         if command == 'trusted':
             return self.completed(argv, 'true\n')
         if command == 'menu-at':
+            if self.menu is not None and self.menu_at_errors:
+                self.menu_at_errors -= 1
+                return self.completed(argv, '', 70, 'axprobe: cannot read the element at the point: AXError -25204\n')
             if self.menu_shows():
                 return self.completed(argv, self.menu)
             return self.completed(argv, '', 65, f'axprobe: no menu at {argv[2]},{argv[3]} (found AXTextField)\n')
@@ -240,6 +245,10 @@ class FakeSession:
     def __init__(self, desktop, argv):
         self.desktop, self.returncode = desktop, None
         self.owner = int(argv[5]) if len(argv) > 5 else None
+        if desktop.session_fails:
+            self.stdout = io.BytesIO(b'')
+            self.ended = (b'', b'axprobe: cannot read the menu\'s owner pid\n', 70)
+            return
         if not desktop.menu_shows():
             self.stdout = io.BytesIO(b'')
             self.ended = (b'', b'axprobe: no menu at the point (found AXTextField)\n', 65)
@@ -269,6 +278,8 @@ class FakeSession:
         if 'abandon' in request:
             self.returncode = 0
             return b'abandoned: menu left as it is\n', b''
+        if 'abort' in request and self.desktop.abort_hangs:
+            raise subprocess.TimeoutExpired('axprobe menu-session', timeout)
         if 'abort' in request:
             self.returncode = 0
             return f'aborted: {self.cancel()}\n'.encode(), b''
@@ -443,6 +454,65 @@ class ChooseAtTheActingBoundary(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertTrue(desktop.clicks[0][2])
         self.assertEqual(desktop.pressed[0]['title'], 'Delete Direct (skip confirmation)')
+
+
+class CleanupFromTheClickOnward(unittest.TestCase):
+    """Every failure after this process's right-click closes the menu that click opened (audit r3 gpt F3 / opus M2):
+    an AX or transport error before the session exists, a session that cannot start, an abort that times out, and the
+    standalone openers. A menu left open makes the next Finder AppleScript call wait 20 s (device run, 2026-11-18).
+    The original error is kept; a cleanup failure is added to it."""
+    ALPHA = FOLDER + '/alpha.txt'
+
+    def choose(self, desktop):
+        return drive(desktop, 'choose', 'Copy Path', '--target', self.ALPHA, *GROUP)
+
+    def assert_closed(self, desktop, code, err, exit_code, original):
+        self.assertEqual(code, exit_code, err)
+        self.assertEqual(desktop.pressed, [])
+        self.assertEqual(len(desktop.clicks), 1)
+        self.assertTrue(desktop.menu is None, 'the menu this right-click opened was left open: ' + err)
+        self.assertEqual(desktop.cancelled, [FINDER])
+        self.assertIn(original, err)
+        self.assertEqual(desktop.timeouts, [])
+
+    def test_an_ax_error_while_waiting_for_the_menu_closes_it(self):
+        desktop = FakeDesktop()
+        desktop.menu_at_errors = 1
+        code, _, err = self.choose(desktop)
+        self.assert_closed(desktop, code, err, 70, 'AXError -25204')
+
+    def test_a_session_that_cannot_start_closes_the_menu(self):
+        desktop = FakeDesktop()
+        desktop.session_fails = True
+        code, _, err = self.choose(desktop)
+        self.assert_closed(desktop, code, err, 70, "owner pid")
+
+    def test_an_abort_that_times_out_still_closes_the_menu_and_keeps_the_refusal(self):
+        desktop = FakeDesktop()
+        desktop.fixed_menu = fixture('menu-file-sibling-option.jsonl')  # refused: Compress “%41.txt”
+        desktop.abort_hangs = True
+        code, _, err = self.choose(desktop)
+        self.assert_closed(desktop, code, err, 65, 'Compress “%41.txt”')
+        self.assertIn('did not answer in 30 s', err)
+
+    def test_the_standalone_openers_close_their_menu_when_they_fail(self):
+        for argv in (('open-menu', 'alpha.txt'), ('open-menu', '--background'), ('open-menu', 'alpha.txt', '--option')):
+            with self.subTest(argv=argv):
+                desktop = FakeDesktop()
+                desktop.menu_at_errors = 1
+                code, out, err = drive(desktop, *argv)
+                self.assert_closed(desktop, code, err, 70, 'AXError -25204')
+                self.assertNotIn('menu-point', out)
+
+    def test_a_cleanup_that_fails_is_reported_beside_the_original_error(self):
+        desktop = FakeDesktop()
+        desktop.menu_at_errors = 1
+        desktop.cancel_works = desktop.esc_works = False
+        code, _, err = self.choose(desktop)
+        self.assertEqual(code, 70, err)
+        self.assertIn('AXError -25204', err)
+        self.assertIn('could not be closed', err)
+        self.assertIn('close it by hand', err)
 
 
 class CommandLine(unittest.TestCase):

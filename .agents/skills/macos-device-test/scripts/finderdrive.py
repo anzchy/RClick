@@ -6,6 +6,7 @@ Never changes a system or privacy setting, never runs pluginkit, never quits a p
 types through the keyboard layer (Esc is a key code, not text). Acting commands refuse unless the shared GUI lock
 is held by an rclick run (gui-lock.sh).
 """
+import contextlib
 import ctypes
 import hashlib
 import json
@@ -289,13 +290,50 @@ def close_menu(point):
                          'hand (Finder answers no AppleScript until it is closed)')
 
 
-def closing(point, error):
-    """Close the menu at `point` after `error` stopped an action; a failure to close is added to the error."""
+class Opened:
+    """What one right-click of this process may have opened: the click point, the menu point once found, the axprobe
+    session once it holds the menu, and whether that menu is another process's (never ours to close)."""
+
+    def __init__(self, click):
+        self.click, self.point, self.session, self.foreign = click, None, None, False
+
+    def release(self):
+        """After a failure: end the session (abandon another process's menu; abort Finder's, which axprobe cancels only
+        when Finder owns it), then close_menu at the menu point, or at every probe point of the click when the menu
+        was never found. Never raises; returns what could not be done."""
+        problems = []
+        session, self.session = self.session, None
+        if session is not None and not session.done:
+            try:
+                session.abandon() if self.foreign else session.abort()
+            except (ui.Refused, ui.Environment, OSError) as error:
+                problems.append(f'the menu session could not be ended ({error})')
+        if self.foreign:
+            return problems
+        for point in [self.point] if self.point else ui.probe_points(self.click):
+            try:
+                if not close_menu(point).startswith('no menu open'):
+                    break
+            except ui.Refused as error:
+                problems.append(f'the menu at {point[0]},{point[1]} was left open ({error})')
+            except (ui.Environment, OSError) as error:
+                problems.append(str(error))
+        return problems
+
+
+@contextlib.contextmanager
+def menu_boundary(click):
+    """From a right-click at `click` onward: any exception closes what that click opened (Opened.release) before it
+    propagates, with a cleanup failure added to the original error (whose type, so its exit code, is kept). The
+    right-click itself runs inside: a click that failed half-way may still have opened a menu."""
+    opened = Opened(click)
     try:
-        close_menu(point)
-    except (ui.Refused, ui.Environment) as failure:
-        error.args = (f'{error}; and the menu could not be closed: {failure}',)
-    return error
+        yield opened
+    except BaseException as error:
+        problems = opened.release()
+        if problems and isinstance(error, Exception):
+            error.args = (f'{error}; and the menu could not be closed: {"; ".join(problems)}',)
+        raise
 
 
 def right_click(point, option=False):
@@ -322,8 +360,10 @@ def open_background_menu(option=False):
     focus_finder()
     deselect_all()
     point = ui.background_point(finder_nodes())
-    right_click(point, option)
-    return point, wait_menu(point)
+    with menu_boundary(point) as opened:
+        right_click(point, option)
+        opened.point = wait_menu(point)
+    return point, opened.point
 
 
 def open_menu(name, option=False):
@@ -336,8 +376,10 @@ def open_menu(name, option=False):
     again = ui.find_row(ui.list_rows(finder_nodes()), name)
     if again.point != row.point:
         raise ui.Refused(f'row {name!r} moved from {row.point} to {again.point} while selecting; retry')
-    right_click(row.point, option)
-    return row, wait_menu(row.point)
+    with menu_boundary(row.point) as opened:
+        right_click(row.point, option)
+        opened.point = wait_menu(row.point)
+    return row, opened.point
 
 
 class MenuSession:
@@ -366,12 +408,14 @@ class MenuSession:
             lines.append(text)
         header = json.loads(lines.pop(0)) if lines else {}
         if not isinstance(header.get('session'), dict) or not isinstance(header['session'].get('pid'), int):
-            self.finish({'abort': True})
+            self.finish({'abort': True})  # axprobe cancels it only if Finder owns it
             raise ui.Environment('axprobe menu-session printed no owner pid')
         self.pid = header['session']['pid']
+        self.done = False
         self.nodes = ui.parse_dump(''.join(lines))
 
     def finish(self, request):
+        self.done = True
         data = (json.dumps(request) + '\n').encode('utf-8') if request is not None else None
         try:
             out, err = self.process.communicate(input=data, timeout=30)
@@ -427,39 +471,28 @@ def choose(title, group, sub=None, targets=(), background=None, option=False):
     """`ui.sh choose`, ONE process from selection to press, with no Finder AppleScript once the menu can be open:
     select and verify (prepare_targets / prepare_background), right-click, wait for the menu, then inside one axprobe
     menu session: Finder owns the menu, finderui.check_guard against the evidence read before the click, the item in
-    RClick's group; the same axprobe process re-checks the held menu and presses. Any refusal or failure after the
-    click closes the menu (AXCancel, Esc fallback) and presses nothing. Returns (guard reason, item)."""
+    RClick's group; the same axprobe process re-checks the held menu and presses. From the right-click on, any
+    refusal or failure (an AX or transport error, a session that cannot start or end) presses nothing and closes the
+    menu (menu_boundary: AXCancel, Esc fallback); another process's menu is left open. Returns (guard reason, item)."""
     if background:
         point, front = prepare_background(background)
         selected = []
     else:
         point, selected = prepare_targets(targets)
         front = None
-    right_click(point, option)
-    try:
-        menu_point = wait_menu(point)
-    except ui.Refused as error:
-        raise closing(point, error)
-    try:
+    with menu_boundary(point) as opened:
+        right_click(point, option)
+        opened.point = menu_point = wait_menu(point)
         owner = finder_pid()
-        session = MenuSession(menu_point, owner)
-    except (ui.Refused, ui.Environment) as error:
-        raise closing(menu_point, error)
-    if session.pid != owner:  # not Finder's menu: never ours to cancel, so it is left exactly as it is
-        session.abandon()
-        raise ui.Refused(f'the menu at {menu_point[0]},{menu_point[1]} belongs to pid {session.pid}, not Finder '
-                         f'({owner}): nothing pressed, that menu left open')
-    try:
+        opened.session = session = MenuSession(menu_point, owner)
+        if session.pid != owner:  # not Finder's menu: never ours to cancel, so it is left exactly as it is
+            opened.foreign = True
+            raise ui.Refused(f'the menu at {menu_point[0]},{menu_point[1]} belongs to pid {session.pid}, not Finder '
+                             f'({owner}): nothing pressed, that menu left open')
         items = ui.menu_items(session.nodes)
         reason = ui.check_guard(targets, selected, items, background=background, front=front)
         item, sub_path = ui.find_group_item(items, title, sub, group)
-    except (ui.Refused, ui.Environment, ui.Usage) as error:
-        session.abort()
-        raise closing(menu_point, error)
-    try:
         session.press(item, sub_path, sub)
-    except (ui.Refused, ui.Environment) as error:
-        raise closing(menu_point, error)
     return reason, item
 
 

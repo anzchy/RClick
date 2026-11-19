@@ -174,8 +174,8 @@ an rclick run, axprobe build failed, no single Finder process).
   guard plus the press run inside one `axprobe` menu session: the menu must be Finder's, Finder's `Compress
   “<name>”` title (`Compress N Items` for N targets; no Compress item for `--background`) must name the target, the
   item must be inside RClick's `--group` (another extension's same-titled item is never taken), and axprobe re-checks
-  the menu it holds right before `AXPress`. It prints `GUARD PASS — …` then `chose: …`. Any refusal closes the menu
-  and exits 65. The system language must be English for the Compress title. Example: `ui.sh choose "New File" --sub
+  the menu it holds right before `AXPress`. It prints `GUARD PASS — …` then `chose: …`. Any refusal or failure after the
+  click closes the menu it opened (65 refused, 70 environment; another process's menu is left open). The system language must be English for the Compress title. Example: `ui.sh choose "New File" --sub
   TXT --group Terminal --group "New File" --background "$RUN_DIR/fixtures"`.
 - **Close a menu:** `$DT/ui.sh close-menu X,Y` (the `menu-point`) cancels the Finder menu at that point through
   `AXCancel`; if it is still open, it sends Esc to Finder through System Events; a menu of another process is never
