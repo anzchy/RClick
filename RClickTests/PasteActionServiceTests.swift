@@ -114,4 +114,44 @@ struct PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 
+    @Test(arguments: ["same-folder", "self", "inside", "cross-volume", "changed", "missing", "system-root", "file-destination", "package", "package-interior", "trash", "trash-child", "cloud", "mount"])
+    func refusesUnsafeMovesWithoutRenaming(kind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        var item = try f.file()
+        var destination = f.destination
+        if kind == "self" || kind == "inside" {
+            item = f.source.appendingPathComponent("folder")
+            try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
+            destination = kind == "self" ? item : item.appendingPathComponent("child")
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        }
+        if kind == "same-folder" { destination = f.source }
+        if kind == "cross-volume" { f.operations.placeOnOtherVolume(f.destination.path) }
+        if kind == "cloud" { f.operations.setMoveFacts(MoveFacts(ubiquitous: true, providerContainer: f.source), for: item) }
+        if kind == "mount" { f.operations.setMoveFacts(MoveFacts(directory: true, mountPoint: true), for: item) }
+        if kind == "file-destination" { destination = try f.file("destination.txt") }
+        if kind == "package" || kind == "package-interior" {
+            destination = f.destination.appendingPathComponent("Test.app")
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            if kind == "package-interior" {
+                destination = destination.appendingPathComponent("Contents")
+                try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            }
+        }
+        if kind == "system-root" { f.operations.refuseDestination(destination, reason: .systemRoot) }
+        if kind == "trash" || kind == "trash-child" { f.operations.refuseDestination(destination, reason: .trash) }
+        await f.cut([item])
+        if kind == "missing" { try FileManager.default.removeItem(at: item) }
+        if kind == "changed" {
+            try FileManager.default.moveItem(at: item, to: f.source.appendingPathComponent("saved-old.txt"))
+            try Data("replacement".utf8).write(to: item)
+        }
+        await f.paste(destination)
+        #expect(f.operations.renameCalls.isEmpty)
+        if kind != "missing" { #expect(FileManager.default.fileExists(atPath: item.path)) }
+        #expect(f.leaser.balance == 0)
+        if kind == "same-folder" { #expect(f.warnings.isEmpty) }
+        else { #expect(f.warnings.count == 1) }
+    }
+
 }
