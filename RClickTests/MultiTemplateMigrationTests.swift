@@ -36,4 +36,32 @@ struct MultiTemplateMigrationTests {
             #expect(try Data(contentsOf: source) == Data("original bytes".utf8))
         }
     }
+    @Test func sheetEditsPersistNamesOrderTogglesAndUserTemplatedBuiltinTypes() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("same.pages")
+        try Data("snapshot".utf8).write(to: source)
+        let store = TemplateStore(baseURL: dir.appendingPathComponent("Templates"))
+        var draft = TemplateDraft(file: .pages)
+        draft.blankEnabled = false
+        try draft.add(source, store: store)
+        try draft.add(source, store: store)
+        draft.entries.swapAt(0, 1)
+        draft.rename(id: draft.entries[0].id, name: "Letter")
+        draft.entries[1].enabled = false
+        var file = NewFile.pages
+        file.blankEnabled = draft.blankEnabled
+        file.templates = try draft.save(store: store, replacing: [])
+        let container = try ModelContainer(for: AppEntity.self, ActionEntity.self, NewFileTypeEntity.self,
+            CommonDirEntity.self, configurations: ModelConfiguration(url: dir.appendingPathComponent("edited.sqlite"), cloudKitDatabase: .none))
+        let service = ConfigService(modelContext: ModelContext(container))
+        try service.save(AppConfigData(newFiles: [file]), templateStore: store)
+        let loaded = try #require(service.load().newFiles.first)
+        #expect(loaded.userTemplates.map(\.id) == draft.entries.map(\.id))
+        #expect(loaded.userTemplates.map(\.name) == ["Letter", "same.pages"])
+        #expect(loaded.userTemplates.map(\.enabled) == [true, false])
+        #expect(loaded.blankEnabled == false)
+    }
+
 }
