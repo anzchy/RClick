@@ -66,54 +66,68 @@ localization.
 Each finding names the feature block that carries the detail and at least one source. When a finding is fixed,
 delete its line in the same change.
 
-1. `new-file`: only `template.xlsx` is bundled (`RClick/Resources/template.xlsx`); DOCX, PPTX, Pages, Keynote and
-   Numbers fall back to a 0-byte file (`RClick/Runtime/ActionService.swift` `createFile`, log "模板文件不存在").
-   Issue #24, filed from the device run in PR #23 › Device (`ed3ef56`; run `i22-device-20261116e`, private record).
-2. `copy-path`, `copy-file-name`: `Shared/Clipboard.swift:11` and `:31` apply `removingPercentEncoding` to raw
-   Finder paths, so a name holding a literal `%xx` is copied wrong. Issue #28. The unit test
-   `ClipboardTests.copyPathsDecodesPercentEncoding` pins the decoding as intended behaviour, so fixing #28 changes
-   that test.
-3. `delete-direct`, `hide`, `unhide`, `airdrop`, `common-dirs`, `new-file`: `RClick/Runtime/ActionService.swift`
-   lines 134, 190, 244, 290, 323, 371 and 543 decode percent sequences in the paths they act on. PR #29 › Device lists
-   Delete Direct and Hide on a literal percent sibling pair at the unmerged PR #29 head as PENDING, so that result is
-   **UNVERIFIED by this ledger (private record)** (run `i5-device-20261117b`). Main's behaviour on such names is
-   **UNVERIFIED** on a device. Issue #5, PR #29 (open).
-4. `delete-direct`, `hide`, `airdrop`: the protected-folder check never matches. `Utils.isProtectedFolder`
-   (`RClick/Shared/Utils.swift`) compares with plain `==` against `Constants.protectedDirs`, whose entries end in
-   `/`, while Finder paths do not; it also `print`s every comparison. Issue #5, PR #29 (open).
-5. `ipc`: the HMAC key is a source constant (`Shared/MessageSecurity.swift:26`) and messages carry no nonce or
-   timestamp, so any local process can forge or replay a `.click`. Issue #6.
-6. `copy-path`: Copy Path is text-only; the file-URL write that caused the extension's sandbox error has been
-   removed (`Shared/Clipboard.swift`). Absence of that error on a real device is **NOT VERIFIED** pending a new
-   device run. Issue [#25](https://github.com/anzchy/RClick/issues/25) records the failing file-URL flavour.
-7. `localization`: the app logs missing-localization errors for TXT, Markdown, Pages, Keynote and Numbers. Issue #25,
-   filed from the device run in PR #23 › Device (run `i22-device-20261116e`, private record).
-8. `apps-settings`: Settings > Apps > Edit stores Run Arguments and Environment Variables
+1. `open-with`: `AppPresets.resolveOpenTargets` (`Shared/AppPresets.swift:120`) applies `removingPercentEncoding` to
+   each target path, and `ActionService.openApp` (`RClick/Runtime/ActionService.swift:132-134`) passes it the
+   clicked Finder paths, so an item whose name holds a literal `%xx` is opened under a different path. PR #29's
+   description lists this line as decoding "app config values, not Finder paths"; the call site passes click
+   targets. No test covers a percent name for Open With; the device result is **UNVERIFIED**. No issue filed yet.
+2. `delete-direct`, `hide`, `unhide`, `airdrop`, `open-with`, `common-dirs`: `ActionService` interpolates target
+   paths into log calls (for example `RClick/Runtime/ActionService.swift:129`, `:186`, `:742`, `:792`, `:990`) with
+   no `privacy:` argument. Issue #39. Whether they reach the persisted log unredacted is **UNVERIFIED** (the
+   `@AppLog` wrapper, `RClick/Shared/AppLogger.swift`, returns a plain `os.Logger`).
+3. `ipc`: the first creation of the per-install key on a fresh macOS user account with a release-signed build is a
+   release gate nobody has run (issue #40). Follow-ups left open by #6: a clock barrier seen only by the extension
+   retires the session the app still uses (M1), the retired-session history is capped and never evicts (M2), and
+   the Lows listed there (issue #41).
+4. `cut`: a new-session `running` announcement can leave a captured "Cut enabled" state for one render without a
+   current config; a failure to read an item's identity or to write the pasteboard is only logged
+   (`RClick/Runtime/ActionService.swift:713-719`); the production caller `FinderSyncExt.makeActionItem` has no test.
+   Issue #42.
+5. `paste-move`: the destination is re-checked by its lexical path inside the coordinated block, so swapping an
+   ancestor of the destination for a symlink can land an item in a trashed folder or a package
+   (`RClick/Runtime/PasteMoveEngine.swift`). Issue #48 names it a release blocker for any build containing Paste,
+   together with #10, #11 and #12.
+6. `paste-move`, `connection-state`, `new-file`: from the issue #12 device run: Paste (move here) is offered on a
+   selected file's menu and then refuses; a cut item deleted before Paste is reported with the raw system message,
+   and the clipboard then keeps the marker but no file URL; with RClick offline the New File submenu stays enabled;
+   files created by New File carry a quarantine attribute. Issue #53.
+7. `new-file`, `new-file-settings`: a custom type whose extension was typed without a dot creates `Untitled<ext>`:
+   the sheet stores the field verbatim and `ActionService.getUniqueFilePath`
+   (`RClick/Runtime/ActionService.swift:1085-1099`) appends the extension with no dot. Issue #51 (device FAIL in the
+   issue #12 comment).
+8. `settings-backup`, `menu-layout`: importing a backup does not restore `foldActionsMenu` (issue #52, observed on
+   the device). `SettingsBackup.Preferences.apply` (`RClick/Runtime/SettingsBackup.swift:223-229`) writes that key, so
+   the cause is **UNVERIFIED**; which other preferences import skips is unchecked (issue #52).
+9. `apps-settings`: Settings > Apps > Edit stores Run Arguments and Environment Variables
    (`RClick/Settings/EditAppSheetView.swift`, persisted by `RClick/Runtime/ConfigService.swift` and
-   `RClick/Runtime/SettingsBackup.swift`), but `ActionService.openWithApp` (`RClick/Runtime/ActionService.swift`)
-   passes neither to `NSWorkspace.OpenConfiguration`, so they have no effect. No issue filed yet.
-9. `new-file-settings`: Edit File Type stores a Default Open App (`RClick/Settings/EditFileTypeSheetView.swift`,
-   `NewFile.openApp` in `Shared/RCBase.swift`); `ActionService.createFile` never reads it. No issue filed yet.
-10. `new-file`: `NewFileMenuItem.customFileId` (`Shared/RCBase.swift`) has a branch in `ActionService.createFile`
-    that creates an extension-less file, but `MenuService.buildConfig` (`RClick/Runtime/MenuService.swift`) never
-    emits that item, so nothing reaches it. No issue filed yet.
-11. `update`: the update checker and star count read `wflixu/RClick` (`RClick/RClickApp.swift:38`), the upstream
-    repository, not the fork whose identifiers #22 changed. Whether that is intended for the fork is **UNVERIFIED**.
-    No issue filed yet.
-12. `hide`, `unhide`: neither acts on "the selected items" as the device recipe `ACT-03` describes.
-    - Hide (`RClick/Runtime/ActionService.swift:285-352`, `hideFilesAndDirs`) branches on the menu trigger. On items
+   `RClick/Runtime/SettingsBackup.swift`), but `ActionService.openWithApp` and `openRetryAfterPermission`
+   (`RClick/Runtime/ActionService.swift:153-155`, `:175-176`) set only `createsNewApplicationInstance` on
+   `NSWorkspace.OpenConfiguration`, so they have no effect. No issue filed yet.
+10. `new-file-settings`: Edit File Type stores a Default Open App (`RClick/Settings/EditFileTypeSheetView.swift`,
+    `NewFile.openApp` in `Shared/RCBase.swift`); `ActionService.createFile` never reads it. No issue filed yet.
+11. `new-file`: `NewFileMenuItem.customFileId` (`Shared/RCBase.swift:378`) has a branch in `ActionService.createFile`
+    (`RClick/Runtime/ActionService.swift:1017-1028`) that creates an extension-less file, but
+    `MenuService.buildConfig` (`RClick/Runtime/MenuService.swift`) never emits that item; only
+    `ActionServiceTests.newFilePreservesRawPercentTarget` reaches it. No issue filed yet.
+12. `update`, `about`: the update checker and star count read `wflixu/RClick` (`RClick/RClickApp.swift:40`), the
+    upstream repository, not the fork whose identifiers #22 changed. Whether that is intended for the fork is
+    **UNVERIFIED**. No issue filed yet.
+13. `hide`, `unhide`: neither acts on "the selected items" as the device recipe `ACT-03` describes.
+    - Hide (`RClick/Runtime/ActionService.swift:836-905`, `hideFilesAndDirs`) branches on the menu trigger. On items
       (`ctx-items`) it hides each selected item. On the window background (`ctx-container`) it hides every item
       directly inside the **first target**, not the target itself. On the toolbar or sidebar it does nothing.
-    - The target list of every action click is `selectedItemURLs()` only, with no `targetedURL()` fallback
-      (`FinderSyncExt/FinderSyncExt.swift:673`; the app click falls back at `:720`). So on the window background
-      Hide's first target is the first *selected* item, if there is one, not the folder clicked in. What Finder
-      returns there is **UNVERIFIED** pending a device run.
-    - Unhide (`ActionService.swift:240-283`, `unhideFilesAndDirs`) ignores the trigger and every target but the first.
-      It clears the hidden flag on each item directly inside the first target (for a file the listing throws and is
-      only logged, `:268-270`), then on the first target itself (`:272-280`).
+    - The target list of every action click except Paste is `selectedItemURLs()` only, with no `targetedURL()`
+      fallback (`FinderSyncExt/FinderSyncExt.swift:625`, `:644`; the app click falls back at `:674`). So on the window
+      background Hide's first target is the first *selected* item, if there is one, not the folder clicked in. What
+      Finder returns there is **UNVERIFIED** pending a device run.
+    - Unhide (`ActionService.swift:791-834`, `unhideFilesAndDirs`) ignores the trigger and every target but the
+      first. It clears the hidden flag on each item directly inside the first target (for a file the listing throws
+      and is only logged, `:819-820`), then on the first target itself (`:823-831`).
     - Whether this is the intended design is **UNVERIFIED**; no spec says.
-13. `finder-menu` (tooling): the device skill's `finder-menu.sh` and `axdump.sh` cannot see Finder's context menu on
-    this macOS, and `panel-choose.sh` needs the ABC input source. Issue #26.
+14. `finder-menu` (tooling): the device skill's `finder-menu.sh` and `axdump.sh` cannot see Finder's context menu on
+    this macOS and `panel-choose.sh` needs the ABC input source (issue #26); `ui.sh grant` fails on the open panel
+    (issue #38); the problems collected by the issue #12 run, including no Cut or Paste recipe in `features/`
+    (issue #54).
 
 ## Finder menu: Actions
 
