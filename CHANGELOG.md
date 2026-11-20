@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
 
 ### Fixed
+- Preserve directory/package templates when creating new files
 - Preserve empty-file creation for custom text/code types while requiring valid Office/iWork templates
 - New File uses valid DOCX/PPTX templates and refuses missing templates; unchanged built-in Pages, Keynote and Numbers entries are removed unless they have a user template; edited extensions are preserved
 - Copy Path is text-only and no longer attempts the file-URL write that caused a sandbox error in the Finder extension; absence of that log message awaits a real-device check

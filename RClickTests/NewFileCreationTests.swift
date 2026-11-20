@@ -110,6 +110,36 @@ struct NewFileCreationTests {
         }
     }
 
+    @Test func directoryTemplatesCopyContentsWithoutOverwriting() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("source.pages")
+        let nested = source.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let expected = Data("package content".utf8)
+        try expected.write(to: nested.appendingPathComponent("document"))
+        var type = NewFile.pages
+        type.template = source
+        let state = State()
+        state.newFiles = [type]
+        var revealed: [URL] = []
+        var warnings: [String] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
+            revealNewFile: { revealed.append($0) })
+        for _ in 0..<2 {
+            await service.createFile(rid: type.id, target: [dir.path], templateWarning: { warnings.append($0) })
+        }
+        #expect(revealed.count == 2)
+        #expect(Set(revealed).count == 2)
+        #expect(warnings.isEmpty)
+        for copy in revealed {
+            #expect(try copy.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true)
+            #expect(try Data(contentsOf: copy.appendingPathComponent("Contents/document")) == expected)
+        }
+        #expect(try Data(contentsOf: nested.appendingPathComponent("document")) == expected)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 3)
+    }
+
     @Test func unavailableOfficeTemplatesWarnOnceAndNeverRevealOrWrite() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -121,7 +151,7 @@ struct NewFileCreationTests {
         let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
             revealNewFile: { revealed.append($0) })
         for type in [NewFile.docx, .pptx, .xlsx] {
-            for source in [nil, dir.appendingPathComponent("missing"), dir, empty] as [URL?] {
+            for source in [nil, dir.appendingPathComponent("missing"), empty] as [URL?] {
                 var configured = type
                 configured.template = source
                 state.newFiles = [configured]

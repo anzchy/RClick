@@ -1042,6 +1042,10 @@ final class ActionService {
         let requiresTemplate = requiredFormats.contains(rcitem.id)
             || requiredFormats.contains(resourceExtension.lowercased()) || bundledTemplate != nil
         let permitsEmpty = !requiresTemplate
+        func warnTemplateUnavailable() {
+            self.logger.warning("New File refused; reason=templateUnavailable count=1")
+            templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), rcitem.displayName))
+        }
         let contents: Data
         if rcitem.template == nil && permitsEmpty {
             contents = Data()
@@ -1049,9 +1053,19 @@ final class ActionService {
             // User templates take precedence, including when missing: silently
             // substituting a bundled default would discard the user's choice.
             let source = rcitem.template ?? bundledTemplate
+            if let source, (try? source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                do {
+                    // Package templates must retain their directory structure.
+                    // copyItem refuses an existing destination, including a raced creation.
+                    try FileManager.default.copyItem(at: source, to: fileURL)
+                    revealInFinderAndRename(fileURL)
+                } catch {
+                    warnTemplateUnavailable()
+                }
+                return
+            }
             guard let source, let data = try? Data(contentsOf: source), permitsEmpty || !data.isEmpty else {
-                logger.warning("New File refused; reason=templateUnavailable count=1")
-                templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), rcitem.displayName))
+                warnTemplateUnavailable()
                 return
             }
             contents = data
