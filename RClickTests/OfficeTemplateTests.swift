@@ -19,6 +19,16 @@ struct OfficeTemplateTests {
             #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("[Content_Types].xml").path))
             #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(part).path))
             let metadata = try String(contentsOf: directory.appendingPathComponent("docProps/core.xml"), encoding: .utf8)
+            #expect(metadata.contains("<dc:creator/>"))
+            #expect(metadata.contains("<cp:lastModifiedBy/>"))
+            #expect(metadata.contains("<dc:description/>"))
+            let xmlFiles = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)!
+            for case let xml as URL in xmlFiles where xml.pathExtension == "xml" {
+                let text = try String(contentsOf: xml, encoding: .utf8)
+                #expect(!text.contains("Steve Canny"))
+                #expect(!text.contains("/Users/"))
+                #expect(!text.contains("@"))
+            }
             #expect(!metadata.contains("Steve Canny"))
             #expect(!metadata.contains("/Users/"))
             #expect(!metadata.contains("@"))
