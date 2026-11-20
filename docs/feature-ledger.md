@@ -559,8 +559,10 @@ delete its line in the same change.
 - **What:** Export… writes the whole configuration as JSON; Import… restores it on this or another Mac, skipping apps
   that are not installed (`RClick/Runtime/SettingsBackup.swift`; CHANGELOG [Unreleased] › Added). Imported actions
   follow the backup's order and switches, and built-in actions the backup lacks (Cut in an older backup) are added
-  with their defaults (`SettingsBackup.resolveActions`). An imported built-in Pages, Keynote or Numbers row is kept in
-  the settings but left out of the menu (`RClick/Runtime/MenuService.swift`).
+  with their defaults (`SettingsBackup.resolveActions`). An imported New File row with id `pages`, `key` or `numbers`,
+  the matching extension and no user template is saved with the rest (`RClick/Settings/GeneralSettingsTabView.swift`
+  `applyImport`) and stays in Settings only until the next load deletes it (`RClick/Runtime/ConfigService.swift:69-78`,
+  see `new-file`); meanwhile it is left out of the menu (`RClick/Runtime/MenuService.swift:25`).
 - **Status:** `shipped-on`, `partial` (finding 8).
 - **Tests:** `SettingsBackupTests` (round trip, missing app, missing template, action order).
 - **Issues:** #52.
