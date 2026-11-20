@@ -94,7 +94,7 @@ struct TemplateDraft {
         return candidate
     }
 
-    func save(store: TemplateStore, replacing old: [NewFile.Template]) throws -> [NewFile.Template] {
+    func save(store: TemplateStore, replacing old: [NewFile.Template], retaining: [NewFile.Template] = []) throws -> [NewFile.Template] {
         var saved = entries
         for index in saved.indices {
             let id = saved[index].id
@@ -103,7 +103,7 @@ struct TemplateDraft {
                 saved[index].path = url.path
             }
         }
-        let kept = Set(saved.compactMap(\.path))
+        let kept = Set((saved + retaining).compactMap(\.path))
         for entry in old where !(entry.path.map { kept.contains($0) } ?? false) { try store.remove(entry) }
         return saved
     }

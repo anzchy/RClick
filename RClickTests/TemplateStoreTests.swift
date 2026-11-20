@@ -108,4 +108,19 @@ struct TemplateStoreTests {
         #expect(try Data(contentsOf: source) == Data("replacement".utf8))
     }
 
+    @Test func removingAnEntryKeepsLegacyCopyUsedByAnotherType() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = TemplateStore(baseURL: dir.appendingPathComponent("Templates"))
+        try FileManager.default.createDirectory(at: store.baseURL, withIntermediateDirectories: true)
+        let legacy = store.baseURL.appendingPathComponent("shared.txt")
+        try Data("shared bytes".utf8).write(to: legacy)
+        let entry = NewFile.Template(name: "Shared", path: legacy.path)
+        let emptyDraft = TemplateDraft(file: .txt)
+        _ = try emptyDraft.save(store: store, replacing: [entry], retaining: [entry])
+        #expect(FileManager.default.fileExists(atPath: legacy.path))
+        #expect(try Data(contentsOf: legacy) == Data("shared bytes".utf8))
+    }
+
 }
