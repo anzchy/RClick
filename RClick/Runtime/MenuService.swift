@@ -25,7 +25,7 @@ final class MenuService {
                 $0.enabled && !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.ext, hasTemplate: !$0.userTemplates.isEmpty)
             }.compactMap { file in
                 var entries: [NewFileMenuItem.Entry] = []
-                if file.usesBlank { entries.append(.init(id: NewFile.blankTemplateID, name: AppLocalization.localized("Blank"))) }
+                if file.usesBlank && file.supportsBlank() { entries.append(.init(id: NewFile.blankTemplateID, name: AppLocalization.localized("Blank"))) }
                 entries += file.userTemplates.filter { $0.enabled && !$0.isMissing }.map { .init(id: $0.id, name: $0.name) }
                 guard !entries.isEmpty else { return nil }
                 return NewFileMenuItem(id: file.id, name: file.displayName, ext: file.ext, icon: file.icon, entries: entries)

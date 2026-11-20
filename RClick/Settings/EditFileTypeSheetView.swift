@@ -78,6 +78,12 @@ struct EditFileTypeSheetView: View {
                 Section {
                     Toggle(AppLocalization.localized("Blank"), isOn: $draft.blankEnabled)
                         .accessibilityLabel(AppLocalization.localized("Blank"))
+                        .disabled(!file.supportsBlank(forExtension: ext))
+                    if !file.supportsBlank(forExtension: ext) {
+                        Text(appLocalized: "Blank is unavailable because this format requires a template.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     List {
                         ForEach($draft.entries) { $entry in
                             VStack(alignment: .leading, spacing: 4) {

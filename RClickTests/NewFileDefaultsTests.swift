@@ -20,18 +20,24 @@ struct NewFileDefaultsTests {
             NewFile(ext: ".docx", name: "Edited Key", idx: 1, id: "key"),
             .pages, .key, .numbers,
             NewFile(ext: ".key", name: "Custom", idx: 6, id: "custom")]
-        #expect(MenuService().buildConfig(from: state).newFiles.map(\.id) == ["pages", "key", "custom"])
+        #expect(MenuService().buildConfig(from: state).newFiles.map(\.id) == ["pages", "key"])
     }
 
-    @Test func staleUnsupportedRowsStayOutOfMenuButUserTemplatesRemain() {
+    @Test func staleUnsupportedRowsStayOutOfMenuButUserTemplatesRemain() throws {
         let state = AppState()
         state.newFiles = [.pages, .key, .numbers,
             NewFile(ext: ".pages", name: "Custom", idx: 9, id: "custom")]
         let menu = MenuService()
-        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == ["custom"])
+        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == [])
         state.newFiles[0].template = URL(fileURLWithPath: "/tmp/user.pages")
         // Missing legacy templates remain in Settings, but are not offered in Finder.
-        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == ["custom"])
+        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == [])
+        let template = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pages")
+        try Data("user template".utf8).write(to: template)
+        defer { try? FileManager.default.removeItem(at: template) }
+        state.newFiles[0].template = template
+        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == ["pages"])
+        #expect(state.newFiles.contains { $0.id == "custom" })
     }
 
 }

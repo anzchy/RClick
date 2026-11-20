@@ -77,4 +77,33 @@ struct MultiTemplateMenuTests {
         #expect(NewFileMenuItem.selection(forTag: unknown, in: decoded.newFiles) == nil)
     }
 
+    @Test func requiredFormatsWithoutBundledResourceNeverOfferBlank() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("letter.key")
+        try Data("user template".utf8).write(to: source)
+        let state = AppState()
+        let entry = NewFile.Template(name: "Letter", path: source.path)
+        for original in [NewFile.pages, .key, .numbers,
+                         NewFile(ext: ".key", name: "Custom", idx: 0)] {
+            var file = original
+            file.templates = [entry]
+            file.blankEnabled = true
+            // The edit sheet uses this same model decision, including the edited extension.
+            #expect(!file.supportsBlank())
+            state.newFiles = [file]
+            for folded in [true, false] {
+                let menu = try #require(MenuService().buildConfig(from: state, newFilesCollapsed: folded).newFiles.first)
+                #expect(menu.entries?.map(\.id) == [entry.id])
+                #expect(menu.submenuEntries == nil)
+                #expect(menu.directTemplateId == entry.id)
+            }
+        }
+        #expect(!NewFile.txt.supportsBlank(forExtension: ".key"))
+        for file in [NewFile.txt, .md, .json, .docx, .pptx, .xlsx] {
+            #expect(file.supportsBlank())
+        }
+    }
+
 }

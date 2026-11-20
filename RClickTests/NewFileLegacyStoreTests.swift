@@ -30,7 +30,7 @@ struct NewFileLegacyStoreTests {
                 #expect(loaded.map(\.name) == expected)
                 let state = AppState()
                 state.newFiles = loaded
-                #expect(MenuService().buildConfig(from: state).newFiles.map(\.ext) == [".xlsx", ".docx", ".key"])
+                #expect(MenuService().buildConfig(from: state).newFiles.map(\.ext) == [".xlsx", ".docx"])
             }
             let reloaded = ConfigService(modelContext: ModelContext(container)).load().newFiles
             #expect(reloaded.map(\.name) == expected)
