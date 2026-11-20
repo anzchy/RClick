@@ -64,4 +64,55 @@ struct MultiTemplateMigrationTests {
         #expect(loaded.blankEnabled == false)
     }
 
+    @Test func sqliteStoreWithTheActualOldSchemaUpgradesWithoutLosingTemplate() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("old.txt")
+        try Data("legacy bytes".utf8).write(to: path)
+        let config = ModelConfiguration(url: dir.appendingPathComponent("actual-old.sqlite"), cloudKitDatabase: .none)
+        do {
+            let old = try ModelContainer(for: AppEntity.self, ActionEntity.self, LegacyFileTypes.NewFileTypeEntity.self,
+                CommonDirEntity.self, BookmarkEntity.self, DataVersion.self, configurations: config)
+            let context = ModelContext(old)
+            context.insert(LegacyFileTypes.NewFileTypeEntity(templatePath: path.path))
+            try context.save()
+        }
+        let current = try ModelContainer(for: AppEntity.self, ActionEntity.self, NewFileTypeEntity.self,
+            NewFileTemplateEntity.self, CommonDirEntity.self, BookmarkEntity.self, DataVersion.self, configurations: config)
+        let service = ConfigService(modelContext: ModelContext(current))
+        let file = try #require(service.load().newFiles.first)
+        #expect(file.id == "legacy-custom")
+        #expect(file.blankEnabled == false)
+        #expect(file.userTemplates.map(\.name) == ["old.txt"])
+        #expect(file.userTemplates.first?.path == path.path)
+        try service.save(AppConfigData(newFiles: [file]))
+        let again = try #require(ConfigService(modelContext: ModelContext(current)).load().newFiles.first)
+        #expect(again.userTemplates.map(\.id) == file.userTemplates.map(\.id))
+        #expect(try Data(contentsOf: path) == Data("legacy bytes".utf8))
+    }
+
+}
+
+
+/// Literal pre-#49 persisted shape: no relationship and no blank migration marker.
+private enum LegacyFileTypes {
+    @Model final class NewFileTypeEntity {
+        @Attribute(.unique) var id: String
+        var fileExtension: String
+        var name: String
+        var icon: String
+        var isEnabled: Bool
+        var sortOrder: Int
+        var templatePath: String?
+        var openAppPath: String?
+        var createdAt: Date
+        var updatedAt: Date
+        init(templatePath: String) {
+            id = "legacy-custom"; fileExtension = ".txt"; name = "Legacy"
+            icon = "doc"; isEnabled = true; sortOrder = 0
+            self.templatePath = templatePath; openAppPath = nil
+            createdAt = Date(); updatedAt = Date()
+        }
+    }
 }
