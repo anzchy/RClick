@@ -29,6 +29,7 @@ final class ActionService {
     private let journalStore: (any UndoJournalStore)?
     private let cutPasteboard: any CutPasteboard
     private let pasteboard: NSPasteboard
+    private let moveLogSink: (@Sendable (MoveLogEvent, String) -> Void)?
     private let cutWarning: (String) -> Void
     private let cutVolumeIsReadOnly: (URL) -> Bool
     /// System boundary: tests can observe reveal without opening Finder or posting keys.
@@ -54,6 +55,7 @@ final class ActionService {
         terminationBoundary: any MoveTerminationBoundary = SystemMoveTerminationBoundary(),
         quitWait: TimeInterval = 35,
         coordinationTimeout: TimeInterval = 30,
+        moveLogSink: (@Sendable (MoveLogEvent, String) -> Void)? = nil,
         cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) },
         cutVolumeIsReadOnly: @escaping (URL) -> Bool = {
             (try? $0.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) == true
@@ -72,6 +74,7 @@ final class ActionService {
         self.now = now
         self.accessLeaser = accessLeaser
         self.revealNewFile = revealNewFile
+        self.moveLogSink = moveLogSink
         self.cutWarning = cutWarning
         self.cutVolumeIsReadOnly = cutVolumeIsReadOnly
         // Normal runtime construction happens during launch. Hosted tests that
@@ -269,18 +272,21 @@ final class ActionService {
     private func restoreMoveJournal() async {
         let store: any UndoJournalStore
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
-        catch { return }
+        catch {
+            logMove(MoveLogEvent(kind: .recoveryFailed, reasons: [.journalUnavailable]))
+            return
+        }
         let loaded: MoveJournal
         do {
             guard let value = try await executor.run({ try store.load() }) else { return }
             loaded = value
         } catch JournalFailure.discarded {
             journalNotice = "A previous move could not be fully recovered; its undo information was discarded"
-            logger.warning("Paste journal: quarantined unreadable or unsupported record count 1")
+            logMove(MoveLogEvent(kind: .recoveryFailed, reasons: [.journalDiscarded]))
             return
         } catch {
             journalNotice = "The move journal could not be read or quarantined; check its folder access"
-            logger.warning("Paste journal: unreadable record count 1")
+            logMove(MoveLogEvent(kind: .recoveryFailed, reasons: [.journalRead]))
             return
         }
         // Recorded paths grant no access. Prune first, independently of access;
@@ -294,6 +300,11 @@ final class ActionService {
         defer { lease.end() }
         let operations = fileOperations
         let timestamp = now()
+        let recoveryEntries = loaded.entries + loaded.previous + (loaded.deferred ?? [])
+        let recoveryItems = Set(recoveryEntries.map(\.originalPath)).count
+        let expiredItems = Set(recoveryEntries.filter {
+            timestamp.timeIntervalSince($0.timestamp) >= 86400 || $0.timestamp > timestamp
+        }.map(\.originalPath)).count
         let accessiblePaths = Set(accessible.map(\.path))
         do {
             let report = try await executor.run {
@@ -304,18 +315,29 @@ final class ActionService {
             }
             if report.missingAccess > 0 {
                 journalNotice = "A previous move is awaiting recovery because folder access is missing; its undo information is retained for 24 hours"
-                logger.warning("Paste journal: missing access count \(report.missingAccess)")
             } else if report.ambiguous > 0 {
                 journalNotice = "A previous move is awaiting recovery because its locations are ambiguous; its undo information is retained for 24 hours"
-                logger.warning("Paste journal: ambiguous entry count \(report.ambiguous)")
             } else if report.unreadable > 0 {
                 journalNotice = "A previous move is awaiting recovery because its files could not be read; its undo information is retained for 24 hours"
-                logger.warning("Paste journal: unreadable entry count \(report.unreadable)")
             }
-            if report.pruned > 0 { logger.info("Paste journal: expired entry count \(report.pruned)") }
+            var skipped: Set<MoveLogEvent.Reason> = []
+            if report.missingAccess > 0 { skipped.insert(.missingAccess) }
+            if report.ambiguous > 0 { skipped.insert(.ambiguous) }
+            if !skipped.isEmpty {
+                logMove(MoveLogEvent(kind: .recoverySkipped, total: recoveryItems,
+                    affected: min(recoveryItems, report.missingAccess + report.ambiguous), reasons: skipped))
+            }
+            if report.unreadable > 0 {
+                logMove(MoveLogEvent(kind: .recoveryFailed, total: recoveryItems,
+                    affected: min(recoveryItems, report.unreadable), reasons: [.recoveryRead]))
+            }
+            if report.pruned > 0 {
+                logMove(MoveLogEvent(kind: .recoveryExpired, total: recoveryItems, affected: expiredItems, reasons: [.expired]))
+            }
         } catch {
             journalNotice = "The move journal could not be saved; no further files can be moved until it is writable"
-            logger.warning("Paste journal: recovery write failure count 1")
+            logMove(MoveLogEvent(kind: .recoveryFailed, total: recoveryItems,
+                affected: recoveryItems, reasons: [.journalWrite]))
         }
     }
 
@@ -323,27 +345,40 @@ final class ActionService {
         var publishConfig = true
         defer { if publishConfig { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self) } }
         guard !preparingCut, !terminationPending else {
+            logMove(MoveLogEvent(kind: .refused, total: pendingCut?.paths.count ?? 0,
+                affected: pendingCut?.paths.count ?? 0, reasons: [.busy]))
             cutWarning(AppLocalization.localized("A move is already in progress"))
             return
         }
         preparingCut = true
         defer { releaseReservation() }
         guard let record = pendingCut else {
+            logMove(MoveLogEvent(kind: .refused, total: cutRecord?.paths.count ?? 0,
+                affected: cutRecord?.paths.count ?? 0, reasons: [.staleCut]))
             cutRecord = nil
             cutWarning(AppLocalization.localized("The cut has ended"))
             return
         }
         guard target.count == 1, trigger == "ctx-container" || trigger == "ctx-items" else {
+            logMove(MoveLogEvent(kind: .refused, total: record.paths.count, affected: record.paths.count, reasons: [.invalidTarget]))
             cutWarning(AppLocalization.localized("Choose a folder as the destination"))
             return
         }
         let destination = URL(fileURLWithPath: target[0]).resolvingSymlinksInPath()
         let directories = [destination] + record.paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
         for directory in directories where !permission.hasAccess(to: directory) {
-            guard await permission.promptForPermission(for: directory) != nil else { return }
+            guard await permission.promptForPermission(for: directory) != nil else {
+                logMove(MoveLogEvent(kind: .refused, total: record.paths.count, affected: record.paths.count, reasons: [.permission]))
+                return
+            }
         }
-        guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else { return }
+        guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else {
+            logMove(MoveLogEvent(kind: .refused, total: record.paths.count, affected: record.paths.count,
+                reasons: [Task.isCancelled ? .cancelled : .permission]))
+            return
+        }
         guard cutRecord?.changeCount == record.changeCount, cutPasteboard.changeCount == record.changeCount else {
+            logMove(MoveLogEvent(kind: .refused, total: record.paths.count, affected: record.paths.count, reasons: [.staleCut]))
             cutRecord = nil
             cutWarning(AppLocalization.localized("The cut has ended"))
             return
@@ -371,7 +406,8 @@ final class ActionService {
         let store: any UndoJournalStore
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
         catch {
-            logger.warning("Paste journal: unavailable store count 1")
+            logMove(MoveLogEvent(kind: .refused, total: record.paths.count, affected: record.paths.count, reasons: [.journalUnavailable]))
+            logMove(MoveLogEvent(kind: .journalFailure, total: record.paths.count, affected: record.paths.count, reasons: [.journalUnavailable]))
             cutWarning(moveFailureDescription(JournalFailure.unreadable))
             return
         }
@@ -381,6 +417,7 @@ final class ActionService {
         defer { terminationBoundary.unprotectMutation() }
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
+            result.itemCount = record.paths.count
             result.unchanged = alreadyHere
             let expectedDestination: FileIdentity
             do {
@@ -422,6 +459,7 @@ final class ActionService {
                         && (try? operations.contains(other.1, candidate.1)) == true
                 }
             }
+            result.itemCount = selection.count
             for (path, source, identity) in selection {
                 if result.unchanged.contains(path) { continue }
                 do {
@@ -504,10 +542,7 @@ final class ActionService {
             publishConfig = false
             return
         }
-        let journalFailures = result.failures.filter { $0.error is JournalFailure }.count
-        if journalFailures > 0 || result.journalNeedsRecovery {
-            logger.warning("Paste journal: persistence failure count \(journalFailures + (result.journalNeedsRecovery ? 1 : 0))")
-        }
+        var clipboardFailed = false
         // This is an ownership check, not a pasteboard compare-and-swap.
         if cutPasteboard.changeCount != record.changeCount {
             cutRecord = nil
@@ -522,13 +557,85 @@ final class ActionService {
                     record.paths.firstIndex(of: path).map { record.identities[$0] }
                 }
                 cutRecord = CutRecord(paths: remainingPaths, identities: identities, changeCount: count)
-            } else { cutRecord = nil }
+            } else {
+                cutRecord = nil
+                clipboardFailed = true
+            }
         }
+        logPasteResult(result, clipboardFailed: clipboardFailed)
         if !result.failures.isEmpty {
             let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
             cutWarning(String(format: AppLocalization.localized("Some items could not be moved:\n%@"), lines.joined(separator: "\n")))
         } else if result.journalNeedsRecovery {
             cutWarning(AppLocalization.localized("The move completed, but its journal needs recovery at the next launch"))
+        }
+    }
+
+    /// Both the OS logger and the injectable sink receive this exact safe message.
+    private func logMove(_ event: MoveLogEvent) {
+        let message = event.message
+        switch event.kind {
+        case .moved, .partial, .recoveryExpired: logger.info("\(message, privacy: .public)")
+        default: logger.warning("\(message, privacy: .public)")
+        }
+        moveLogSink?(event, message)
+    }
+
+    private func logPasteResult(_ result: FileActionResult, clipboardFailed: Bool) {
+        let moved = result.completed.count
+        let total = result.itemCount
+        let remaining = Set(result.failures.map(\.path) + result.unchanged)
+        logMove(MoveLogEvent(kind: .moved, moved: moved, total: total, affected: moved))
+        if moved > 0 && !remaining.isEmpty {
+            logMove(MoveLogEvent(kind: .partial, moved: moved, total: total, affected: remaining.count))
+        }
+        var reasons = Set(result.failures.map { moveLogReason($0.error) })
+        if clipboardFailed { reasons.insert(.clipboard) }
+        if !reasons.isEmpty {
+            let affected = clipboardFailed ? remaining.count : Set(result.failures.map(\.path)).count
+            logMove(MoveLogEvent(kind: .refused, moved: moved, total: total, affected: affected, reasons: reasons))
+        }
+        let timeouts = result.failures.filter { moveLogReason($0.error) == .timeout }
+        if !timeouts.isEmpty {
+            logMove(MoveLogEvent(kind: .coordinationTimeout, moved: moved, total: total,
+                affected: Set(timeouts.map(\.path)).count, reasons: [.timeout]))
+        }
+        let changed = result.failures.filter { moveLogReason($0.error) == .destinationChanged }
+        if !changed.isEmpty {
+            logMove(MoveLogEvent(kind: .destinationChanged, moved: moved, total: total,
+                affected: Set(changed.map(\.path)).count, reasons: [.destinationChanged]))
+        }
+        let journal = result.failures.filter { moveLogReason($0.error) == .journalWrite }
+        if !journal.isEmpty || result.journalNeedsRecovery {
+            let affected = Set(journal.map(\.path) + (result.journalNeedsRecovery ? result.completed : [])).count
+            logMove(MoveLogEvent(kind: .journalFailure, moved: moved, total: total,
+                affected: affected, reasons: [.journalWrite]))
+        }
+    }
+
+    private func moveLogReason(_ error: any Error) -> MoveLogEvent.Reason {
+        switch error {
+        case JournalFailure.discarded: return .journalDiscarded
+        case JournalFailure.unreadable: return .journalRead
+        case JournalFailure.writeFailed: return .journalWrite
+        case DestinationRefusal.systemRoot: return .systemRoot
+        case DestinationRefusal.trash: return .trash
+        case DestinationRefusal.package: return .package
+        case DestinationRefusal.notFolder: return .notFolder
+        case PasteMoveError.changed: return .sourceChanged
+        case PasteMoveError.destinationChanged: return .destinationChanged
+        case PasteMoveError.crossVolume: return .crossVolume
+        case PasteMoveError.insideSource: return .insideSource
+        case PasteMoveError.mountPoint: return .mountPoint
+        case PasteMoveError.cloud: return .cloud
+        case PasteMoveError.timeout: return .timeout
+        case MoveName.Failure.tooLong: return .nameTooLong
+        case MoveName.Failure.exhausted: return .nameExhausted
+        case let error as POSIXError where error.code == .ENOTSUP: return .unsupported
+        case let error as POSIXError where error.code == .ENOENT: return .missing
+        case let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile: return .missing
+        case let error as CocoaError where error.code == .fileReadNoPermission || error.code == .fileWriteNoPermission: return .permission
+        default: return .filesystem
         }
     }
 
