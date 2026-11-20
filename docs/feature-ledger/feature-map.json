@@ -153,7 +153,7 @@
       "area": "Finder menu: New File",
       "process": ["app", "ipc", "extension"],
       "reachedBy": ["Finder context menu on items or the window background: 'New File' submenu (foldNewFileMenu on by default), one item per enabled file type"],
-      "default": "on; TXT, Markdown, DOCX, PPTX, XLSX enabled, JSON disabled (Shared/RCBase.swift NewFile.all; RClick/Model/NewFileTypeEntity.swift createDefaultFileTypes); unchanged built-in Pages, Keynote and Numbers rows without a user template are removed (NewFile.isRetiredBuiltin)",
+      "default": "on; TXT, Markdown, DOCX, PPTX, XLSX enabled, JSON disabled (Shared/RCBase.swift NewFile.all; RClick/Model/NewFileTypeEntity.swift createDefaultFileTypes); at load a row with id pages, key or numbers, the matching extension .pages, .key or .numbers and no user template is deleted even if its name, icon, order or switch was edited (NewFile.isRetiredBuiltin; RClick/Runtime/ConfigService.swift load)",
       "paths": ["RClick/Runtime/ActionService.swift", "RClick/Runtime/ConfigService.swift", "RClick/Runtime/MenuService.swift", "RClick/Model/NewFileTypeEntity.swift", "Shared/RCBase.swift", "Shared/FileTypeIconProvider.swift", "FinderSyncExt/FinderSyncExt.swift"],
       "tests": ["RClickTests/NewFileCreationTests.swift", "RClickTests/NewFileDefaultsTests.swift", "RClickTests/NewFileLegacyStoreTests.swift", "RClickTests/NewFileMigrationTests.swift", "RClickTests/ActionServiceTests.swift::newFilePreserves", "RClickTests/ActionServiceTests.swift::fileTemplateSurvivesSaveAndReload", "RClickTests/SettingsBackupTests.swift::missingTemplateFallsBack"],
       "specs": [],

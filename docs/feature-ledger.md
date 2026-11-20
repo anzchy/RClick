@@ -347,9 +347,12 @@ delete its line in the same change.
   file (`:1075`).
 - **Status:** `shipped-on`, `partial` (finding 7: an extension without a dot; finding 11: an unreachable branch).
 - **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:261` `NewFile.all`;
-  `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`). A stored built-in Pages, Keynote or Numbers row
-  that is unchanged and has no user template is removed at load (`RClick/Runtime/ConfigService.swift`,
-  `NewFile.isRetiredBuiltin` at `Shared/RCBase.swift:257`) and left out of the menu (`RClick/Runtime/MenuService.swift`).
+  `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`). At every load a stored row is deleted when its id
+  is `pages`, `key` or `numbers`, its extension is exactly the matching `.pages`, `.key` or `.numbers`, and it has no
+  user template (`NewFile.isRetiredBuiltin`, `Shared/RCBase.swift:257-258`; called at
+  `RClick/Runtime/ConfigService.swift:69-78`). Nothing else is checked: a row whose name, icon, order or enabled
+  switch was edited is deleted too; only a different extension or a user template keeps it
+  (`NewFileLegacyStoreTests`). Such a row is also left out of the menu (`RClick/Runtime/MenuService.swift`).
   A collapsed "New File" submenu by default (`RClick/AppState.swift` `foldNewFileMenu = true`).
 - **Reached:** Finder menu on items or the window background.
 - **Runs in:** the app, over IPC; an ungranted folder prompts first. The extension builds each item disabled while
@@ -635,7 +638,9 @@ delete its line in the same change.
 - **What:** SwiftData entities (`RClick/Model/`) in the App Group container shared by app and extension,
   `ConfigService` load/save/reset, the UserDefaults-to-SwiftData migration (`RClick/Shared/DataMigrationManager.swift`),
   the layout-switch move into the App Group store (`AppState.layoutToggleKeys`), the Cut row added to older stores,
-  and the load-time removal of unchanged built-in Pages, Keynote and Numbers rows (`RClick/Runtime/ConfigService.swift`).
+  and the load-time deletion of every New File row with id `pages`, `key` or `numbers`, the matching canonical
+  extension and no user template, whatever else was edited (`RClick/Runtime/ConfigService.swift:69-78`,
+  `NewFile.isRetiredBuiltin`; see `new-file`).
   The Paste journal is a separate file in the same App Group container (see `paste-move`).
 - **Status:** `infrastructure`.
 - **Tests:** `SharedModelContainerTests`, `ConfigServiceSaveTests`, `AppStateDefaultsMigrationTests`,
