@@ -80,9 +80,12 @@ struct ClipboardTests {
         pasteboard.clearContents()
         pasteboard.setString("keep", forType: .string)
 
+        let changeCount = pasteboard.changeCount
         Clipboard.copyPaths([], to: pasteboard)
+        #expect(pasteboard.changeCount == changeCount)
         Clipboard.copyFileNames([], to: pasteboard)
 
         #expect(pasteboard.string(forType: .string) == "keep")
+        #expect(pasteboard.changeCount == changeCount)
     }
 }
