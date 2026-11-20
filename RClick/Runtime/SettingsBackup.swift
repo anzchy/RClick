@@ -191,7 +191,10 @@ extension SettingsBackup.FileTemplate {
         var file = NewFile(ext: ext, name: name, enabled: enabled, idx: idx, icon: icon, id: id)
         if let templatePath {
             file.template = URL(fileURLWithPath: templatePath)
-            file.templates = [.init(name: URL(fileURLWithPath: templatePath).lastPathComponent, path: templatePath)]
+            var entry = NewFile.Template(name: URL(fileURLWithPath: templatePath).lastPathComponent, path: templatePath)
+            let url = URL(fileURLWithPath: templatePath)
+            if templateStore.contains(url), !templateStore.owns(url, id: entry.id) { entry.path = nil }
+            file.templates = [entry]
             file.blankEnabled = false
         }
         if let templates {

@@ -132,4 +132,38 @@ struct TemplateStoreTests {
         #expect(TemplateStore.standard.baseURL == TemplateStore.standard.baseURL)
     }
 
+    @Test func legacyDirectoryPathCannotAdoptOrRemoveAnotherEntriesSnapshots() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("source.txt")
+        try Data("owned bytes".utf8).write(to: source)
+        let store = TemplateStore(baseURL: dir.appendingPathComponent("Templates"))
+        let victim = try store.importFile(source)
+        let victimURL = URL(fileURLWithPath: try #require(victim.path))
+        let directory = victimURL.deletingLastPathComponent()
+        #expect(!store.owns(directory))
+        let backup = SettingsBackup.FileTemplate(id: "other", ext: ".txt", name: "Other", enabled: true,
+            idx: 0, icon: "doc", openAppPath: nil, templatePath: directory.path)
+        let imported = backup.toModel(templateStore: store)
+        #expect(imported.userTemplates.first?.isMissing == true)
+        try store.remove(NewFile.Template(name: "Invalid", path: directory.path))
+        #expect(FileManager.default.fileExists(atPath: victimURL.path))
+        // A different entry must not be able to delete the victim's actual file either.
+        try store.remove(NewFile.Template(name: "Wrong ID", path: victimURL.path))
+        #expect(FileManager.default.fileExists(atPath: victimURL.path))
+        let legacy = store.baseURL.appendingPathComponent("legacy.txt")
+        try Data("legacy".utf8).write(to: legacy)
+        #expect(store.owns(legacy))
+        #expect(!store.owns(store.baseURL))
+        #expect(!store.owns(source))
+        #expect(!store.owns(store.baseURL.appendingPathComponent("../source.txt")))
+        let link = store.baseURL.appendingPathComponent("escape")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: dir)
+        #expect(!store.owns(link.appendingPathComponent("source.txt")))
+        try store.remove(victim)
+        #expect(!FileManager.default.fileExists(atPath: victimURL.path))
+        #expect(try Data(contentsOf: source) == Data("owned bytes".utf8))
+    }
+
 }

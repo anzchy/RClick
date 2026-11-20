@@ -20,11 +20,11 @@ struct TemplateStore {
         if let preferredPath {
             let url = URL(fileURLWithPath: preferredPath)
             if url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
-               owns(url), FileManager.default.fileExists(atPath: url.path) { return url.path }
+               owns(url, id: id), FileManager.default.fileExists(atPath: url.path) { return url.path }
         }
         return (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))?
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-            .first { owns($0) }.map { directory.appendingPathComponent($0.lastPathComponent).path }
+            .first { owns($0, id: id) }.map { directory.appendingPathComponent($0.lastPathComponent).path }
     }
 
     func importFile(_ source: URL) throws -> NewFile.Template {
@@ -57,18 +57,28 @@ struct TemplateStore {
 
     /// Only snapshot children or the old store's direct children can be deleted.
     /// Resolve symlinks before checking containment, never trust a backup path or ID.
-    func owns(_ url: URL) -> Bool {
+    func contains(_ url: URL) -> Bool {
+        let root = baseURL.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+        return path.starts(with: root)
+    }
+
+    func owns(_ url: URL, id: String? = nil) -> Bool {
         let root = baseURL.standardizedFileURL.resolvingSymlinksInPath().pathComponents
         let path = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
         guard path.starts(with: root), path.count > root.count else { return false }
         let relative = Array(path.dropFirst(root.count))
-        return relative.count == 1 || (relative.count == 2 && UUID(uuidString: relative[0]) != nil)
+        if relative.count == 1 {
+            return (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        return relative.count == 2 && UUID(uuidString: relative[0]) != nil
+            && (id == nil || id == relative[0])
     }
 
     func remove(_ entry: NewFile.Template) throws {
         guard let path = entry.path else { return }
         let url = URL(fileURLWithPath: path)
-        guard owns(url), FileManager.default.fileExists(atPath: path) else { return }
+        guard owns(url, id: entry.id), FileManager.default.fileExists(atPath: path) else { return }
         try FileManager.default.removeItem(at: url)
         let parent = url.deletingLastPathComponent()
         if parent != baseURL, (try? FileManager.default.contentsOfDirectory(atPath: parent.path).isEmpty) == true {

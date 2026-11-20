@@ -30,7 +30,7 @@ final class ConfigService {
     }
 
     /// 从 SwiftData 读取全部配置
-    func load() -> AppConfigData {
+    func load(templateStore: TemplateStore = .standard) -> AppConfigData {
         var data = AppConfigData()
 
         // Apps
@@ -95,7 +95,14 @@ final class ConfigService {
             }
             file.template = entity.templatePath.map { URL(fileURLWithPath: $0) }
             file.blankEnabled = entity.blankEnabled ?? true
-            file.templates = (entity.templates ?? []).sorted { $0.sortOrder < $1.sortOrder }.map(\.value)
+            file.templates = (entity.templates ?? []).sorted { $0.sortOrder < $1.sortOrder }.map {
+                var entry = $0.value
+                if let path = entry.path {
+                    let url = URL(fileURLWithPath: path)
+                    if templateStore.contains(url), !templateStore.owns(url, id: entry.id) { entry.path = nil }
+                }
+                return entry
+            }
             file.openApp = entity.openAppPath.map { URL(fileURLWithPath: $0) }
             return file
         }
