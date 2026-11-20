@@ -19,3 +19,23 @@ struct TemplateStore {
         return NewFile.Template(id: id, name: source.lastPathComponent, path: destination.path)
     }
 }
+
+/// Value-owned sheet edits. Discarding this value is Cancel.
+@MainActor
+struct TemplateDraft {
+    var entries: [NewFile.Template]
+    var blankEnabled: Bool
+    private var pending: [String: FileWrapper] = [:]
+
+    init(file: NewFile) {
+        entries = file.userTemplates
+        blankEnabled = file.usesBlank
+    }
+
+    mutating func add(_ source: URL, store: TemplateStore) throws {
+        let snapshot = try FileWrapper(url: source, options: .immediate)
+        let entry = NewFile.Template(name: source.lastPathComponent)
+        pending[entry.id] = snapshot
+        entries.append(entry)
+    }
+}
