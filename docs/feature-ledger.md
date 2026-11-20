@@ -78,9 +78,9 @@ delete its line in the same change.
    `/`, while Finder paths do not; it also `print`s every comparison. Issue #5, PR #29 (open).
 5. `ipc`: the HMAC key is a source constant (`Shared/MessageSecurity.swift:26`) and messages carry no nonce or
    timestamp, so any local process can forge or replay a `.click`. Issue #6.
-6. `copy-path`: the extension logs "Sandbox extension creation failed … public.file-url" on Copy Path; the text
-   still pastes, and whether the file-URL flavour pastes into Finder is **UNVERIFIED**. Issue #25, filed from the
-   device run in PR #23 › Device (run `i22-device-20261116e`, private record).
+6. `copy-path`: Copy Path is text-only; the file-URL write that caused the extension’s sandbox error has been
+   removed (`Shared/Clipboard.swift`). Absence of that error on a real device is **NOT VERIFIED** pending a new
+   device run. Issue [#25](https://github.com/anzchy/RClick/issues/25) records the failing file-URL flavour.
 7. `localization`: the app logs missing-localization errors for TXT, Markdown, Pages, Keynote and Numbers. Issue #25,
    filed from the device run in PR #23 › Device (run `i22-device-20261116e`, private record).
 8. `apps-settings`: Settings > Apps > Edit stores Run Arguments and Environment Variables
@@ -113,19 +113,22 @@ delete its line in the same change.
 ## Finder menu: Actions
 
 ### `copy-path`
-- **What:** puts every selected item's full path on the pasteboard, one per line, plus file URLs so Finder can paste
-  the files (`Shared/Clipboard.swift`; CHANGELOG [Unreleased] › Changed).
+- **What:** puts every selected item's full path on the pasteboard, one per line, in one plain-text-only
+  pasteboard item (`Shared/Clipboard.swift`; CHANGELOG [Unreleased] › Changed). Finder’s Command-C copies files;
+  Copy Path does not enable Finder file paste. Embedded newlines in names are preserved, making the line-separated
+  text ambiguous for those names.
 - **Status:** `shipped-on`, `partial` (findings 2 and 6).
 - **Default:** on (`Shared/RCBase.swift` `RCAction.copyPath`, `enabled: true`).
 - **Reached:** Finder menu, action id `copy-path`, on items, container, sidebar and the toolbar button.
 - **Runs in:** the extension only. `FinderSyncExt.handleActionClick` copies locally and sends no IPC, so it also
   works while RClick is offline (`FinderSyncExt/FinderSyncExt.swift`, "快链路"). `ActionService.copyPath` exists but
   no click reaches it.
-- **Tests:** `ClipboardTests` (text, file URLs, empty selection) and
+- **Tests:** `ClipboardTests` (one text-only item, selection order, literal UTF-8 bytes, empty selection) and
   `ActionServiceTests.copyPathAndFileNameWriteToTheInjectedPasteboard`; metrics `copy-path` › Test cases.
 - **Issues, PRs:** #25, #28; PR #27 (injected pasteboard).
 - **Device:** PASS single and multi-selection (PR #23 › Device at `ed3ef56`, PR #27 › Device at `cfec391`; runs
-  `i22-device-20261116e`, `i13-device-20261117c`, private records). Offline Copy Path (`CONN-02`): NOT VERIFIED
+  `i22-device-20261116e`, `i13-device-20261117c`, private records). The new text-only item shape and absence of
+  sandbox errors are **NOT VERIFIED** on a device (issue #25). Offline Copy Path (`CONN-02`): NOT VERIFIED
   (PR #23 › Device lists it).
 
 ### `copy-file-name`

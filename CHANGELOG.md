@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Use the fork app identity, isolated app/extension communication, and a new, empty App Group container; existing settings and folder bookmarks are not migrated
-- Copy Path now copies every selected item, one path per line, and writes file URLs so Finder can paste the files themselves. Copy File Name copies every selected item's name the same way
+- Copy Path now copies every selected item, one path per line, as plain text. Copy File Name copies every selected item's name the same way
 - Keep Finder workspace icon caches warm with background preloading and main-thread image resizing
 - Use lightweight heartbeat replies and reconnect from the last peer activity
 - Direct Delete now always asks for confirmation before permanently removing files. Hold Option while choosing it to skip the prompt
@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
 
 ### Fixed
+- Copy Path is text-only and no longer attempts the file-URL write that caused a sandbox error in the Finder extension; absence of that log message awaits a real-device check
 - Built-in new-file format and Apple product names now resolve in every supported language without missing-localization warnings
-- Copy Path and Copy File Name preserve literal percent sequences in selected paths, names and file URLs instead of decoding them into different names
+- Copy Path and Copy File Name preserve literal percent sequences in selected paths and names instead of decoding them into different names
 - Authenticate every Finder message with a per-install key, launch session and replay protection; reject tampered clicks and unrelated acknowledgements. A non-modal menu-bar notice offers Finder relaunch guidance after unverifiable messages are rejected
 - Delete Direct, Hide and AirDrop now refuse protected folders: the check previously failed to match Finder paths. The home folder, ~/Documents, ~/Library and / are now protected too; file actions also preserve literal percent sequences in Finder paths so they act on the selected item
 - Updates no longer report success when the install failed. Installation errors are surfaced, the staged bundle's version is checked before it replaces the old app, and a failed relaunch keeps the current app running instead of quitting
