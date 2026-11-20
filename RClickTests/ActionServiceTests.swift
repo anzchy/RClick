@@ -450,7 +450,8 @@ final class ActionServiceTests {
 
         service.copyPath(["/tmp/a.txt", "/tmp/b.txt"])
         #expect(pasteboard.string(forType: .string) == "/tmp/a.txt\n/tmp/b.txt")
-        #expect(pasteboard.pasteboardItems?.first?.string(forType: .fileURL) == "file:///tmp/a.txt")
+        #expect(pasteboard.pasteboardItems?.count == 1)
+        #expect(pasteboard.pasteboardItems?.first?.types == [.string])
 
         service.copyFileName(["/tmp/a.txt", "/tmp/folder/b.md"])
         #expect(pasteboard.string(forType: .string) == "a.txt\nb.md")
