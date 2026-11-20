@@ -65,9 +65,6 @@ final class NewFileTypeEntity {
             NewFileTypeEntity(id: "docx", fileExtension: ".docx", name: "DOCX", icon: "doc.richtext.fill", sortOrder: 3),
             NewFileTypeEntity(id: "pptx", fileExtension: ".pptx", name: "PPTX", icon: "rectangle.on.rectangle.fill", sortOrder: 4),
             NewFileTypeEntity(id: "xlsx", fileExtension: ".xlsx", name: "XLSX", icon: "tablecells", sortOrder: 5),
-            NewFileTypeEntity(id: "pages", fileExtension: ".pages", name: "Pages", icon: "doc.richtext", sortOrder: 6),
-            NewFileTypeEntity(id: "key", fileExtension: ".key", name: "Keynote", icon: "rectangle.on.rectangle", sortOrder: 7),
-            NewFileTypeEntity(id: "numbers", fileExtension: ".numbers", name: "Numbers", icon: "tablecells", sortOrder: 8),
         ]
     }
 }
