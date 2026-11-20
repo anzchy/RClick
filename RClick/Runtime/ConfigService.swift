@@ -132,7 +132,7 @@ final class ConfigService {
     }
 
     /// 将配置数据写回 SwiftData（全量替换）
-    func save(_ data: AppConfigData, templateStore: TemplateStore = .standard) throws {
+    func save(_ data: AppConfigData, templateStore: TemplateStore = .standard, preserveTemplateSnapshots: Bool = false) throws {
         let priorTemplates = try modelContext.fetch(FetchDescriptor<NewFileTypeEntity>()).flatMap { entity in
             if let templates = entity.templates { return templates.map(\.value) }
             return entity.templatePath.map { [NewFile.Template(name: "", path: $0)] } ?? []
@@ -164,6 +164,7 @@ final class ConfigService {
 
         try modelContext.save()
         // Only after persistence succeeds: a failed load/save must never erase snapshots.
+        guard !preserveTemplateSnapshots else { return }
         let retained = Set(data.newFiles.flatMap { $0.userTemplates.compactMap(\.path) })
         for entry in priorTemplates where !(entry.path.map { retained.contains($0) } ?? false) {
             try templateStore.remove(entry)

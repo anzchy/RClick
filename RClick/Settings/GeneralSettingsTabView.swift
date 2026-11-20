@@ -340,18 +340,22 @@ struct GeneralSettingsTabView: View {
             return app
         }
         store.actions = SettingsBackup.resolveActions(backup.actions)
-        store.newFiles = backup.newFiles.map { $0.toModel() }
+        let existingTemplates = store.newFiles.flatMap(\.userTemplates)
+        store.newFiles = backup.newFiles.map {
+            $0.toModel(templateStore: store.newFileTemplateStore, existing: existingTemplates)
+        }
+        let omittedTemplates = backup.importOmittedTemplateCount(templateStore: store.newFileTemplateStore)
         store.cdirs = backup.commonDirs.map { $0.toModel() }
         backup.preferences.apply()
-        store.sync()
+        store.sync(preserveTemplateSnapshots: true)
 
-        if skippedApps > 0 || backup.omittedTemplateCount > 0 {
+        if skippedApps > 0 || omittedTemplates > 0 {
             backupResultTitle = "Import Complete"
             var notices: [String] = []
             if skippedApps > 0 {
                 notices.append(AppLocalization.localized("Some apps in the backup are not installed on this Mac and were skipped."))
             }
-            if backup.omittedTemplateCount > 0 { notices.append(backup.templateOmissionNotice) }
+            if omittedTemplates > 0 { notices.append(String(format: AppLocalization.localized("%lld templates not included"), omittedTemplates)) }
             backupResultMessage = notices.joined(separator: "\n")
             showBackupResult = true
         }
