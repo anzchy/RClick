@@ -31,7 +31,7 @@ struct NewFileCreationTests {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let state = State()
-        state.newFiles = [NewFile(ext: ".unbundled", name: "Missing", idx: 0, id: "missing")]
+        state.newFiles = [NewFile(ext: ".pages", name: "Missing", idx: 0, id: "missing")]
         var revealed: [URL] = []
         let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
             revealNewFile: { revealed.append($0) })
@@ -41,6 +41,32 @@ struct NewFileCreationTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
         #expect(revealed.isEmpty)
     }
+    @Test func customTypesWithoutTemplatesCreateEmptyFilesAndOfficeTypesUseBundle() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let python = NewFile(ext: ".py", name: "Python", idx: 0)
+        let office = NewFile(ext: ".docx", name: "Custom DOCX", idx: 1)
+        let state = State()
+        state.newFiles = [python, office]
+        var revealed: [URL] = []
+        var warnings: [String] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
+            revealNewFile: { revealed.append($0) })
+        await service.createFile(rid: python.id, target: [dir.path], templateWarning: { warnings.append($0) })
+        #expect(revealed.count == 1)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 1)
+        if let file = revealed.first { #expect(try Data(contentsOf: file).isEmpty) }
+        await service.createFile(rid: office.id, target: [dir.path], templateWarning: { warnings.append($0) })
+        let bundled = try #require(Bundle.main.url(forResource: "template", withExtension: "docx"))
+        let copy = try #require(revealed.first { $0.pathExtension == "docx" })
+        #expect(try Data(contentsOf: copy) == Data(contentsOf: bundled))
+        state.newFiles[1].template = dir.appendingPathComponent("missing.docx")
+        await service.createFile(rid: office.id, target: [dir.path], templateWarning: { warnings.append($0) })
+        #expect(revealed.count == 2)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 2)
+        #expect(warnings.count == 1)
+    }
+
     @Test func officeCopiesMatchBundledBytesWithoutOverwriting() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }

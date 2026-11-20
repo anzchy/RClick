@@ -1034,16 +1034,21 @@ final class ActionService {
 
         let ext = rcitem.ext
         let fileURL = URL(fileURLWithPath: getUniqueFilePath(dir: dirPath, ext: ext))
-        // These builtin text formats explicitly use an empty template. A custom
-        // type with the same extension still requires its configured template.
-        let permitsEmpty = ["txt": ".txt", "md": ".md", "json": ".json"][rcitem.id] == ext
+        let resourceExtension = ext.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let bundledTemplate = templateResource(resourceExtension)
+        let requiredFormats: Set<String> = ["docx", "pptx", "xlsx", "pages", "key", "numbers"]
+        // Custom text/code types retain empty-file creation. Office/iWork IDs,
+        // extensions and any format with a bundled resource require a template.
+        let requiresTemplate = requiredFormats.contains(rcitem.id)
+            || requiredFormats.contains(resourceExtension.lowercased()) || bundledTemplate != nil
+        let permitsEmpty = !requiresTemplate
         let contents: Data
         if rcitem.template == nil && permitsEmpty {
             contents = Data()
         } else {
             // User templates take precedence, including when missing: silently
             // substituting a bundled default would discard the user's choice.
-            let source = rcitem.template ?? templateResource(ext.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
+            let source = rcitem.template ?? bundledTemplate
             guard let source, let data = try? Data(contentsOf: source), permitsEmpty || !data.isEmpty else {
                 logger.warning("New File refused; reason=templateUnavailable count=1")
                 templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), rcitem.displayName))
