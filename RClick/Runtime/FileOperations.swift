@@ -129,6 +129,7 @@ nonisolated struct FileActionResult: Sendable {
     var journalNeedsRecovery = false
     var completed: [String] = []
     var unchanged: [String] = []
+    var itemCount = 0
     var failures: [FileActionFailure] = []
 }
 
