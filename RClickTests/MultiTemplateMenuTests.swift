@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import AppKit
 @testable import RClick
 
 @MainActor
@@ -39,4 +40,41 @@ struct MultiTemplateMenuTests {
             state.newFiles = [type]
         }
     }
+    @Test func finderPreservedTagsResolveEveryDirectAndSubmenuLeafAfterPayloadRoundTrip() throws {
+        var items = [NewFileMenuItem(id: "legacy", name: "Legacy", ext: ".txt", icon: "doc")]
+        for n in 0..<100 {
+            items.append(NewFileMenuItem(id: "type_\(n)", name: "Type", ext: ".txt", icon: "doc",
+                entries: (0..<(n % 4 + 1)).map { .init(id: "type_\($0)", name: "Template") }))
+        }
+        // Ambiguous underscore concatenation and nil/empty must remain distinct.
+        items += [.init(id: "a_b", name: "A", ext: ".txt", icon: "doc", entries: [.init(id: "c", name: "C")]),
+                  .init(id: "a", name: "A", ext: ".txt", icon: "doc", entries: [.init(id: "b_c", name: "BC")])]
+        let config = MenuConfigPayload(version: 1, newFiles: items)
+        let decoded = try JSONDecoder().decode(MenuConfigPayload.self, from: JSONEncoder().encode(config))
+        var tags = Set<Int>()
+        let reserved = Set((0..<100).flatMap { ["app_type_\($0)".hash, "commondir_type_\($0)".hash, "action_type_\($0)".hash] }
+            + RCAction.all.map { "action_\($0.id)".hash })
+        for item in decoded.newFiles {
+            let ids: [String?] = item.entries?.map { Optional($0.id) } ?? [nil]
+            for id in ids {
+                let leaf = NSMenuItem(title: "Leaf", action: nil, keyEquivalent: "")
+                leaf.tag = NewFileMenuItem.leafTag(typeId: item.id, templateId: id)
+                // Build the delivered item using only FinderSync-preserved properties.
+                let delivered = NSMenuItem(title: leaf.title, action: leaf.action, keyEquivalent: "")
+                delivered.tag = leaf.tag
+                delivered.image = leaf.image
+                delivered.isEnabled = leaf.isEnabled
+                delivered.state = leaf.state
+                delivered.indentationLevel = leaf.indentationLevel
+                #expect(delivered.representedObject == nil)
+                #expect(tags.insert(delivered.tag).inserted)
+                #expect(!reserved.contains(delivered.tag))
+                #expect(NewFileMenuItem.selection(forTag: delivered.tag, in: decoded.newFiles)
+                    == .init(typeId: item.id, templateId: id))
+            }
+        }
+        let unknown = (0...).first { !tags.contains($0) }!
+        #expect(NewFileMenuItem.selection(forTag: unknown, in: decoded.newFiles) == nil)
+    }
+
 }
