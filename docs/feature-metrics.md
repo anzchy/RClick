@@ -1,7 +1,7 @@
 <!-- GENERATED FILE. Do not edit by hand: run `node scripts/feature-ledger/gen-feature-ledger.mjs`. -->
 # RClick feature metrics
 
-Generated from commit `cc21ed86e0c73d0f55d7a570ac57b7aed6145941` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
+Generated from commit `b33bab07e723221f9a4dfd43b917958490342ce4` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
 This is the quantitative half of the feature ledger. Every cell below is measured from the repository; nothing is typed by hand or estimated.
 The qualitative half, `docs/feature-ledger.md`, cites these cells and never restates them. Maintenance: `docs/agents/feature-ledger.md`.
 
@@ -37,37 +37,37 @@ There is no issue-count column: a feature that is off by default (Hide, Unhide, 
 
 | Feature | Name | Area | Process | Code files | Code lines | Test files | Test cases | Test lines | Last touch | Commits (90 d) | Specs | CHANGELOG |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|
-| `copy-path` | Copy Path | Finder menu: Actions | extension, shared | 3 | 937 | 2 | 4 | 36 | d4439a7 2026-11-14 | 16 | 0 | 3 |
-| `copy-file-name` | Copy File Name | Finder menu: Actions | app, ipc, shared | 3 | 876 | 3 | 3 | 28 | 1cf27fc 2026-11-17 | 16 | 0 | 2 |
-| `delete-direct` | Delete Direct | Finder menu: Actions | app, ipc | 7 | 736 | 2 | 11 | 179 | d63c29c 2026-11-17 | 21 | 1 | 3 |
-| `hide` | Hide | Finder menu: Actions | app, ipc | 3 | 551 | 0 | 0 | 0 | 1cf27fc 2026-11-17 | 16 | 0 | 2 |
-| `unhide` | Unhide | Finder menu: Actions | app, ipc | 1 | 516 | 0 | 0 | 0 | 1cf27fc 2026-11-17 | 15 | 0 | 2 |
-| `airdrop` | AirDrop | Finder menu: Actions | app, ipc | 2 | 532 | 0 | 0 | 0 | 1cf27fc 2026-11-17 | 15 | 0 | 3 |
-| `open-with` | Open With (configured apps) | Finder menu: Open With | app, ipc, extension, shared | 4 | 1534 | 3 | 4 | 81 | 1cf27fc 2026-11-17 | 25 | 0 | 3 |
-| `open-in-terminal` | Open in Terminal (containing-folder rule) | Finder menu: Open With | app, shared | 3 | 957 | 1 | 1 | 23 | 1cf27fc 2026-11-17 | 16 | 0 | 1 |
-| `new-file` | New File (templates) | Finder menu: New File | app, ipc, extension | 4 | 1545 | 2 | 2 | 33 | 1cf27fc 2026-11-17 | 26 | 0 | 5 |
-| `new-file-auto-rename` | New File: select and rename after creation | Finder menu: New File | app | 2 | 563 | 0 | 0 | 0 | 1cf27fc 2026-11-17 | 17 | 0 | 2 |
-| `common-dirs` | Common Dirs | Finder menu: Common Dirs | app, ipc, extension | 4 | 990 | 0 | 0 | 0 | 1cf27fc 2026-11-17 | 17 | 0 | 3 |
-| `finder-menu` | RClick section in the Finder context menu | Finder menu: presence | extension, app, ipc | 4 | 1253 | 1 | 2 | 45 | 641225e 2026-11-17 | 22 | 0 | 4 |
-| `finder-toolbar-button` | RClick toolbar button in Finder | Finder menu: presence | extension | 2 | 911 | 1 | 2 | 45 | d4439a7 2026-11-14 | 16 | 0 | 2 |
-| `menu-layout` | Menu sections: collapse toggles and icon style | Finder menu: presence | app, extension, shared | 6 | 1024 | 2 | 7 | 79 | 8b1ebd0 2026-11-17 | 24 | 0 | 3 |
-| `connection-state` | Connection-state UX (offline menu, hint relaunch, no-ack alert) | Finder menu: presence | extension, ipc, shared | 4 | 933 | 1 | 1 | 23 | 641225e 2026-11-17 | 15 | 0 | 5 |
-| `observed-volumes` | Observed folders and external volumes | Finder menu: presence | extension, shared | 2 | 631 | 1 | 3 | 89 | d4439a7 2026-11-14 | 14 | 1 | 1 |
-| `settings-window` | Settings window | Settings | app | 3 | 377 | 0 | 0 | 0 | c861dcd 2026-11-17 | 13 | 0 | 1 |
-| `menu-bar-item` | Menu bar item | Settings | app | 3 | 655 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 24 | 0 | 0 |
+| `copy-path` | Copy Path | Finder menu: Actions | extension, shared | 3 | 888 | 2 | 4 | 62 | e7e842c 2026-11-20 | 30 | 0 | 5 |
+| `copy-file-name` | Copy File Name | Finder menu: Actions | app, ipc, shared | 3 | 963 | 3 | 3 | 39 | e7e842c 2026-11-20 | 33 | 0 | 3 |
+| `delete-direct` | Delete Direct | Finder menu: Actions | app, ipc | 7 | 849 | 2 | 13 | 205 | 7d64b98 2026-11-19 | 43 | 1 | 4 |
+| `hide` | Hide | Finder menu: Actions | app, ipc | 3 | 664 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 38 | 0 | 3 |
+| `unhide` | Unhide | Finder menu: Actions | app, ipc | 1 | 610 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 28 | 0 | 2 |
+| `airdrop` | AirDrop | Finder menu: Actions | app, ipc | 2 | 648 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 37 | 0 | 4 |
+| `open-with` | Open With (configured apps) | Finder menu: Open With | app, ipc, extension, shared | 4 | 1588 | 3 | 5 | 95 | f802109 2026-11-19 | 49 | 0 | 3 |
+| `open-in-terminal` | Open in Terminal (containing-folder rule) | Finder menu: Open With | app, shared | 3 | 1053 | 1 | 1 | 23 | 7d64b98 2026-11-19 | 30 | 0 | 1 |
+| `new-file` | New File (templates) | Finder menu: New File | app, ipc, extension | 4 | 1599 | 2 | 2 | 33 | f802109 2026-11-19 | 50 | 0 | 6 |
+| `new-file-auto-rename` | New File: select and rename after creation | Finder menu: New File | app | 2 | 657 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 30 | 0 | 2 |
+| `common-dirs` | Common Dirs | Finder menu: Common Dirs | app, ipc, extension | 4 | 1086 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 32 | 0 | 3 |
+| `finder-menu` | RClick section in the Finder context menu | Finder menu: presence | extension, app, ipc | 4 | 1370 | 1 | 3 | 59 | c9dbec0 2026-11-19 | 51 | 0 | 4 |
+| `finder-toolbar-button` | RClick toolbar button in Finder | Finder menu: presence | extension | 2 | 871 | 1 | 3 | 59 | f802109 2026-11-19 | 27 | 0 | 2 |
+| `menu-layout` | Menu sections: collapse toggles and icon style | Finder menu: presence | app, extension, shared | 6 | 984 | 2 | 7 | 79 | f802109 2026-11-19 | 35 | 0 | 3 |
+| `connection-state` | Connection-state UX (offline menu, hint relaunch, no-ack alert) | Finder menu: presence | extension, ipc, shared | 4 | 1046 | 1 | 1 | 23 | c9dbec0 2026-11-19 | 42 | 0 | 5 |
+| `observed-volumes` | Observed folders and external volumes | Finder menu: presence | extension, shared | 2 | 589 | 1 | 3 | 89 | f802109 2026-11-19 | 24 | 1 | 1 |
+| `settings-window` | Settings window | Settings | app | 3 | 379 | 0 | 0 | 0 | 8ebfe21 2026-11-19 | 19 | 0 | 1 |
+| `menu-bar-item` | Menu bar item | Settings | app | 3 | 661 | 0 | 0 | 0 | 8ebfe21 2026-11-19 | 30 | 0 | 0 |
 | `launch-at-login` | Launch at login | Settings | app | 2 | 479 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 14 | 0 | 2 |
-| `apps-settings` | Apps settings (presets, add, edit, visibility, order) | Settings | app, shared | 5 | 643 | 3 | 4 | 61 | aec622a 2026-11-02 | 4 | 0 | 1 |
-| `actions-settings` | Actions settings (enable, order, restore) | Settings | app | 3 | 264 | 1 | 4 | 65 | 09e9aa0 2026-11-07 | 10 | 0 | 0 |
+| `apps-settings` | Apps settings (presets, add, edit, visibility, order) | Settings | app, shared | 5 | 643 | 3 | 5 | 75 | aec622a 2026-11-02 | 4 | 0 | 1 |
+| `actions-settings` | Actions settings (enable, order, restore) | Settings | app | 3 | 265 | 1 | 5 | 85 | d31747b 2026-11-19 | 11 | 0 | 0 |
 | `new-file-settings` | New File settings (custom types, templates) | Settings | app | 3 | 392 | 2 | 2 | 33 | 9c180f6 2026-09-13 | 3 | 0 | 4 |
 | `folder-permissions` | Folder permissions (security-scoped bookmarks) | Settings | app | 5 | 320 | 3 | 11 | 141 | d63c29c 2026-11-17 | 4 | 1 | 8 |
-| `permission-status` | Permission status (Finder extension, Accessibility) | Settings | app | 2 | 437 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 15 | 0 | 2 |
+| `permission-status` | Permission status (Finder extension, Accessibility) | Settings | app | 2 | 437 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 15 | 0 | 3 |
 | `settings-backup` | Settings backup (export, import) | Settings | app | 2 | 582 | 1 | 4 | 101 | 8b1ebd0 2026-11-17 | 14 | 0 | 1 |
 | `export-logs` | Export logs | Settings | app | 2 | 401 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 14 | 0 | 1 |
 | `reset-all-settings` | Reset All Settings | Settings | app | 3 | 660 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 20 | 0 | 1 |
 | `update` | Check for updates and install | Settings | app | 4 | 769 | 1 | 7 | 58 | 4ab0b17 2026-11-14 | 5 | 2 | 5 |
 | `about` | About (version, community links, more apps) | Settings | app | 2 | 650 | 0 | 0 | 0 | 4ab0b17 2026-11-14 | 5 | 0 | 2 |
-| `localization` | Localization (English, zh-Hans, ja, es, fr) | Settings | app, extension, shared | 2 | 117 | 0 | 0 | 0 | 4ab0b17 2026-11-14 | 26 | 0 | 5 |
-| `ipc` | Two-process IPC (signed click, ack, menu config, heartbeat) | Infrastructure | ipc, shared | 3 | 398 | 3 | 4 | 99 | 641225e 2026-11-17 | 7 | 0 | 4 |
-| `persistence` | Persistence (SwiftData in the App Group, migrations) | Infrastructure | app, shared | 10 | 823 | 5 | 17 | 252 | 8b1ebd0 2026-11-17 | 12 | 0 | 5 |
-| `app-lifecycle` | App lifecycle (single instance, startup failure, quiet launches) | Infrastructure | app, shared | 6 | 351 | 2 | 6 | 51 | 8b1ebd0 2026-11-17 | 14 | 1 | 2 |
+| `localization` | Localization (English, zh-Hans, ja, es, fr) | Settings | app, extension, shared | 2 | 117 | 0 | 0 | 0 | 694541f 2026-11-19 | 34 | 0 | 6 |
+| `ipc` | Two-process IPC (signed click, ack, menu config, heartbeat) | Infrastructure | ipc, shared | 3 | 698 | 3 | 4 | 101 | c9dbec0 2026-11-19 | 36 | 0 | 4 |
+| `persistence` | Persistence (SwiftData in the App Group, migrations) | Infrastructure | app, shared | 10 | 824 | 5 | 18 | 272 | d31747b 2026-11-19 | 14 | 0 | 5 |
+| `app-lifecycle` | App lifecycle (single instance, startup failure, quiet launches) | Infrastructure | app, shared | 6 | 353 | 2 | 6 | 51 | 8ebfe21 2026-11-19 | 20 | 1 | 2 |
 | `action-execution` | Action execution layer (serial executor, file operations, access lease) | Infrastructure | app | 4 | 165 | 4 | 20 | 312 | d63c29c 2026-11-17 | 10 | 0 | 0 |
