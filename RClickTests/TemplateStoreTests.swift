@@ -34,4 +34,36 @@ struct TemplateStoreTests {
         #expect(draft.entries.map(\.name) == ["source.txt"])
     }
 
+    @Test func savedDraftKeepsSnapshotsAndReplacementMetadataThenRemovesOnlyOwnedFiles() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("same.txt")
+        try Data("first".utf8).write(to: source)
+        let store = TemplateStore(baseURL: dir.appendingPathComponent("Templates"))
+        var draft = TemplateDraft(file: .txt)
+        try draft.add(source, store: store)
+        try Data("second".utf8).write(to: source)
+        try draft.add(source, store: store)
+        #expect(draft.entries.map(\.name) == ["same.txt", "same.txt 2"])
+        let saved = try draft.save(store: store, replacing: [])
+        let firstPath = try #require(saved.first?.path)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: firstPath)) == Data("first".utf8))
+        var file = NewFile.txt
+        file.templates = saved
+        var edit = TemplateDraft(file: file)
+        edit.rename(id: saved[0].id, name: "Letter")
+        try edit.replace(id: saved[0].id, source: source)
+        edit.entries[0].enabled = false
+        let replaced = try edit.save(store: store, replacing: saved)
+        #expect(replaced.map(\.id) == saved.map(\.id))
+        #expect(replaced.map(\.name) == ["Letter", "same.txt 2"])
+        #expect(replaced[0].enabled == false)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: #require(replaced[0].path))) == Data("second".utf8))
+        edit.entries = []
+        _ = try edit.save(store: store, replacing: replaced + [NewFile.Template(name: "External", path: source.path)])
+        for entry in replaced { let path = try #require(entry.path); #expect(!FileManager.default.fileExists(atPath: path)) }
+        #expect(try Data(contentsOf: source) == Data("second".utf8))
+    }
+
 }
