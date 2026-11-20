@@ -172,10 +172,10 @@ extension SettingsBackup.App {
 
 @MainActor
 extension SettingsBackup.FileTemplate {
-    /// 模板或默认打开方式指向的文件不存在时清空，让新建文件回退到内置模板。
+    /// Preserve missing legacy templates for replacement; never substitute Blank silently.
     func toModel() -> NewFile {
         var file = NewFile(ext: ext, name: name, enabled: enabled, idx: idx, icon: icon, id: id)
-        if let templatePath, FileManager.default.fileExists(atPath: templatePath) {
+        if let templatePath {
             file.template = URL(fileURLWithPath: templatePath)
         }
         if let openAppPath, FileManager.default.fileExists(atPath: openAppPath) {

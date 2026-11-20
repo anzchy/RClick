@@ -81,7 +81,7 @@ struct SettingsBackupTests {
         #expect(entry.toModel() == nil)
     }
 
-    @Test func missingTemplateFallsBackToTheBuiltInTemplate() {
+    @Test func missingLegacyTemplateIsRetainedRatherThanSilentlyFallingBack() {
         let entry = SettingsBackup.FileTemplate(
             id: "custom",
             ext: ".docx",
@@ -94,7 +94,9 @@ struct SettingsBackupTests {
         )
 
         let file = entry.toModel()
-        #expect(file.template == nil)
+        #expect(file.userTemplates.count == 1)
+        #expect(file.userTemplates.first?.isMissing == true)
+        #expect(file.usesBlank == false)
         #expect(file.openApp == nil)
     }
 
