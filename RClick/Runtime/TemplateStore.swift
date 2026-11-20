@@ -68,12 +68,16 @@ struct TemplateStore {
     }
 
     func owns(_ url: URL, id: String? = nil) -> Bool {
+        guard (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { return false }
         let root = baseURL.standardizedFileURL.resolvingSymlinksInPath().pathComponents
         let path = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
         guard path.starts(with: root), path.count > root.count else { return false }
         let relative = Array(path.dropFirst(root.count))
         if relative.count == 1 {
-            return (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            // Legacy copies include package directories; UUID names belong to snapshot entries.
+            guard UUID(uuidString: relative[0]) == nil,
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]) else { return false }
+            return values.isRegularFile == true || values.isDirectory == true
         }
         return relative.count == 2 && UUID(uuidString: relative[0]) != nil
             && (id == nil || id == relative[0])
