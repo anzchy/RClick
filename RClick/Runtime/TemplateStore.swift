@@ -48,7 +48,11 @@ struct TemplateStore {
         }
         try validate(snapshot)
         let directory = baseURL.appendingPathComponent(id, isDirectory: true)
-        let destination = directory.appendingPathComponent(originalName)
+        var destination = directory.appendingPathComponent(originalName)
+        // Replacement writes a fresh copy: a failed settings save must leave old bytes intact.
+        if FileManager.default.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent("\(UUID().uuidString)-\(originalName)")
+        }
         guard owns(destination) else { throw CocoaError(.fileWriteNoPermission) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try snapshot.write(to: destination, options: .atomic, originalContentsURL: nil)
@@ -122,7 +126,8 @@ struct TemplateDraft {
         return candidate
     }
 
-    func save(store: TemplateStore, replacing old: [NewFile.Template], retaining: [NewFile.Template] = []) throws -> [NewFile.Template] {
+    /// Writes only. ConfigService removes unreferenced copies after persistence succeeds.
+    func save(store: TemplateStore, replacing _: [NewFile.Template], retaining _: [NewFile.Template] = []) throws -> [NewFile.Template] {
         var saved = entries
         for index in saved.indices {
             let id = saved[index].id
@@ -131,8 +136,6 @@ struct TemplateDraft {
                 saved[index].path = url.path
             }
         }
-        let kept = Set((saved + retaining).compactMap(\.path))
-        for entry in old where !(entry.path.map { kept.contains($0) } ?? false) { try store.remove(entry) }
         return saved
     }
 

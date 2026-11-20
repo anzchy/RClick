@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftData
 @testable import RClick
 
 @MainActor
@@ -51,6 +52,10 @@ struct TemplateStoreTests {
         #expect(try Data(contentsOf: URL(fileURLWithPath: firstPath)) == Data("first".utf8))
         var file = NewFile.txt
         file.templates = saved
+        let container = try ModelContainer(for: AppEntity.self, ActionEntity.self, NewFileTypeEntity.self,
+            CommonDirEntity.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let service = ConfigService(modelContext: ModelContext(container))
+        try service.save(AppConfigData(newFiles: [file]), templateStore: store)
         var edit = TemplateDraft(file: file)
         edit.rename(id: saved[0].id, name: "Letter")
         try edit.replace(id: saved[0].id, source: source)
@@ -60,8 +65,14 @@ struct TemplateStoreTests {
         #expect(replaced.map(\.name) == ["Letter", "same.txt 2"])
         #expect(replaced[0].enabled == false)
         #expect(try Data(contentsOf: URL(fileURLWithPath: #require(replaced[0].path))) == Data("second".utf8))
+        #expect(try Data(contentsOf: URL(fileURLWithPath: firstPath)) == Data("first".utf8))
+        file.templates = replaced
+        try service.save(AppConfigData(newFiles: [file]), templateStore: store)
+        #expect(!FileManager.default.fileExists(atPath: firstPath))
         edit.entries = []
         _ = try edit.save(store: store, replacing: replaced + [NewFile.Template(name: "External", path: source.path)])
+        for entry in replaced { let path = try #require(entry.path); #expect(FileManager.default.fileExists(atPath: path)) }
+        try service.save(AppConfigData(newFiles: []), templateStore: store)
         for entry in replaced { let path = try #require(entry.path); #expect(!FileManager.default.fileExists(atPath: path)) }
         #expect(try Data(contentsOf: source) == Data("second".utf8))
     }
@@ -117,10 +128,21 @@ struct TemplateStoreTests {
         let legacy = store.baseURL.appendingPathComponent("shared.txt")
         try Data("shared bytes".utf8).write(to: legacy)
         let entry = NewFile.Template(name: "Shared", path: legacy.path)
+        let container = try ModelContainer(for: AppEntity.self, ActionEntity.self, NewFileTypeEntity.self,
+            CommonDirEntity.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let service = ConfigService(modelContext: ModelContext(container))
+        var first = NewFile.txt
+        first.templates = [entry]
+        var remaining = NewFile.md
+        remaining.templates = [NewFile.Template(name: "Also shared", path: legacy.path)]
+        try service.save(AppConfigData(newFiles: [first, remaining]), templateStore: store)
         let emptyDraft = TemplateDraft(file: .txt)
-        _ = try emptyDraft.save(store: store, replacing: [entry], retaining: [entry])
+        first.templates = try emptyDraft.save(store: store, replacing: [entry], retaining: remaining.userTemplates)
+        try service.save(AppConfigData(newFiles: [first, remaining]), templateStore: store)
         #expect(FileManager.default.fileExists(atPath: legacy.path))
         #expect(try Data(contentsOf: legacy) == Data("shared bytes".utf8))
+        try service.save(AppConfigData(newFiles: []), templateStore: store)
+        #expect(!FileManager.default.fileExists(atPath: legacy.path))
     }
 
     @Test func hostedStandardStoreNeverUsesApplicationSupport() {
