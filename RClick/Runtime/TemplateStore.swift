@@ -13,14 +13,14 @@ struct TemplateStore {
             .appendingPathComponent("RClick/Templates", isDirectory: true))
     }
 
-    /// Backups contain IDs, not paths. Reconnect only an existing owned snapshot.
+    /// Backups contain IDs, not paths. Prefer a known legacy copy, then an owned snapshot.
     func snapshotPath(for id: String, preferredPath: String? = nil) -> String? {
         guard UUID(uuidString: id) != nil else { return nil }
         let directory = baseURL.appendingPathComponent(id, isDirectory: true)
         if let preferredPath {
             let url = URL(fileURLWithPath: preferredPath)
-            if url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
-               owns(url, id: id), FileManager.default.fileExists(atPath: url.path) { return url.path }
+            if FileManager.default.fileExists(atPath: url.path),
+               !contains(url) || owns(url, id: id) { return url.path }
         }
         return (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))?
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
