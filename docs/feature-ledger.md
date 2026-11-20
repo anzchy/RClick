@@ -1,6 +1,6 @@
 # RClick feature ledger
 
-The hand-inspected inventory of every feature RClick ships today. **Verified against `d63c29c`** (main on 2026-11-17)
+The hand-inspected inventory of every feature RClick ships today. **Verified against `38d356a`** (main on 2026-11-20)
 by reading the code, the specs, and the issues and PRs on `anzchy/RClick`. Nothing here was checked by running the
 app for this ledger. Device results are cited from public evidence on `anzchy/RClick` (see Device runs cited); a run
 id in parentheses only points at the roster's private record, which a reader never needs.
@@ -41,20 +41,25 @@ A claim that no source settles is marked **UNVERIFIED** in place, never guessed.
 
 ## Device runs cited
 
-Every device claim cites public evidence on `anzchy/RClick`: the **Device** section of a PR body, or an issue the run
-filed. The run id follows in parentheses as a pointer to the roster's private record; no claim depends on reading it.
-A result that only a private record states is marked **UNVERIFIED by this ledger (private record)**.
+Every device claim cites public evidence on `anzchy/RClick`: the **Device** section of a PR body, an issue the run
+filed, or a public run record posted as an issue comment. The run id follows in parentheses as a pointer to the
+roster's private record; no claim depends on reading it. A result that only a private record states is marked
+**UNVERIFIED by this ledger (private record)**.
 
 | Public evidence | Commit under test | On main as | Run (private record) | What the evidence states |
 |---|---|---|---|---|
 | [PR #23](https://github.com/anzchy/RClick/pull/23) › Device | `ed3ef56` (PR #23 head) | `ae0235b`, same tree | `i22-device-20261116e` | menu presence, Copy Path and Copy File Name, New File TXT and XLSX, folder-permission panel, Delete Direct, offline menu; its NOT VERIFIED list |
 | Issues [#24](https://github.com/anzchy/RClick/issues/24), [#25](https://github.com/anzchy/RClick/issues/25), [#26](https://github.com/anzchy/RClick/issues/26) | `ed3ef56` | | `i22-device-20261116e` | filed by that run: missing templates; the Copy Path sandbox log and missing localizations; the device-tooling gaps |
 | [PR #27](https://github.com/anzchy/RClick/pull/27) › Device | `cfec391` (PR #27 head) | `d63c29c`, same tree | `i13-device-20261117c` | the same flows again, multi-selection delete, partial failure, batch responsiveness, offline menu; its NOT VERIFIED list |
-| [PR #29](https://github.com/anzchy/RClick/pull/29) › Device | `971b658` (PR #29 head, **not merged**) | not on main | `i5-device-20261117b` | PENDING as written there. No public result, so every claim from this run is UNVERIFIED by this ledger (private record) |
+| [PR #29](https://github.com/anzchy/RClick/pull/29) › Device | `971b658` (a PR #29 head before its last rebase) | `3f83482` (final head `1daf202`; `git diff 971b658 1daf202` touches no file under `RClick/`, `Shared/` or `FinderSyncExt/`) | `i5-device-20261117b`, `i5-device-20261117d` | Delete Direct, its Option variant and New File on literal percent sibling pairs; the folder-permission panel before the first Delete Direct; its NOT VERIFIED list (a protected path, Hide, Unhide) |
+| [PR #34](https://github.com/anzchy/RClick/pull/34) › Device | `78a1fc6` (a PR #34 head) | `d94db82` (final head `066c542`; `git diff 78a1fc6 066c542` touches only `specs/`) | `i28-i32-device-20261118` | Copy Path and Copy File Name on literal percent names; the file-URL FAIL that issue #25 tracked; its NOT VERIFIED list |
+| [PR #35](https://github.com/anzchy/RClick/pull/35) › Device | `0f598ad` (PR #35 head) | `723b6c5`, same tree | none named | the per-install Keychain key, a replayed click rejected, recovery after relaunch, the rejection notice; its NOT VERIFIED list and the release gate (issue #40) |
+| [Issue #12 comment](https://github.com/anzchy/RClick/issues/12#issuecomment-7041176305) | `38d356a` (main) | `38d356a` | `i-device-20261120` | Copy Path, Cut, Paste and New File rows on a Debug build, the offline menu as observed; its NOT VERIFIED rows; defects filed as #51 to #54 |
 
 PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
-menu was read through an Accessibility helper. No public evidence covers the Settings window, the menu bar item,
-updates, backup, launch at login or localization.
+menu was read through an Accessibility helper. The issue #12 comment names a Debug build. No public evidence covers
+the Settings window (except the import observed in issue #52), the menu bar item, updates, launch at login or
+localization.
 
 ## Open findings
 
@@ -114,98 +119,188 @@ delete its line in the same change.
 
 ### `copy-path`
 - **What:** puts every selected item's full path on the pasteboard, one per line, in one plain-text-only
-  pasteboard item (`Shared/Clipboard.swift`; CHANGELOG [Unreleased] › Changed). Finder's Command-C copies files;
-  Copy Path does not enable Finder file paste. Embedded newlines in names are preserved, making the line-separated
-  text ambiguous for those names.
-- **Status:** `shipped-on`, `partial` (findings 2 and 6).
+  pasteboard item, keeping literal characters such as `%xx` (`Shared/Clipboard.swift` `copyPaths`; CHANGELOG
+  [Unreleased] › Changed, › Fixed). Finder's Command-C copies files; Copy Path does not enable Finder file paste.
+  Embedded newlines in names are preserved, making the line-separated text ambiguous for those names.
+- **Status:** `shipped-on`.
 - **Default:** on (`Shared/RCBase.swift` `RCAction.copyPath`, `enabled: true`).
 - **Reached:** Finder menu, action id `copy-path`, on items, container, sidebar and the toolbar button.
-- **Runs in:** the extension only. `FinderSyncExt.handleActionClick` copies locally and sends no IPC, so it also
-  works while RClick is offline (`FinderSyncExt/FinderSyncExt.swift`, "快链路"). `ActionService.copyPath` exists but
-  no click reaches it.
-- **Tests:** `ClipboardTests` (one text-only item, selection order, literal UTF-8 bytes, empty selection) and
+- **Runs in:** the extension only. `FinderSyncExt.handleActionClick` copies locally and sends no IPC
+  (`FinderSyncExt/FinderSyncExt.swift:629-632`), and the item stays enabled while RClick is offline (`:548`).
+  `ActionService.copyPath` exists but no click reaches it.
+- **Tests:** `ClipboardTests` (one text-only item, single and multiple paths, literal bytes, empty selection) and
   `ActionServiceTests.copyPathAndFileNameWriteToTheInjectedPasteboard`; metrics `copy-path` › Test cases.
-- **Issues, PRs:** #25, #28; PR #27 (injected pasteboard).
+- **Issues, PRs:** #25, #28; PR #27 (injected pasteboard), PR #34 (literal percent sequences), PR #46 (text-only).
 - **Device:** PASS single and multi-selection (PR #23 › Device at `ed3ef56`, PR #27 › Device at `cfec391`; runs
-  `i22-device-20261116e`, `i13-device-20261117c`, private records). The new text-only item shape and absence of
-  sandbox errors are **NOT VERIFIED** on a device (issue #25). Offline Copy Path (`CONN-02`): NOT VERIFIED
-  (PR #23 › Device lists it).
+  `i22-device-20261116e`, `i13-device-20261117c`, private records). PASS literal percent names, one path per line
+  (PR #34 › Device at `78a1fc6`; run `i28-i32-device-20261118`). At `38d356a` (issue #12 comment; run
+  `i-device-20261120`): PASS one plain-text item of one type; PASS pasted into a text field; PASS Finder's Edit >
+  Paste stays disabled; PASS no CFPasteboard sandbox lines in either log; observed offline: Copy Path stays enabled
+  and still copies. NOT VERIFIED: pasted into a terminal (issue #12 comment).
 
 ### `copy-file-name`
-- **What:** puts every selected item's name, without its path, one per line, and no file URLs
-  (`Shared/Clipboard.swift` `copyFileNames`).
-- **Status:** `shipped-on`, `partial` (finding 2).
+- **What:** puts every selected item's name, without its path, one per line, and no file URLs, keeping literal
+  characters (`Shared/Clipboard.swift` `copyFileNames`).
+- **Status:** `shipped-on`.
 - **Default:** on (`Shared/RCBase.swift` `RCAction.copyFileName`).
 - **Reached:** Finder menu, action id `copy-file-name`.
 - **Runs in:** the app: the extension sends a `.click` (`FinderSyncExt.handleActionClick`), `ActionService.actionHandler`
-  runs it. Offline, the item is disabled (`FinderSyncExt.swift`, `isHostAppRunning` check).
+  runs it. Offline, the item is disabled (`FinderSyncExt/FinderSyncExt.swift:548`).
 - **Tests:** `ClipboardTests.copyFileNamesWritesOneNamePerLineAndNoFileURLs`, the shared `ActionServiceTests` pasteboard
   test, and `ActionBackfillTests.freshStoreSeedsCopyFileNameAfterCopyPath` (an upgraded store gains the action).
-- **Issues, PRs:** #28; PR #27.
+- **Issues, PRs:** #28; PR #27, PR #34.
 - **Device:** PASS single and multi-selection (PR #23 › Device, PR #27 › Device; runs `i22-device-20261116e`,
-  `i13-device-20261117c`, private records).
+  `i13-device-20261117c`, private records) and literal percent names (PR #34 › Device at `78a1fc6`; run
+  `i28-i32-device-20261118`).
 
 ### `delete-direct`
 - **What:** permanently deletes the selection (not to the Trash) after a confirmation; with Option held while the menu
   opens, the title reads "(skip confirmation)" and no dialog appears (`RClick/Runtime/DeleteConfirmation.swift`,
-  `specs/bug-direct-delete-option-state.md`, CHANGELOG [Unreleased]).
-- **Status:** `shipped-on`, `partial` (findings 3 and 4).
+  `specs/bug-direct-delete-option-state.md`, CHANGELOG [Unreleased]). It refuses the window background and protected
+  folders with an alert (`RClick/Runtime/ActionService.swift:907-935`): the home folder, its Desktop, Documents,
+  Library and Applications, `/` and the system roots (`RClick/Shared/Constants.swift` `protectedDirs`), matched
+  exactly after resolving the parent (`RClick/Shared/Utils.swift` `isProtectedFolder`). Paths reach the file
+  operation as Finder sent them, with no percent decoding.
+- **Status:** `shipped-on`.
 - **Default:** on (`Shared/RCBase.swift` `RCAction.deleteDirect`).
 - **Reached:** Finder menu, action id `delete-direct`.
 - **Runs in:** the app, over IPC. The batch runs on `ActionExecutor` off the main thread while an `AccessLease` keeps
   the covering bookmarks open (`RClick/Runtime/ActionExecutor.swift`, `RClick/Runtime/AccessLease.swift`, PR #27).
   Order: folder authorization first, then the confirmation (`ActionServiceTests.authorizationIsRequestedBeforeConfirmation`).
-- **Tests:** the `delete…`, `optionClick…`, authorization and partial-failure cases in `ActionServiceTests` and
-  `FileOperationsTests.removeDeletesTheItem`; metrics `delete-direct` › Test cases. No test covers the protected-folder
-  check on main (#5).
-- **Specs, issues, PRs:** `specs/bug-direct-delete-option-state.md`; #5, #6, #13; PR #27 (merged), PR #29 (open).
+- **Tests:** the `delete…`, `optionClick…`, authorization and partial-failure cases in `ActionServiceTests`
+  (including `deletePreservesRawPercentSelection`), `ProtectedFolderTests` and
+  `FileOperationsTests.removeDeletesTheItem`; metrics `delete-direct` › Test cases.
+- **Specs, issues, PRs:** `specs/bug-direct-delete-option-state.md`; #5, #6, #13, #39; PR #27, PR #29.
 - **Device:** PASS confirmation, cancel, confirm and the Option variant, on a file and on a folder (PR #23 › Device);
   multi-selection of two files and a folder under one alert, a partial failure (the others removed, the unremovable
-  item kept, the failure only logged), batches of 300 and 30000 files with Finder and RClick responsive (PR #27 ›
-  Device) (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). A literal percent sibling pair
-  at the unmerged PR #29 head: PENDING in PR #29 › Device, so UNVERIFIED by this ledger (private record,
-  `i5-device-20261117b`). NOT VERIFIED: protected folders (no real-desktop action for #5, owner decision recorded on issue #5), the
-  access-lease revoke race (PR #27 › Device lists it).
-- **Gaps:** a partial failure is only logged; the user sees no message (PR #27 › Device).
+  item kept, the failure only logged), large batches with Finder and RClick responsive (PR #27 › Device) (runs
+  `i22-device-20261116e`, `i13-device-20261117c`, private records). PASS on literal percent sibling pairs: only the
+  selected item removed, with and without confirmation (PR #29 › Device at `971b658`; run `i5-device-20261117d`).
+  PASS Cancel and confirm on fixtures (PR #35 › Device at `0f598ad`). NOT VERIFIED: a protected path (PR #29 ›
+  Device: not attempted by design), the access-lease revoke race (PR #27 › Device lists it).
+- **Gaps:** a partial failure is only logged; the user sees no message (PR #27 › Device). Target paths are logged
+  (finding 2).
 
 ### `hide`
-- **What:** sets the hidden flag on the selected items (menu on items). On the window background it hides the
-  contents of its first target, and which item that is is UNVERIFIED; on the toolbar or sidebar it does nothing
-  (finding 12).
-- **Status:** `shipped-off`, `partial` (findings 3, 4, 12).
+- **What:** sets the hidden flag on the selected items (menu on items), skipping protected folders. On the window
+  background it hides the contents of its first target, and which item that is is UNVERIFIED; on the toolbar or
+  sidebar it does nothing (finding 13).
+- **Status:** `shipped-off`, `partial` (finding 13).
 - **Default:** off (`Shared/RCBase.swift` `RCAction.hideFileDir`, `enabled: false`); enable in Settings > Actions.
 - **Reached:** Finder menu, action id `hide`, once enabled.
 - **Runs in:** the app, over IPC (`ActionService.hideFilesAndDirs`).
-- **Tests:** none (spine `tests: []`; metrics `hide` › Test cases).
-- **Device:** NOT VERIFIED: disabled by default; PR #23 › Device lists Hide and Unhide as not verified (run
-  `i22-device-20261116e`, private record).
+- **Tests:** `ActionServiceTests.hideItemsPreserveRawPercentSelection`,
+  `ActionServiceTests.hideContentsPreserveRawPercentContainer` (the folder authorized is the literal path), and
+  `ProtectedFolderTests`. No test checks which items end up hidden.
+- **Device:** NOT VERIFIED: disabled by default; PR #23 › Device and PR #29 › Device list Hide and Unhide as not
+  verified (runs `i22-device-20261116e`, `i5-device-20261117d`, private records).
 
 ### `unhide`
 - **What:** clears the hidden flag on the first selected item and, when it is a folder, on every item directly
-  inside it; the other selected items are ignored (finding 12).
-- **Status:** `shipped-off`, `partial` (findings 3, 12).
+  inside it; the other selected items are ignored (finding 13).
+- **Status:** `shipped-off`, `partial` (finding 13).
 - **Default:** off (`Shared/RCBase.swift` `RCAction.unhideFileDir`, `enabled: false`).
 - **Reached:** Finder menu, action id `unhide`, once enabled in Settings > Actions.
 - **Runs in:** the app, over IPC (`ActionService.unhideFilesAndDirs`).
-- **Tests:** none (spine `tests: []`).
+- **Tests:** `ActionServiceTests.unhidePreservesRawPercentContainer` (the folder authorized is the literal path).
 - **Device:** NOT VERIFIED, as for `hide`.
 
 ### `airdrop`
-- **What:** opens the AirDrop share sheet for the selected items; refuses the window background and protected folders
-  with an alert (`ActionService.showAirDrop`).
-- **Status:** `shipped-off`, `partial` (findings 3, 4: the protected-folder refusal never fires).
+- **What:** opens the AirDrop share sheet for the selected files; refuses the window background, folders and
+  protected folders with an alert (`ActionService.showAirDrop`, `RClick/Runtime/ActionService.swift:725-789`).
+- **Status:** `shipped-off`.
 - **Default:** off (`Shared/RCBase.swift` `RCAction.airdrop`, `enabled: false`).
 - **Reached:** Finder menu, action id `airdrop`, once enabled in Settings > Actions.
 - **Runs in:** the app, over IPC.
-- **Tests:** none (spine `tests: []`).
+- **Tests:** `ActionServiceTests.airDropRequestsAccessForRawPercentSelection`, `ProtectedFolderTests`.
 - **Device:** NOT VERIFIED: not in the default config (PR #23 › Device; run `i22-device-20261116e`, private record).
+
+### `cut`
+- **What:** marks the selected items as a pending cut without touching them: RClick writes their file URLs, the
+  marker type `cn.anzchy.RClick.cut` and the source tag `org.nspasteboard.source` to the general pasteboard as
+  current-host-only (`Shared/PendingCut.swift` `writeCut`), then records each item's identity and the pasteboard's
+  change count (`RClick/Runtime/ActionService.swift:667-723`, `prepareCut`). Before writing, it asks for folder
+  access to each source's parent, then refuses a selection holding a protected folder, or on a read-only volume or
+  in an unwritable folder, with a message in the shared warning window. Any later pasteboard write ends the cut.
+  CHANGELOG [Unreleased] › Added: "Opt-in Cut action marks selected Finder files as a pending cut locally without
+  changing files".
+- **Status:** `shipped-off`.
+- **Default:** off: Settings > Actions lists it as "Cut & Paste" (`Shared/RCBase.swift:224` `RCAction.cut`,
+  `enabled: false`; `RClick/Model/ActionEntity.swift:56`; an older store gains the row switched off,
+  `ActionBackfillTests.cutBackfillsOffWithoutChangingExistingOrderOrToggles`).
+- **Reached:** Finder menu on selected items only, titled "Cut", once enabled; never on the window background, the
+  sidebar or the toolbar menu (`Shared/PendingCut.swift` `menuVisibility`, `FinderSyncExt/FinderSyncExt.swift:377-390`).
+  Inline, or under "Actions" when the actions menu is collapsed.
+- **Runs in:** extension and app. The extension decides visibility and disables the item while RClick is offline
+  (`PendingCut.renderCutEnablement`, `FinderSyncExt/FinderSyncExt.swift:546-547`); the click travels as a `.click`;
+  `ActionService.actionHandler` (`RClick/Runtime/ActionService.swift:218-231`) refuses it unless the stored action is
+  enabled, the trigger is the items menu and the selection is non-empty. The app pushes the pending cut's change
+  count and item count in the menu config (`RClick/Runtime/MenuService.swift`, `RClick/RClickApp.swift:304-306`).
+- **Tests:** `CutActionServiceTests` (record without touching files, protected source, cancelled permission,
+  read-only volume, invalid requests, a second Cut while a panel is open), `PendingCutTests` (pasteboard shape, end
+  of the cut, menu visibility table), `CutIPCIntegrationTests` (the config fields survive the signed sender; lost
+  capability disables Cut), `MenuCompatibilityTests.pendingCutFieldsRoundTripAndOldConfigsMeanNothingPending`,
+  `ActionBackfillTests.cutBackfillsOffWithoutChangingExistingOrderOrToggles`; metrics `cut` › Test cases.
+- **Specs, issues, PRs:** `specs/research-cut-paste-undo-best-practices.md`; #4 (spec), #8, #12, #42; PR #36.
+- **Device:** at `38d356a` (issue #12 comment; run `i-device-20261120`, private record): PASS offered on file and
+  folder menus, inline and folded, absent on the window background and in RClick's sidebar group, files untouched,
+  the pasteboard carries the file URL, `cn.anzchy.RClick.cut` and `org.nspasteboard.source`; PASS the first-time
+  folder permission panel. NOT VERIFIED: the toolbar entry (no RClick toolbar button), the protected-folder warning
+  (C5, needs a grant of the home folder).
+- **Gaps:** finding 4 (issue #42).
+
+### `paste-move`
+- **What:** moves the pending cut's items into one destination folder on the same volume
+  (`RClick/Runtime/ActionService.swift:344-573`, `pasteMove`):
+  - each item is renamed with no overwrite (`renamex_np` with `RENAME_EXCL` under file coordination,
+    `RClick/Runtime/PasteMoveEngine.swift`); a name clash gets a numbered name (`Shared/MoveName.swift`);
+  - an item whose identity changed since the Cut is left in place and reported "Changed since cut";
+  - a Paste into the folder the items are already in does nothing and keeps the pending cut (`:390-400`);
+  - it refuses, with a message in the shared warning window (`:642-665`): another volume ("Moving between disks is
+    not supported yet", #10), system roots, Trash folders, packages, a destination that is not a folder, a folder
+    into itself, a volume root, and moves out of a cloud container;
+  - after a full success the clipboard is cleared; after a partial failure the clipboard and the pending cut keep
+    only the items that did not move (`:546-563`);
+  - before each rename it writes the intent to a journal, `paste-journal.json` in the App Group
+    (`RClick/Runtime/UndoJournal.swift:61-66`); entries are kept for 24 hours and an unreadable journal is set aside
+    (`:76`), so it cannot block later Pastes. Nothing reads the journal back to the user: Undo is not built (#11);
+  - a Quit during a Paste waits for it to finish, with a deadline (`RClick/RClickApp.swift:244-252`,
+    `ActionService.deferTermination`);
+  - its log lines hold counts and reasons only (`RClick/Runtime/MoveLogEvent.swift`).
+- **Status:** `shipped-off`, `partial` (moves between disks are refused, #10; finding 5).
+- **Default:** off: the same "Cut & Paste" toggle as Cut (`Shared/RCBase.swift:212-214` `RCAction.entityID` maps
+  `paste-move` to `cut`).
+- **Reached:** Finder menu, titled "Paste (move here)", only while RClick's own Cut is still the current clipboard
+  (the menu config's change count equals the live one, `Shared/PendingCut.swift` `menuVisibility`): on the window
+  background, where the destination is the folder shown, or on exactly one selected item, which becomes the
+  destination (`PendingCut.targetsForPaste`; on a file this then refuses, finding 6).
+- **Runs in:** extension and app. The extension adds the item and its target (`FinderSyncExt/FinderSyncExt.swift:387-390`,
+  `:639-644`) and disables it offline; the app asks for folder access to the destination and each source parent
+  (`RClick/Runtime/ActionService.swift:368-375`) and runs the moves on `ActionExecutor`.
+- **Tests:** `PasteActionServiceTests`, `PasteFixRoundTests`, `PasteNoOpAndLoggingTests`,
+  `PasteNoOpJournalFailureTests`, `CloudTrashDestinationTests`, `MoveNameTests`, `PasteLocalizationTests`,
+  `PendingCutTests.pasteTargetsRequireTheClickedContainerOrExactlyOneItem`; metrics `paste-move` › Test cases.
+- **Specs, issues, PRs:** `specs/research-cut-paste-undo-best-practices.md`; #4 (spec), #9, #10, #11, #12, #48, #53;
+  PR #47.
+- **Device:** at `38d356a` (issue #12 comment; run `i-device-20261120`, private record): PASS a file and a folder
+  moved on one volume (inodes unchanged, contents equal, clipboard cleared); PASS same-folder Paste (no-op, no alert,
+  pending cut kept); PASS a name clash (numbered name, original untouched); PASS a partial failure (the good item
+  moved, the replaced item reported "Changed since cut" and untouched, the clipboard keeps only the failed item);
+  PASS into a package (refused, nothing moved); PASS Paste offered only while the pasteboard count matches (gone
+  after a Copy Path); PASS the journal (counts only; a Paste that moved nothing does not replace the record).
+  Observed: an item deleted before Paste is reported with a raw system message and no file URL is left on the
+  clipboard (#53). NOT VERIFIED: into the Trash, Quit during a move. Moves between disks (#10) and Undo (#11) were
+  not run.
+- **Gaps:** CHANGELOG [Unreleased] › Added says Finder/device validation and the Undo release gate remain pending;
+  issue #48 makes #48, #10, #11 and #12 release blockers for a build containing Paste. Findings 5 and 6.
 
 ## Finder menu: Open With
 
 ### `open-with`
 - **What:** opens the selection with a configured app, honouring per-app "open in a new window" and the
   containing-folder rule (`ActionService.openApp`, `Shared/AppPresets.swift` `resolveOpenTargets`).
-- **Status:** `shipped-on`, `partial` (finding 8: run arguments and environment variables are ignored).
+- **Status:** `shipped-on`, `partial` (finding 9: run arguments and environment variables are ignored; finding 1:
+  literal percent names).
 - **Default:** on; Terminal, and Visual Studio Code when installed (`Shared/RCBase.swift` `OpenWithApp.defaultApps`).
   Items are flat in the menu by default (`RClick/AppState.swift` `foldAppsMenu = false`).
 - **Reached:** Finder menu (one item per app, or an "Open With" submenu when collapsed) and the toolbar button;
@@ -228,21 +323,47 @@ delete its line in the same change.
 ## Finder menu: New File
 
 ### `new-file`
-- **What:** creates `Untitled.<ext>` (or a numbered variant) in the clicked folder, or the folder of a clicked file,
-  from a template: a custom template set in Settings, else the bundled `template.<ext>`, else an empty file
-  (`ActionService.createFile`, `getUniqueFilePath`).
-- **Status:** `shipped-on`, `partial` (findings 1, 3, 10).
-- **Default:** TXT, Markdown, DOCX, PPTX, XLSX, Pages, Keynote, Numbers on; JSON off (`Shared/RCBase.swift`
-  `NewFile.*`). A collapsed "New File" submenu by default (`RClick/AppState.swift` `foldNewFileMenu = true`).
+- **What:** creates `Untitled<ext>` (or a numbered variant) in the clicked folder, or the folder of a clicked file
+  (`ActionService.createFile`, `getUniqueFilePath`, `RClick/Runtime/ActionService.swift:997-1099`). The contents
+  come from the type's user template if it has one. Else a type that requires a template (DOCX, PPTX, XLSX, Pages,
+  Keynote or Numbers by id or extension, or any extension with a bundled `template.<ext>`) uses the bundled
+  `template.<ext>`, which exists for DOCX, PPTX and XLSX only (`RClick/Resources/`); any other type gets an empty
+  file. A type that requires a template and has no readable, non-empty one creates nothing and says so in the shared
+  warning window (`:1039-1048`). Folder and package templates are copied whole; the write never replaces an existing
+  file (`:1075`).
+- **Status:** `shipped-on`, `partial` (finding 7: an extension without a dot; finding 11: an unreachable branch).
+- **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:261` `NewFile.all`;
+  `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`). A stored built-in Pages, Keynote or Numbers row
+  that is unchanged and has no user template is removed at load (`RClick/Runtime/ConfigService.swift`,
+  `NewFile.isRetiredBuiltin` at `Shared/RCBase.swift:257`) and left out of the menu (`RClick/Runtime/MenuService.swift`).
+  A collapsed "New File" submenu by default (`RClick/AppState.swift` `foldNewFileMenu = true`).
 - **Reached:** Finder menu on items or the window background.
-- **Runs in:** the app, over IPC; an ungranted folder prompts first.
-- **Tests:** `ActionServiceTests.fileTemplateSurvivesSaveAndReload`,
-  `SettingsBackupTests.missingTemplateFallsBackToTheBuiltInTemplate`. No test creates a file from a menu click.
-- **Issues:** #24 (missing templates), #25 (localization of the type names).
-- **Device:** PASS TXT, one file, one click event, no no-ack alert (PR #23 › Device, PR #27 › Device) and XLSX, whose
-  bytes equal the bundled template (PR #23 › Device, issue #24); DOCX created a 0-byte file (issue #24, finding 1)
-  (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). PPTX, JSON, Pages, Keynote, Numbers:
-  never run.
+- **Runs in:** the app, over IPC; an ungranted folder prompts first. The extension builds each item disabled while
+  RClick is offline (`FinderSyncExt/FinderSyncExt.swift:574`); the issue #12 run observed the submenu enabled
+  offline (finding 6).
+- **Tests:** `NewFileCreationTests` (missing template, empty custom types, bundled bytes, user templates, folder
+  templates, the warning), `NewFileDefaultsTests`, `NewFileLegacyStoreTests`, `NewFileMigrationTests`,
+  `ActionServiceTests.newFilePreservesRawPercentTarget`, `ActionServiceTests.fileTemplateSurvivesSaveAndReload`,
+  `SettingsBackupTests.missingTemplateFallsBackToTheBuiltInTemplate`; metrics `new-file` › Test cases. No test
+  creates a file from a menu click.
+- **Issues, PRs:** #24, #25, #49 (several templates per type, open), #51, #53; PR #29, PR #34, PR #50.
+- **Device:** at `38d356a` (issue #12 comment; run `i-device-20261120`, private record): PASS DOCX, PPTX, XLSX
+  (archives test clean, bytes equal the bundled templates); PASS Quick Look for DOCX and XLSX, NOT VERIFIED for PPTX;
+  PASS TXT and Markdown (empty files); PASS no Pages, Keynote or Numbers on a fresh store, the upgraded-store case
+  not reproduced; FAIL a custom type whose extension has no dot (#51); NOT VERIFIED opening in Word or Pages. PASS
+  TXT into a folder with a literal percent name (PR #29 › Device at `971b658`; run `i5-device-20261117d`).
+- **Gaps:** findings 6, 7, 11.
+
+### `new-file-office-templates`
+- **What:** the bundled `RClick/Resources/template.docx`, `template.pptx` and `template.xlsx` that New File copies for
+  those types (PR #50, CHANGELOG [Unreleased] › Fixed: "New File uses valid DOCX/PPTX templates and refuses missing
+  templates").
+- **Status:** `shipped-on`.
+- **Default:** on (DOCX, PPTX and XLSX are enabled built-in types).
+- **Tests:** `OfficeTemplateTests.bundledPackagesContainMainPartsAndNeutralMetadata`, and the Office and
+  missing-template cases in `NewFileCreationTests`.
+- **Issues, PRs:** #24; PR #50.
+- **Device:** as in `new-file` (issue #12 comment).
 
 ### `new-file-auto-rename`
 - **What:** after creating the file, selects it in Finder and starts rename mode by sending Return once Finder is
@@ -250,9 +371,9 @@ delete its line in the same change.
   `presentAccessibilityHintIfNeeded`; CHANGELOG [Unreleased] › Fixed).
 - **Status:** `shipped-on`.
 - **Default:** always attempted; works only with Accessibility granted.
-- **Tests:** none (spine `tests: []`).
+- **Tests:** none (spine `tests: []`). `NewFileCreationTests` inject `revealNewFile` and only check that it is called.
 - **Device:** NOT VERIFIED: auto-rename needs Accessibility for RClick itself (PR #23 › Device and PR #27 › Device
-  list it).
+  list it); the explanation (`NEW-03`) was already shown before the issue #12 run.
 
 ## Finder menu: Common Dirs
 
@@ -262,7 +383,8 @@ delete its line in the same change.
 - **Status:** `shipped-off`.
 - **Default:** off (`RClick/AppState.swift` `showCommonDirs = false`; `MenuService.buildConfig` sends no folders until
   it is on); collapsed when on (`foldCommonDirMenu = true`).
-- **Tests:** none (spine `tests: []`).
+- **Tests:** `ActionServiceTests.commonDirectoryRequestsAccessForRawPercentPath`,
+  `ActionServiceTests.commonDirectoryPersistencePreservesRawTargets`.
 - **Device:** never run (`DIR-01`).
 
 ## Finder menu: presence
@@ -275,39 +397,49 @@ delete its line in the same change.
 - **Default:** on once the extension is enabled in System Settings (`CLAUDE.md` › Common Issues).
 - **Tests:** `MenuCompatibilityTests` (payload compatibility). Nothing tests menu construction itself.
 - **Device:** PASS the menu appears once with one RClick group (PR #23 › Device, PR #27 › Device; runs
-  `i22-device-20261116e`, `i13-device-20261117c`, private records). Folder,
-  multi-selection, background and sidebar menus (`EXT-03` to `EXT-05`): never run as separate rows. Issue #26 tracks
-  the tooling that cannot read the menu.
+  `i22-device-20261116e`, `i13-device-20261117c`, private records). File and folder menus, inline and folded, and the
+  window background were driven for Cut in the issue #12 run (see `cut`). Sidebar menus (`EXT-05`): never run as a
+  separate row. Finding 14 (tooling).
 
 ### `finder-toolbar-button`
 - **What:** the RClick button in Finder's toolbar opens the same menu; apps hidden for the toolbar are absent there
-  (`FinderSyncExt.toolbarItemName`, `AppMenuItem.isVisible(for: .toolbar)`).
+  (`FinderSyncExt.toolbarItemName`, `AppMenuItem.isVisible(for: .toolbar)`). Cut and Paste are never offered there
+  (`Shared/PendingCut.swift` `menuVisibility`).
 - **Status:** `shipped-on`.
 - **Default:** absent until the user adds the button to the toolbar.
 - **Tests:** `MenuCompatibilityTests` covers the visibility flags only.
-- **Device:** never run (`EXT-06` needs the owner to add the button).
+- **Device:** never run (`EXT-06` needs the owner to add the button; the issue #12 comment lists the Cut toolbar
+  entry as NOT VERIFIED for the same reason).
 
 ### `menu-layout`
 - **What:** per-section collapse switches (Settings > Apps / Actions / New File / Common Dir) and the app icon style
   in Open With (Settings > General > Icon Style: none, simple, original), with icon caches in both processes
-  (`Shared/IconCache.swift`, `Shared/FileTypeIconProvider.swift`).
+  (`Shared/IconCache.swift`, `Shared/FileTypeIconProvider.swift`). Collapsed actions, including Cut and Paste, sit
+  under an "Actions" submenu (`FinderSyncExt/FinderSyncExt.swift:393-404`).
 - **Status:** `shipped-on`.
 - **Default:** apps and actions flat, new file and common dirs collapsed, simple icons (`RClick/AppState.swift`).
 - **Tests:** `AppStateDefaultsMigrationTests` (the switches moved to the App Group store),
   `AppPresetsTests.symbolsReuseImagesWithinEachAppearance`.
-- **Device:** never run as its own row.
+- **Device:** the folded and inline actions layouts PASS for Cut (issue #12 comment); otherwise never run as its own
+  row.
+- **Gaps:** finding 8 (import skips `foldActionsMenu`, issue #52).
 
 ### `connection-state`
-- **What:** the extension caches "last message from the app" for 30 s. Offline it greys the menu and adds "RClick is
-  not running" / "Restart RClick to restore the menu"; clicking the hint relaunches RClick without opening Settings
-  (`Shared/HintClickLaunch.swift`). A `.click` with no `.actionAck` within 3 s shows "RClick did not respond"; a
-  `.quit` marks the app offline at once (`FinderSyncExt/FinderSyncExt.swift`, `CLAUDE.md` › Extension Development).
+- **What:** the extension caches "last message from the app" for 30 s (`Shared/PeerActivity.swift`). Offline it
+  greys every item except Copy Path and adds "RClick is not running" / "Restart RClick to restore the menu"; clicking
+  the hint relaunches RClick without opening Settings (`Shared/HintClickLaunch.swift`). A `.click` with no
+  `.actionAck` within 3 s shows "RClick did not respond" (`FinderSyncExt/FinderSyncExt.swift:134-140`); a `.quit`
+  marks the app offline at once (`CLAUDE.md` › Extension Development).
 - **Status:** `shipped-on`.
 - **Tests:** `PeerActivityTests` (the liveness cache). The alerts and the hint relaunch have no test.
 - **Device:** PASS the disabled "RClick is not running" menu after quitting the app the run started (PR #23 › Device,
-  PR #27 › Device; runs `i22-device-20261116e`, `i13-device-20261117c`, private records). NOT VERIFIED: the no-ack
-  alert (`CONN-04`, PR #23 › Device lists it). Hint relaunch (`CONN-03`) and the offline click alert (`CONN-05`): no
-  public evidence.
+  PR #27 › Device; runs `i22-device-20261116e`, `i13-device-20261117c`, private records). Observed at `38d356a`:
+  Copy Path stays enabled, the other actions are disabled with the hint, the New File submenu stays enabled (issue
+  #12 comment, #53). PASS recovery after relaunch without relaunching Finder (PR #35 › Device). NOT VERIFIED: the
+  no-ack alert (`CONN-04`, PR #23 › Device lists it). Hint relaunch (`CONN-03`) and the offline click alert
+  (`CONN-05`): no public evidence.
+- **Gaps:** after a SIGTERM quit the menu stays online until the cache times out, not at the `.quit` message (PR #35
+  › Device, issue #41). Finding 6.
 
 ### `observed-volumes`
 - **What:** the extension observes the home folder and each mounted volume, updating on mount, rename and unmount
@@ -325,15 +457,17 @@ delete its line in the same change.
   [Unreleased] › Added; `RClick/RClickApp.swift`). A save failure shows "Settings could not be saved".
 - **Status:** `shipped-on`.
 - **Tests:** none (spine `tests: []`).
-- **Device:** never run (no device recipe covers Settings except `L10N-02`).
+- **Device:** never run as its own row (no device recipe covers Settings except `L10N-02`).
 
 ### `menu-bar-item`
 - **What:** a menu bar icon with Settings… and Quit (`RClick/MenuBarView.swift`); Settings > General > Show icon in
-  menu bar hides it. RClick is an agent app with no Dock icon (CHANGELOG [2.3.1]).
+  menu bar hides it. After unverifiable Finder messages were rejected it also shows "Unverifiable Finder messages were
+  rejected. If you just updated RClick, relaunch Finder." (`RClick/MenuBarView.swift:52-54`, see `ipc`). RClick is an
+  agent app with no Dock icon (CHANGELOG [2.3.1]).
 - **Status:** `shipped-on`.
 - **Default:** shown (`RClick/RClickApp.swift` `showMenuBarExtra = true`).
 - **Tests:** none.
-- **Device:** never run.
+- **Device:** never run as its own row; the notice: see `ipc`.
 
 ### `launch-at-login`
 - **What:** registers RClick as a login item through `SMAppService.mainApp` (`RClick/Shared/LaunchAtLogin.swift`).
@@ -346,25 +480,31 @@ delete its line in the same change.
 - **What:** Settings > Apps: Add Preset App (installed presets), Add App, Edit (display name, run arguments,
   environment variables, open in a new window, containing folder), Delete, drag to reorder, Toolbar and Context Menu
   visibility, Collapse apps menu (`RClick/Settings/AppsSettingsTabView.swift`, `RClick/Settings/EditAppSheetView.swift`).
-- **Status:** `shipped-on`, `partial` (finding 8).
+- **Status:** `shipped-on`, `partial` (finding 9).
 - **Tests:** `AppPresetsTests.presetsHaveUniqueIdentifiersAndResolvableSymbols`,
   `ConfigServiceSaveTests.savingAfterAddingAnAppKeepsBoth`, `MenuCompatibilityTests`.
 - **Device:** never run.
 
 ### `actions-settings`
 - **What:** Settings > Actions: Enabled per action, drag to reorder, Restore Defaults, Collapse actions menu
-  (`RClick/Settings/ActionSettingsTabView.swift`). This is the only way to reach Hide, Unhide and AirDrop.
+  (`RClick/Settings/ActionSettingsTabView.swift`). This is the only way to reach Hide, Unhide, AirDrop and
+  "Cut & Paste" (one toggle for both Cut and Paste).
 - **Status:** `shipped-on`.
-- **Tests:** `ActionBackfillTests` (built-in actions added to older stores in order, once).
-- **Device:** never run.
+- **Tests:** `ActionBackfillTests` (built-in actions, Cut included, added to older stores in order, once).
+- **Device:** "Cut & Paste" was switched on through it in the issue #12 run (see `cut`); never run as its own row.
 
 ### `new-file-settings`
 - **What:** Settings > New File: Enabled per type, Add File Type, Edit (name, extension, template file, SF Symbol
-  icon, default open app), Delete, drag to reorder, Restore Defaults, Collapse new file menu
-  (`RClick/Settings/NewFileSettingsTabView.swift`, `RClick/Settings/EditFileTypeSheetView.swift`).
-- **Status:** `shipped-on`, `partial` (finding 9: the default open app is never used).
-- **Tests:** `ActionServiceTests.fileTemplateSurvivesSaveAndReload`, `SettingsBackupTests.missingTemplateFallsBackToTheBuiltInTemplate`.
-- **Device:** never run.
+  icon, default open app), Delete, drag to reorder, Restore Defaults (TXT, Markdown, JSON, DOCX, PPTX, XLSX:
+  `NewFile.all`), Collapse new file menu (`RClick/Settings/NewFileSettingsTabView.swift`,
+  `RClick/Settings/EditFileTypeSheetView.swift`). The extension field is stored as typed; its hint reads "For
+  example: txt, md, json".
+- **Status:** `shipped-on`, `partial` (finding 7: an extension typed without a dot; finding 10: the default open
+  app is never used).
+- **Tests:** `ActionServiceTests.fileTemplateSurvivesSaveAndReload`,
+  `SettingsBackupTests.missingTemplateFallsBackToTheBuiltInTemplate`, `NewFileDefaultsTests`.
+- **Issues, PRs:** #24, #49 (several templates per type, open), #51; PR #50.
+- **Device:** Add File Type without a template: an empty file, but FAIL on the missing dot (issue #12 comment, #51).
 
 ### `folder-permissions`
 - **What:** security-scoped bookmarks are the only folder authorization. The first action in an ungranted folder
@@ -378,10 +518,11 @@ delete its line in the same change.
 - **Tests:** `BookmarkAccessTests` (prefix coverage, siblings sharing a prefix), `BookmarkAccessLeaserTests`, and the
   authorization cases in `ActionServiceTests`; metrics `folder-permissions` › Test cases.
 - **Device:** PASS the folder-permission panel on the first action under `~/Downloads`, with no protected-folder
-  alert (PR #23 › Device, PR #27 › Device, both via New File; runs `i22-device-20261116e`, `i13-device-20261117c`,
-  private records). The protected-folder alert for a protected path at the unmerged PR #29 head: PENDING in PR #29 ›
-  Device, so UNVERIFIED by this ledger (private record, `i5-device-20261117b`). NOT VERIFIED: Delete Direct as the first action (PR #23 › Device lists it), reuse after
-  relaunch (`PERM-02`), cancelling the panel, the Settings sheet.
+  alert: via New File (PR #23 › Device, PR #27 › Device; runs `i22-device-20261116e`, `i13-device-20261117c`,
+  private records) and via Delete Direct (PR #29 › Device at `971b658`; run `i5-device-20261117d`); PASS the
+  first-time panel for Cut, granting the fixture folder only (issue #12 comment). NOT VERIFIED: a protected path
+  (PR #29 › Device; the Cut warning C5 in the issue #12 comment), reuse after relaunch (`PERM-02`), cancelling the
+  panel, the Settings sheet.
 
 ### `permission-status`
 - **What:** Settings > General > Permissions shows whether the Finder extension is enabled and whether RClick has
@@ -393,10 +534,15 @@ delete its line in the same change.
 
 ### `settings-backup`
 - **What:** Export… writes the whole configuration as JSON; Import… restores it on this or another Mac, skipping apps
-  that are not installed (`RClick/Runtime/SettingsBackup.swift`; CHANGELOG [Unreleased] › Added).
-- **Status:** `shipped-on`.
+  that are not installed (`RClick/Runtime/SettingsBackup.swift`; CHANGELOG [Unreleased] › Added). Imported actions
+  follow the backup's order and switches, and built-in actions the backup lacks (Cut in an older backup) are added
+  with their defaults (`SettingsBackup.resolveActions`). An imported built-in Pages, Keynote or Numbers row is kept in
+  the settings but left out of the menu (`RClick/Runtime/MenuService.swift`).
+- **Status:** `shipped-on`, `partial` (finding 8).
 - **Tests:** `SettingsBackupTests` (round trip, missing app, missing template, action order).
-- **Device:** never run.
+- **Issues:** #52.
+- **Device:** an import observed in the issue #52 report (actions, New File rows and the Cut toggle restored,
+  `foldActionsMenu` not); otherwise never run.
 
 ### `export-logs`
 - **What:** Export Logs… saves this process's `OSLogStore` entries to a text file
@@ -407,8 +553,8 @@ delete its line in the same change.
 - **Device:** never run.
 
 ### `reset-all-settings`
-- **What:** Reset All Settings… restores apps, actions, file types, common folders and preferences after a
-  confirmation, and turns launch at login off (`RClick/Settings/GeneralSettingsTabView.swift:388-422`,
+- **What:** Reset All Settings… restores apps, actions (Cut off), the six built-in file types, common folders and
+  preferences after a confirmation, and turns launch at login off (`RClick/Settings/GeneralSettingsTabView.swift:388-422`,
   `resetAllSettings` and `resetToDefaults`; CHANGELOG [Unreleased] › Fixed). Folder grants are kept: `resetToDefaults`
   (`:403-422`) never touches `BookmarkManager`, and `RClick/Runtime/ConfigService.swift`, which it saves through, has
   no bookmark code.
@@ -421,13 +567,13 @@ delete its line in the same change.
   version, installs into `/Applications`, trashes an old copy elsewhere and relaunches; a failed install is reported
   and keeps the running app (`RClick/Shared/Updater.swift`, `specs/app-update-installation.md`; CHANGELOG
   [Unreleased] › Fixed).
-- **Status:** `shipped-on`, `partial` (finding 11).
+- **Status:** `shipped-on`, `partial` (finding 12).
 - **Tests:** `UpdateInstallationTests` (version comparison, which copy survives).
 - **Device:** never run.
 
 ### `about`
 - **What:** version and build, GitHub star count and links (Add a Star, Open Issues), and "More Apps"
-  (`RClick/Settings/AboutSettingsTabView.swift`). Links and star count point at `wflixu/RClick` (finding 11).
+  (`RClick/Settings/AboutSettingsTabView.swift`). Links and star count point at `wflixu/RClick` (finding 12).
 - **Status:** `shipped-on`.
 - **Tests:** none.
 - **Device:** never run.
@@ -435,60 +581,94 @@ delete its line in the same change.
 ### `localization`
 - **What:** English (fallback), Simplified Chinese, Japanese, Spanish and French, chosen by the system language, from
   two catalogs: `RClick/Localizable.xcstrings` and `FinderSyncExt/Localizable.xcstrings`; `Shared/AppLocalization.swift`
-  resolves against the current process's catalog (`CLAUDE.md` › Localization).
-- **Status:** `shipped-on`, `partial` (finding 7).
-- **Tests:** no unit test; `scripts/check-localization.py` runs in the `localization` lane of `scripts/gates.sh` and in
-  CI (PR #2).
-- **Issues:** #25.
-- **Device:** never run as its own row (`L10N-01`, `L10N-02`); finding 7 came from the app log of the run in
-  PR #23 › Device (issue #25).
+  resolves against the current process's catalog (`CLAUDE.md` › Localization). The built-in New File names and the
+  Apple product names resolve in every supported language (CHANGELOG [Unreleased] › Fixed, PR #34).
+- **Status:** `shipped-on`.
+- **Tests:** `NewFileLocalizationTests` (built-in names in every app language, Simplified Chinese product names),
+  `PasteLocalizationTests` (the extension's Paste title in every language); `scripts/check-localization.py` runs in the
+  `localization` lane of `scripts/gates.sh` and in CI (PR #2).
+- **Issues, PRs:** #25; PR #34.
+- **Device:** never run as its own row (`L10N-01`, `L10N-02`); PR #34 › Device recorded the New File labels in
+  English only.
 
 ## Infrastructure
 
 ### `ipc`
-- **What:** `DistributedNotificationCenter` messages, HMAC-SHA256 signed and JSON encoded: extension → app `click`,
-  `heartbeat`, `requestConfig`; app → extension `menuConfig`, `running`, `quit`, `actionAck`
-  (`Shared/Messager.swift`). The fork uses its own channel names, isolated from upstream builds (PR #23).
-- **Status:** `infrastructure`, `partial` (finding 5).
-- **Tests:** `MessagerIsolationTests` (fork vs legacy channels, tampering), `PeerActivityTests`,
-  `LaunchSideEffectsTests.terminationSendsQuitOnlyOutsideTheTestHost`.
-- **Issues, PRs:** #6 (forgery, replay), #18 (test host kept off the installed extension, PR #20), #22 (PR #23).
-- **Device:** exercised by every PASS row above that goes through the app; never run as its own row.
+- **What:** `DistributedNotificationCenter` messages on the fork's own channels, `cn.anzchy.RClick.ExtensionToMain`
+  and `cn.anzchy.RClick.MainToExtension` (`Shared/Messager.swift:194-195`): extension → app `click`, `heartbeat`,
+  `request-config`; app → extension `menu-config` (with the pending cut's counts), `running`, `quit`, `action-ack`.
+  Every message is an authenticated envelope (`Shared/MessageSecurity.swift`): an HMAC over every field with a
+  per-install key that the app creates in the shared Keychain access group and the extension only reads
+  (`Shared/IPCKeyProvider.swift`); the app's launch session, which every click must carry; a timestamp checked for freshness; a nonce
+  checked against replay; a clock-step barrier that retires the session; menu configs that cannot move backwards
+  within a session. A click whose ack was not posted, or whose session rotated before dispatch, is dropped (PR #44).
+  After unverifiable messages are rejected the menu bar item shows a notice (`IPCRejectionNotice`,
+  `RClick/MenuBarView.swift:52-54`).
+- **Status:** `infrastructure`.
+- **Tests:** `IPCAuthenticationTests`, `IPCKeyProviderTests`, `MessagerIsolationTests` (fork vs legacy channels,
+  tampering), `PeerActivityTests`, `LaunchSideEffectsTests.terminationSendsQuitOnlyOutsideTheTestHost`; metrics `ipc` ›
+  Test cases.
+- **Issues, PRs:** #6, #43 (closed); #18 (PR #20), #22 (PR #23); #40, #41 (open); PR #35, PR #44.
+- **Device:** PASS at `0f598ad` (PR #35 › Device): the app created the key at first launch with no prompt and the
+  extension read it; a captured Delete Direct click replayed after an app restart was rejected (no dialog, file
+  intact); recovery after relaunch without relaunching Finder; the notice shown once after a garbage message, not
+  after old-session replays; a replay across a backward clock step rejected. NOT VERIFIED: the rows PR #35 › Device
+  lists, and first key creation on a fresh account (finding 3). Exercised by every PASS row above that goes through
+  the app.
+- **Gaps:** finding 3.
 
 ### `persistence`
 - **What:** SwiftData entities (`RClick/Model/`) in the App Group container shared by app and extension,
-  `ConfigService` load/save/reset, the UserDefaults-to-SwiftData migration (`RClick/Shared/DataMigrationManager.swift`)
-  and the layout-switch move into the App Group store (`AppState.layoutToggleKeys`).
+  `ConfigService` load/save/reset, the UserDefaults-to-SwiftData migration (`RClick/Shared/DataMigrationManager.swift`),
+  the layout-switch move into the App Group store (`AppState.layoutToggleKeys`), the Cut row added to older stores,
+  and the load-time removal of unchanged built-in Pages, Keynote and Numbers rows (`RClick/Runtime/ConfigService.swift`).
+  The Paste journal is a separate file in the same App Group container (see `paste-move`).
 - **Status:** `infrastructure`.
 - **Tests:** `SharedModelContainerTests`, `ConfigServiceSaveTests`, `AppStateDefaultsMigrationTests`,
-  `ActionBackfillTests`, `AppGroupEntitlementsTests`.
+  `ActionBackfillTests`, `AppGroupEntitlementsTests`, `NewFileLegacyStoreTests`, `NewFileMigrationTests`.
 - **Issues, PRs:** #14 (PR #19), #22 (PR #23: new App Group `group.cn.anzchy.RClick`, nothing migrated).
-- **Device:** never run as its own row.
+- **Device:** never run as its own row; the upgraded-store New File menu was not reproduced (issue #12 comment).
 
 ### `app-lifecycle`
 - **What:** one running copy per bundle id, the older one quits (`RClick/Shared/SingleInstanceGuard.swift`); a startup
   failure explains itself and exits instead of trapping (`RClick/Shared/StartupFailure.swift`, CHANGELOG [2.3.0]);
   quiet launches for the hint and login (`Shared/HintClickLaunch.swift`, `RClick/Shared/LaunchSideEffects.swift`);
-  the unit-test host stays inert (`RClick/Shared/TestHost.swift`).
+  the unit-test host stays inert (`RClick/Shared/TestHost.swift`); Quit waits for a running Cut or Paste
+  (`RClick/RClickApp.swift:244-252`).
 - **Status:** `infrastructure`.
-- **Tests:** `LaunchSideEffectsTests`, `UpdateInstallationTests` (`olderVersionQuits`, `sameVersion…`).
+- **Tests:** `LaunchSideEffectsTests`, `UpdateInstallationTests` (`olderVersionQuits`, `sameVersion…`); the Quit wait:
+  `PasteActionServiceTests.deferredQuitRepliesExactlyOnceAndNeverWaitsForever` and
+  `delegateDefersAndRepliesOnceOnEveryExit`.
 - **Issues, PRs:** #14 (PR #19), #18 (PR #20).
 - **Device:** single instance is a doctor line: PASS in PR #23 › Device (it names the line) and PR #27 › Device
-  ("doctor 13 of 13 PASS") (runs `i22-device-20261116e`, `i13-device-20261117c`, private records).
+  ("doctor 13 of 13 PASS") (runs `i22-device-20261116e`, `i13-device-20261117c`, private records). Quit during a
+  move: NOT VERIFIED (issue #12 comment).
 
 ### `action-execution`
 - **What:** the seams #13 added for long file operations: a serial background executor, an injectable file-operation
-  layer (move, copy, remove, volume identity), and the access lease (`RClick/Runtime/ActionExecutor.swift`,
-  `RClick/Runtime/FileOperations.swift`, `RClick/Runtime/AccessLease.swift`). Delete Direct uses them today; Cut,
-  Paste and Undo (#4) will.
+  layer (move, copy, remove, volume and file identity, and the coordinated exclusive move Paste uses), and the access
+  lease (`RClick/Runtime/ActionExecutor.swift`, `RClick/Runtime/FileOperations.swift`, `RClick/Runtime/AccessLease.swift`).
+  Delete Direct and Paste run on the executor; Cut and Paste hold the access lease. Undo (#11) is not built.
 - **Status:** `infrastructure`.
 - **Tests:** `ActionExecutorTests`, `FileOperationsTests`, `FaultInjectingFileOperationsTests`,
   `BookmarkAccessLeaserTests`.
 - **Issues, PRs:** #13, PR #27.
-- **Device:** batch responsiveness PASS, 300 and 30000 files (PR #27 › Device; run `i13-device-20261117c`, private
-  record).
+- **Device:** batch responsiveness PASS (PR #27 › Device; run `i13-device-20261117c`, private record).
+
+### `warning-window`
+- **What:** one SwiftUI window titled with the app name that shows a warning and an OK button
+  (`RClick/Settings/CutWarningView.swift`, opened from `RClick/RClickApp.swift:51-62`); it opens and comes to the
+  front also while the menu bar icon is hidden. Cut, Paste and New File send their refusals and failures to it
+  (`CutWarningState.shared.show`, the default of `ActionService`'s `cutWarning` and `createFile`'s
+  `templateWarning`). Delete Direct and AirDrop use their own `NSAlert`s; Hide only logs.
+- **Status:** `infrastructure`.
+- **Tests:** none for the window (spine `tests: []`); the Cut, Paste and New File tests inject the warning closure
+  and check the message.
+- **Issues, PRs:** #42; PR #36, PR #50.
+- **Device:** the issue #12 comment quotes the messages for a partial Paste failure and a package destination;
+  NOT VERIFIED: the window with the menu-bar icon hidden, in light and dark, in other languages (issue #42).
 
 ## Not in the spine yet
 
-- **Cut, Paste (move here), Undo last move** (#4, slices #8 to #12): specified and ticketed, no code on main. Add them
-  to the spine in the PR that ships each slice.
+- **Undo last move** (#11): specified and ticketed, no code on main; the Paste journal records what it will need.
+  Add it to the spine in the PR that ships it.
