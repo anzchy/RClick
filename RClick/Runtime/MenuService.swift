@@ -20,7 +20,10 @@ final class MenuService {
             version: menuVersion,
             actions: state.actions.filter(\.enabled).map { $0.toActionMenuItem() },
             apps: state.apps.map { $0.toAppMenuItem() },
-            newFiles: state.newFiles.filter(\.enabled).map {
+            // Old backups can restore builtin rows into memory after load-time repair.
+            newFiles: state.newFiles.filter {
+                $0.enabled && (!["pages", "key", "numbers"].contains($0.id) || $0.template != nil)
+            }.map {
                 NewFileMenuItem(id: $0.id, name: $0.displayName, ext: $0.ext, icon: $0.icon)
             },
             commonDirs: state.showCommonDirs ? state.cdirs.map {
