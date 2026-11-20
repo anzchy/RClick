@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "The template for %@ is missing or unreadable, so no file was created.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The template for %@ is missing or unreadable, so no file was created."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@ 的模板缺失或无法读取，因此未创建文件。"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@ のテンプレートが見つからないか読み取れないため、ファイルは作成されませんでした。"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La plantilla de %@ no está disponible o no se puede leer, por lo que no se creó ningún archivo."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le modèle pour %@ est introuvable ou illisible, aucun fichier n’a donc été créé."
+        }
+      }
+    }
+  },
   "The destination changed": {
     "localizations": {
       "en": {

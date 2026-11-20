@@ -994,7 +994,11 @@ final class ActionService {
 
     // MARK: - NewFileActions
 
-    func createFile(rid: String, target: [String]) async {
+    func createFile(
+        rid: String, target: [String],
+        templateResource: (String) -> URL? = { Bundle.main.url(forResource: "template", withExtension: $0) },
+        templateWarning: (String) -> Void = { CutWarningState.shared.show($0) }
+    ) async {
         guard let dirPath = targetDirectoryForNewFile(target) else {
             logger.warning("when createFile, but not have target directory")
             return
@@ -1029,43 +1033,30 @@ final class ActionService {
         }
 
         let ext = rcitem.ext
-        logger.info("create file dir:\(dirPath) -- ext \(ext)")
-        let filePath = getUniqueFilePath(dir: dirPath, ext: ext)
-        let fileURL = URL(fileURLWithPath: filePath)
-
+        let fileURL = URL(fileURLWithPath: getUniqueFilePath(dir: dirPath, ext: ext))
+        // These builtin text formats explicitly use an empty template. A custom
+        // type with the same extension still requires its configured template.
+        let permitsEmpty = ["txt": ".txt", "md": ".md", "json": ".json"][rcitem.id] == ext
+        let contents: Data
+        if rcitem.template == nil && permitsEmpty {
+            contents = Data()
+        } else {
+            // User templates take precedence, including when missing: silently
+            // substituting a bundled default would discard the user's choice.
+            let source = rcitem.template ?? templateResource(ext.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
+            guard let source, let data = try? Data(contentsOf: source), permitsEmpty || !data.isEmpty else {
+                logger.warning("New File refused; reason=templateUnavailable count=1")
+                templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), rcitem.displayName))
+                return
+            }
+            contents = data
+        }
         do {
-            let fileManager = FileManager.default
-
-            if let templateUrl = rcitem.template {
-                try fileManager.copyItem(at: templateUrl, to: fileURL)
-                logger.info("已成功复制模板到目标路径：\(fileURL.path)")
-            } else {
-                if let defaultTemplateURL = Bundle.main.url(forResource: "template", withExtension: ext.replacingOccurrences(of: ".", with: "")) {
-                    logger.info("使用模板创建文件，模板路径：\(defaultTemplateURL.path)")
-                    try fileManager.copyItem(at: defaultTemplateURL, to: fileURL)
-                    logger.info("已成功复制模板到目标路径：\(fileURL.path)")
-                } else {
-                    logger.warning("模板文件不存在：\(ext)")
-                    try Data().write(to: fileURL)
-                }
-            }
+            // Recheck at the write boundary as well as choosing a unique name.
+            try contents.write(to: fileURL, options: .withoutOverwriting)
             revealInFinderAndRename(fileURL)
-        } catch let error as NSError {
-            switch error.domain {
-            case NSCocoaErrorDomain:
-                switch error.code {
-                case NSFileNoSuchFileError:
-                    logger.error("文件不存在：\(filePath)")
-                case NSFileWriteOutOfSpaceError:
-                    logger.error("磁盘空间不足")
-                case NSFileWriteNoPermissionError:
-                    logger.error("没有写入权限：\(filePath)")
-                default:
-                    logger.error("创建文件错误：\(error.localizedDescription) (错误码：\(error.code))")
-                }
-            default:
-                logger.error("未处理的错误：\(error.localizedDescription) (错误码：\(error.code))")
-            }
+        } catch {
+            logger.error("New File failed; reason=writeFailed count=1")
         }
     }
 
