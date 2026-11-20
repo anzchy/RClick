@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Copy Path is text-only and no longer attempts the file-URL write that caused a sandbox error in the Finder extension; absence of that log message awaits a real-device check
+- Preserve pending Cut, clipboard and Undo journal when Paste targets the same folder; mixed batches retain unchanged items alongside failures
 - Refuse Paste into iCloud Drive, nested dotted Trash folders and CloudStorage provider Trash folders, including descendants and aliases; installed-provider validation remains pending
 - Recheck Paste destination identity, volume and safety inside coordination to refuse changed folders; device race validation remains pending
 - Quarantine damaged Paste journals and retain unresolved move history for up to 24 hours so it cannot lock out later Pastes

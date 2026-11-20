@@ -320,18 +320,14 @@ final class ActionService {
     }
 
     private func pasteMove(_ target: [String], trigger: String) async {
-        defer { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self) }
+        var publishConfig = true
+        defer { if publishConfig { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self) } }
         guard !preparingCut, !terminationPending else {
             cutWarning(AppLocalization.localized("A move is already in progress"))
             return
         }
         preparingCut = true
         defer { releaseReservation() }
-        await restoreMoveJournal()
-        if let notice = journalNotice {
-            journalNotice = nil
-            cutWarning(AppLocalization.localized(notice))
-        }
         guard let record = pendingCut else {
             cutRecord = nil
             cutWarning(AppLocalization.localized("The cut has ended"))
@@ -355,6 +351,23 @@ final class ActionService {
         let lease = accessLeaser.beginAccess(covering: directories)
         defer { lease.end() }
         let operations = fileOperations
+        let alreadyHere = await executor.run {
+            record.paths.allSatisfy { path in
+                let parent = URL(fileURLWithPath: path).deletingLastPathComponent().resolvingSymlinksInPath()
+                return (try? operations.sameItem(parent, destination)) == true
+            }
+        }
+        if alreadyHere {
+            // Pure no-op: do not consume a pending recovery notice or touch its
+            // journal, clipboard generation, pending record or menu counters.
+            publishConfig = false
+            return
+        }
+        await restoreMoveJournal()
+        if let notice = journalNotice {
+            journalNotice = nil
+            cutWarning(AppLocalization.localized(notice))
+        }
         let store: any UndoJournalStore
         do { store = try journalStore ?? AtomicUndoJournalStore.appGroup() }
         catch {
@@ -411,7 +424,7 @@ final class ActionService {
             for (path, source, identity) in selection {
                 do {
                     if try operations.sameItem(source.deletingLastPathComponent(), destination) {
-                        result.completed.append(path)
+                        result.unchanged.append(path)
                         continue
                     }
                     let facts = try operations.moveFacts(of: source)
@@ -474,6 +487,7 @@ final class ActionService {
                     }
                 }
             }
+            if result.completed.isEmpty && result.failures.isEmpty && !result.unchanged.isEmpty { return result }
             let moved = journal.entries.filter { $0.outcome == .moved }
             journal.entries = moved.isEmpty ? journal.previous : moved
             journal.previous = []
@@ -482,6 +496,10 @@ final class ActionService {
             catch { result.journalNeedsRecovery = true }
             return result
         }
+        if result.completed.isEmpty && result.failures.isEmpty && !result.unchanged.isEmpty {
+            publishConfig = false
+            return
+        }
         let journalFailures = result.failures.filter { $0.error is JournalFailure }.count
         if journalFailures > 0 || result.journalNeedsRecovery {
             logger.warning("Paste journal: persistence failure count \(journalFailures + (result.journalNeedsRecovery ? 1 : 0))")
@@ -489,16 +507,17 @@ final class ActionService {
         // This is an ownership check, not a pasteboard compare-and-swap.
         if cutPasteboard.changeCount != record.changeCount {
             cutRecord = nil
-        } else if result.failures.isEmpty {
+        } else if result.failures.isEmpty && result.unchanged.isEmpty {
             _ = cutPasteboard.prepareForNewContents(with: .currentHostOnly)
             cutRecord = nil
         } else {
-            let failedPaths = result.failures.map(\.path)
-            if let count = PendingCut(pasteboard: cutPasteboard).writeCut(failedPaths) {
-                let identities = failedPaths.compactMap { path in
+            let pending = Set(result.failures.map(\.path) + result.unchanged)
+            let remainingPaths = record.paths.filter { pending.contains($0) }
+            if let count = PendingCut(pasteboard: cutPasteboard).writeCut(remainingPaths) {
+                let identities = remainingPaths.compactMap { path in
                     record.paths.firstIndex(of: path).map { record.identities[$0] }
                 }
-                cutRecord = CutRecord(paths: failedPaths, identities: identities, changeCount: count)
+                cutRecord = CutRecord(paths: remainingPaths, identities: identities, changeCount: count)
             } else { cutRecord = nil }
         }
         if !result.failures.isEmpty {

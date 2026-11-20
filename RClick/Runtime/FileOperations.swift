@@ -128,6 +128,7 @@ nonisolated struct SystemFileOperations: FileOperations {
 nonisolated struct FileActionResult: Sendable {
     var journalNeedsRecovery = false
     var completed: [String] = []
+    var unchanged: [String] = []
     var failures: [FileActionFailure] = []
 }
 
