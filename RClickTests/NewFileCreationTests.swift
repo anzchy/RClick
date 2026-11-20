@@ -35,7 +35,9 @@ struct NewFileCreationTests {
         var revealed: [URL] = []
         let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
             revealNewFile: { revealed.append($0) })
-        await service.createFile(rid: "missing", target: [dir.path])
+        var warnings: [String] = []
+        await service.createFile(rid: "missing", target: [dir.path], templateWarning: { warnings.append($0) })
+        #expect(warnings.count == 1)
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
         #expect(revealed.isEmpty)
     }
@@ -50,8 +52,8 @@ struct NewFileCreationTests {
         for ext in ["docx", "pptx", "xlsx"] {
             let template = try #require(Bundle.main.url(forResource: "template", withExtension: ext))
             let expected = try Data(contentsOf: template)
-            await service.createFile(rid: ext, target: [dir.path])
-            await service.createFile(rid: ext, target: [dir.path])
+            await service.createFile(rid: ext, target: [dir.path], templateWarning: { _ in Issue.record("Unexpected template warning") })
+            await service.createFile(rid: ext, target: [dir.path], templateWarning: { _ in Issue.record("Unexpected template warning") })
             let copies = revealed.filter { $0.pathExtension == ext }
             #expect(copies.count == 2)
             #expect(Set(copies).count == 2)
@@ -73,7 +75,7 @@ struct NewFileCreationTests {
         let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
             revealNewFile: { revealed.append($0) })
         for id in ["docx", "custom", "txt", "md", "json"] {
-            await service.createFile(rid: id, target: [dir.path])
+            await service.createFile(rid: id, target: [dir.path], templateWarning: { _ in Issue.record("Unexpected template warning") })
         }
         #expect(revealed.count == 5)
         #expect(try Data(contentsOf: source) == expected)
