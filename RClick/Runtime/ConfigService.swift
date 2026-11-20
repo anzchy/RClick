@@ -63,7 +63,17 @@ final class ConfigService {
 
         // NewFiles
         let newFileDescriptor = FetchDescriptor<NewFileTypeEntity>(sortBy: [SortDescriptor(\.sortOrder)])
-        data.newFiles = (try? modelContext.fetch(newFileDescriptor))?.map { entity in
+        // Idempotent load-time repair, like the common-directory icon repair below.
+        // No schema change: remove only unsupported builtin rows, never user templates.
+        let storedNewFiles = (try? modelContext.fetch(newFileDescriptor)) ?? []
+        let unsupportedIDs: Set<String> = ["pages", "key", "numbers"]
+        let retired = storedNewFiles.filter { unsupportedIDs.contains($0.id) && $0.templatePath == nil }
+        for entity in retired { modelContext.delete(entity) }
+        if !retired.isEmpty {
+            do { try modelContext.save() }
+            catch { logger.error("New File migration save failed; reason=persistence") }
+        }
+        data.newFiles = storedNewFiles.filter { !unsupportedIDs.contains($0.id) || $0.templatePath != nil }.map { entity in
             var file = NewFile(
                 ext: entity.fileExtension,
                 name: entity.name,
@@ -75,7 +85,7 @@ final class ConfigService {
             file.template = entity.templatePath.map { URL(fileURLWithPath: $0) }
             file.openApp = entity.openAppPath.map { URL(fileURLWithPath: $0) }
             return file
-        } ?? []
+        }
 
         // CommonDirs（含旧图标自动修复）
         let commonDirDescriptor = FetchDescriptor<CommonDirEntity>(sortBy: [SortDescriptor(\.sortOrder)])
