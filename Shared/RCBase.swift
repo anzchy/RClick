@@ -395,12 +395,18 @@ struct ActionMenuItem: Codable {
 struct NewFileMenuItem: Codable {
     static let customFileId = "__rclick_custom_new_file"
 
+    struct Entry: Codable, Equatable {
+        let id: String
+        let name: String
+    }
+    let entries: [Entry]?
     let id: String
     let name: String
     let ext: String
     let icon: String
 
-    init(id: String, name: String, ext: String, icon: String) {
+    init(id: String, name: String, ext: String, icon: String, entries: [Entry]? = nil) {
+        self.entries = entries
         self.id = id
         self.name = name
         self.ext = ext
