@@ -166,4 +166,41 @@ struct NewFileCreationTests {
         }
     }
 
+    @Test func selectedTemplateAndOldClickUseCorrectBytesWhileUnknownAndMissingRefuse() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("source")
+        try Data("chosen bytes".utf8).write(to: source)
+        var file = NewFile.txt
+        file.blankEnabled = false
+        file.templates = [NewFile.Template(id: "chosen", name: "Letter", path: source.path)]
+        let state = State()
+        state.newFiles = [file]
+        var outputs: [URL] = []
+        var warnings: [String] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(), revealNewFile: { outputs.append($0) })
+        for selection in ["chosen", nil] as [String?] {
+            await service.createFile(rid: "txt", target: [dir.path], templateId: selection, templateWarning: { warnings.append($0) })
+        }
+        #expect(outputs.count == 2)
+        #expect(Set(outputs).count == 2)
+        for output in outputs { #expect(try Data(contentsOf: output) == Data("chosen bytes".utf8)) }
+        for invalid in ["unknown", NewFile.blankTemplateID] {
+            let before = warnings.count
+            await service.createFile(rid: "txt", target: [dir.path], templateId: invalid, templateWarning: { warnings.append($0) })
+            #expect(warnings.count == before + 1)
+            #expect(outputs.count == 2)
+        }
+        try FileManager.default.removeItem(at: source)
+        await service.createFile(rid: "txt", target: [dir.path], templateId: "chosen", templateWarning: { warnings.append($0) })
+        #expect(warnings.count == 3)
+        #expect(outputs.count == 2)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 2)
+        state.newFiles[0].blankEnabled = true
+        await service.createFile(rid: "txt", target: [dir.path], templateId: NewFile.blankTemplateID, templateWarning: { warnings.append($0) })
+        #expect(outputs.count == 3)
+        #expect(try Data(contentsOf: #require(outputs.last)).isEmpty)
+        #expect(warnings.count == 3)
+    }
+
 }

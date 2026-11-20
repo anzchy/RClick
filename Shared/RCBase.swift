@@ -240,6 +240,7 @@ struct NewFile: @MainActor RCBase {
     var id: String
     var openApp: URL?
     var template: URL?
+    static let blankTemplateID = "__blank"
     var blankEnabled = true
     var templates: [Template]? = nil
 

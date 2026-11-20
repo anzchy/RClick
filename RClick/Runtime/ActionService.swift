@@ -995,7 +995,7 @@ final class ActionService {
     // MARK: - NewFileActions
 
     func createFile(
-        rid: String, target: [String],
+        rid: String, target: [String], templateId: String? = nil,
         templateResource: (String) -> URL? = { Bundle.main.url(forResource: "template", withExtension: $0) },
         templateWarning: (String) -> Void = { CutWarningState.shared.show($0) }
     ) async {
@@ -1015,6 +1015,10 @@ final class ActionService {
         }
 
         if rid == NewFileMenuItem.customFileId {
+            guard templateId == nil else {
+                templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), AppLocalization.localized("New File")))
+                return
+            }
             let filePath = getUniqueFilePath(dir: dirPath, ext: "")
             let fileURL = URL(fileURLWithPath: filePath)
             do {
@@ -1046,13 +1050,24 @@ final class ActionService {
             self.logger.warning("New File refused; reason=templateUnavailable count=1")
             templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), rcitem.displayName))
         }
+        let users = rcitem.userTemplates.filter(\.enabled)
+        let selectedID = templateId ?? (rcitem.usesBlank ? NewFile.blankTemplateID : users.first?.id)
+        let configuredSource: URL?
+        if selectedID == NewFile.blankTemplateID, rcitem.usesBlank {
+            configuredSource = nil
+        } else if let selectedID, let entry = users.first(where: { $0.id == selectedID }), let path = entry.path {
+            configuredSource = URL(fileURLWithPath: path)
+        } else {
+            warnTemplateUnavailable()
+            return
+        }
         let contents: Data
-        if rcitem.template == nil && permitsEmpty {
+        if configuredSource == nil && permitsEmpty {
             contents = Data()
         } else {
             // User templates take precedence, including when missing: silently
             // substituting a bundled default would discard the user's choice.
-            let source = rcitem.template ?? bundledTemplate
+            let source = configuredSource ?? bundledTemplate
             if let source, (try? source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                 do {
                     // Package templates must retain their directory structure.
