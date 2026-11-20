@@ -1,6 +1,40 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "This will delete all custom configurations and restore the defaults. This action cannot be undone.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This will delete all custom configurations and app-owned template snapshots, and restore the defaults. This action cannot be undone."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此操作将删除所有自定义配置及应用内保存的模板副本，并恢复默认设置。此操作不可逆。"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "すべてのカスタム設定とアプリ内のテンプレートのコピーを削除し、既定値に戻します。元に戻すことはできません。"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Se eliminarán todas las configuraciones personalizadas y las copias de plantillas de la app, y se restaurarán los valores predeterminados. Esta acción no se puede deshacer."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Toutes les configurations personnalisées et les copies de modèles de l’app seront supprimées, puis les valeurs par défaut rétablies. Cette action est irréversible."
+        }
+      }
+    }
+  },
   "Template Import Failed": {
     "localizations": {
       "en": {
