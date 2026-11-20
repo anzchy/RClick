@@ -253,7 +253,7 @@ struct NewFile: @MainActor RCBase {
 
 
 extension NewFile {
-    static let all: [NewFile] = [.txt, .md, .json, .docx, .pptx, .xlsx, .pages, .key, .numbers]
+    static let all: [NewFile] = [.txt, .md, .json, .docx, .pptx, .xlsx]
 
     // `id` 必须逐字对上 `NewFileTypeEntity.createDefaultFileTypes()`。
     // 这几个字面量原本不传 id，于是全都取了 init 的默认值 `UUID()`——「恢复默认」
