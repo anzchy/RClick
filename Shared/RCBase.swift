@@ -253,6 +253,11 @@ struct NewFile: @MainActor RCBase {
 
 
 extension NewFile {
+    /// Retire only unchanged unsupported defaults; edited rows and user templates survive.
+    static func isRetiredBuiltin(id: String, ext: String, hasTemplate: Bool) -> Bool {
+        !hasTemplate && ["pages": ".pages", "key": ".key", "numbers": ".numbers"][id] == ext
+    }
+
     static let all: [NewFile] = [.txt, .md, .json, .docx, .pptx, .xlsx]
 
     // `id` 必须逐字对上 `NewFileTypeEntity.createDefaultFileTypes()`。

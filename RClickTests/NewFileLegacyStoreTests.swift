@@ -5,6 +5,46 @@ import Testing
 
 @MainActor
 struct NewFileLegacyStoreTests {
+    @Test func editedBuiltinExtensionsSurviveLoadAndRemainInMenu() throws {
+        for inMemory in [true, false] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let configuration = inMemory ? ModelConfiguration(isStoredInMemoryOnly: true) :
+                ModelConfiguration(url: directory.appendingPathComponent("edited.sqlite"), cloudKitDatabase: .none)
+            let container = try ModelContainer(for: AppEntity.self, ActionEntity.self, NewFileTypeEntity.self,
+                CommonDirEntity.self, configurations: configuration)
+            let context = ModelContext(container)
+            let rows = [
+                NewFileTypeEntity(id: "pages", fileExtension: ".xlsx", name: "Edited Pages", sortOrder: 0),
+                NewFileTypeEntity(id: "key", fileExtension: ".docx", name: "Edited Key", sortOrder: 1),
+                NewFileTypeEntity(id: "custom", fileExtension: ".key", name: "Custom", sortOrder: 3),
+                NewFileTypeEntity(id: "numbers", fileExtension: ".numbers", name: "Empty Path", sortOrder: 4, templatePath: ""),
+            ]
+            for row in rows { context.insert(row) }
+            try context.save()
+            let service = ConfigService(modelContext: context)
+            let expected = ["Edited Pages", "Edited Key", "Custom", "Empty Path"]
+            for _ in 0..<2 {
+                let loaded = service.load().newFiles
+                #expect(loaded.map(\.name) == expected)
+                let state = AppState()
+                state.newFiles = loaded
+                #expect(MenuService().buildConfig(from: state).newFiles.map(\.ext) == [".xlsx", ".docx", ".key", ".numbers"])
+            }
+            let reloaded = ConfigService(modelContext: ModelContext(container)).load().newFiles
+            #expect(reloaded.map(\.name) == expected)
+            #expect(try context.fetchCount(FetchDescriptor<NewFileTypeEntity>()) == 4)
+            // Restoring the canonical pair makes this row eligible for retirement.
+            rows[0].fileExtension = ".pages"
+            try context.save()
+            #expect(service.load().newFiles.map(\.name) == ["Edited Key", "Custom", "Empty Path"])
+            #expect(ConfigService(modelContext: ModelContext(container)).load().newFiles.map(\.name)
+                == ["Edited Key", "Custom", "Empty Path"])
+            #expect(try context.fetchCount(FetchDescriptor<NewFileTypeEntity>()) == 3)
+        }
+    }
+
     @Test func oldDefaultsArePrunedWithoutLosingUserTemplatesAndLoadIsIdempotent() throws {
         for inMemory in [true, false] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
