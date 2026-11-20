@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Restore Defaults for New File and Reset All Settings remove user template snapshots from the app’s Templates folder and restore Blank; original imported files are preserved
 - Use the fork app identity, isolated app/extension communication, and a new, empty App Group container; existing settings and folder bookmarks are not migrated
 - Copy Path now copies every selected item, one path per line, as plain text. Copy File Name copies every selected item's name the same way
 - Keep Finder workspace icon caches warm with background preloading and main-thread image resizing

@@ -66,4 +66,26 @@ struct TemplateStoreTests {
         #expect(try Data(contentsOf: source) == Data("second".utf8))
     }
 
+    @Test func restoreDefaultsDeletesSnapshotsAndRestoresBlankWithoutTouchingSource() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("original.txt")
+        try Data("original".utf8).write(to: source)
+        let store = TemplateStore(baseURL: dir.appendingPathComponent("Templates"))
+        let entry = try store.importFile(source)
+        var file = NewFile.txt
+        file.templates = [entry, .init(name: "External", path: source.path)]
+        file.blankEnabled = false
+        let state = AppState()
+        state.newFileTemplateStore = store
+        state.newFiles = [file]
+        state.sync()
+        state.resetFiletypeItems()
+        let path = try #require(entry.path)
+        #expect(!FileManager.default.fileExists(atPath: path))
+        #expect(state.newFiles.allSatisfy { $0.usesBlank && $0.userTemplates.isEmpty })
+        #expect(try Data(contentsOf: source) == Data("original".utf8))
+    }
+
 }
