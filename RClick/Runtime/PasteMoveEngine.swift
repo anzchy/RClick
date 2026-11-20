@@ -50,8 +50,10 @@ extension FileOperations {
                         guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
                         notifyMove(.willMoveTo, using: job.coordinator, from: from, to: to)
                         // Classification may predate an fsync and a presenter wait.
-                        // Revalidate the coordinated parent, including symlink swaps,
-                        // under the cancellation gate immediately before renaming.
+                        // Revalidate the destination folder itself (identity, volume and
+                        // policy by its lexical path) under the cancellation gate
+                        // immediately before renaming. This does not detect a swapped
+                        // symlink in an ancestor of the folder: known limitation, M11.
                         do {
                             // Rebuild the coordinator's bridged NSURL as a canonical
                             // file URL before walking its ancestors.
