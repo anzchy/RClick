@@ -509,7 +509,8 @@ delete its line in the same change.
   "Cut & Paste" (one toggle for both Cut and Paste).
 - **Status:** `shipped-on`.
 - **Tests:** `ActionBackfillTests` (built-in actions, Cut included, added to older stores in order, once).
-- **Device:** "Cut & Paste" was switched on through it in the issue #12 run (see `cut`); never run as its own row.
+- **Device:** never run as its own row. The issue #12 run used Cut and Paste, but how Cut was enabled in that run is
+  UNVERIFIED (the comment does not say).
 
 ### `new-file-settings`
 - **What:** Settings > New File: Enabled per type, Add File Type, Edit (name, extension, template file, SF Symbol
