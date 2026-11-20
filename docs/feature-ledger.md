@@ -344,7 +344,8 @@ delete its line in the same change.
   `template.<ext>`, which exists for DOCX, PPTX and XLSX only (`RClick/Resources/`); any other type gets an empty
   file. A type that requires a template and has no readable, non-empty one creates nothing and says so in the shared
   warning window (`:1039-1048`). Folder and package templates are copied whole; the write never replaces an existing
-  file (`:1075`).
+  file (`:1075`). A write that fails anyway (for example a name taken between the check and the write, or a
+  read-only folder) is only logged (`:1077-1078`): no message reaches the user.
 - **Status:** `shipped-on`, `partial` (finding 7: an extension without a dot; finding 11: an unreachable branch).
 - **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:261` `NewFile.all`;
   `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`). At every load a stored row is deleted when its id
@@ -677,9 +678,20 @@ delete its line in the same change.
 ### `warning-window`
 - **What:** one SwiftUI window titled with the app name that shows a warning and an OK button
   (`RClick/Settings/CutWarningView.swift`, opened from `RClick/RClickApp.swift:51-62`); it opens and comes to the
-  front also while the menu bar icon is hidden. Cut, Paste and New File send their refusals and failures to it
-  (`CutWarningState.shared.show`, the default of `ActionService`'s `cutWarning` and `createFile`'s
-  `templateWarning`). Delete Direct and AirDrop use their own `NSAlert`s; Hide only logs.
+  front also while the menu bar icon is hidden. `CutWarningState.shared.show` is reached only through two closures,
+  the defaults of `ActionService`'s `cutWarning` (`RClick/Runtime/ActionService.swift:59`) and `createFile`'s
+  `templateWarning` (`:1000`). Their call sites are the whole list of what reaches the window:
+  - Cut: a selection holding a protected folder (`:696`); a source on a read-only volume or in an unwritable folder
+    (`:706`);
+  - Paste: a move already running (`:350`); the cut has ended (`:359`, `:383`); no single folder destination
+    (`:364`); a journal recovery notice (`:404`); the journal unavailable (`:411`); the items that could not be moved,
+    which include every refusal reason of `:642-665` (`:568`); the journal needing recovery after a move (`:570`);
+  - New File: a required template missing, unreadable or empty, or a package template that could not be copied
+    (`:1045-1047`, called at `:1062` and `:1067`).
+  Everything else is log-only: a dismissed or insufficient permission panel for Cut or Paste, a Cut whose source
+  identity cannot be read or whose pasteboard write fails (`:713-719`, finding 4), a
+  Paste whose clipboard rewrite fails after a partial move, and a New File write that throws (`:1077-1078`). Delete
+  Direct and AirDrop use their own `NSAlert`s; Hide only logs.
 - **Status:** `infrastructure`.
 - **Tests:** none for the window (spine `tests: []`); the Cut, Paste and New File tests inject the warning closure
   and check the message.
