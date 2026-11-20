@@ -67,6 +67,7 @@ This ticket's specifics:
 (its test and its code), so an auditor can rebuild each RED from history; "test only" slices may share a commit.
 Stage named paths only (never `git add -A`, `.` or `-u`). A user-visible change adds a `CHANGELOG.md`
 `[Unreleased]` line. New user-visible strings go in the right catalog with all five languages, by exact-string edits.
+A ticket that adds or changes a menu item, a Settings capability or a default updates its spine entry (`docs/feature-ledger/feature-map.json`) and ledger block (`docs/feature-ledger.md`) in the same PR (`docs/agents/feature-ledger.md`).
 The evidence comment on #<issue> is your only GitHub write. No push, PR, other comment or issue edit, branch
 switch away from your branch, branch deletion, `rm -r`, or touching other worktrees. Never launch or kill Finder or
 an installed `RClick.app`, and never change system settings or Finder extension registration.
