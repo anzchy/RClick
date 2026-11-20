@@ -329,7 +329,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             if event.itemId == "cut" { sendMenuConfigurationUpdate() }
         case .newFile:
-            await actionService.createFile(rid: event.itemId, target: event.target)
+            await actionService.createFile(rid: event.itemId, target: event.target, templateId: event.templateId)
         case .commonDir:
             await actionService.openCommonDirs(target: event.target)
         }

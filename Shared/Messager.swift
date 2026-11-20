@@ -128,18 +128,21 @@ nonisolated struct ClickEventPayload: Codable, Sendable {
     let trigger: MenuTrigger
     /// 点击时是否按住 Option。「直接删除」据此跳过确认
     let optionKeyPressed: Bool?
+    let templateId: String?
 
     init(
         itemId: String,
         itemType: MenuItemType,
         target: [String] = [],
         trigger: MenuTrigger,
-        optionKeyPressed: Bool? = nil
+        optionKeyPressed: Bool? = nil,
+        templateId: String? = nil
     ) {
         self.itemId = itemId
         self.itemType = itemType
         self.target = target
         self.trigger = trigger
+        self.templateId = templateId
         self.optionKeyPressed = optionKeyPressed
     }
 }
