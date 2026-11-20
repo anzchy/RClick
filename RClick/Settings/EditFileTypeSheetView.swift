@@ -21,7 +21,10 @@ struct EditFileTypeSheetView: View {
     @State private var ext: String
     @State private var icon: String
     @State private var openApp: URL?
-    @State private var template: URL?
+    @State private var draft: TemplateDraft
+    @State private var replacementID: String?
+    @State private var templateError: String?
+    @State private var showTemplateError = false
 
     @State private var showSelectApp = false
     @State private var showSelectTemplate = false
@@ -37,9 +40,6 @@ struct EditFileTypeSheetView: View {
         "icon-file-xlsx": "tablecells",
     ]
 
-    let templatesDir: URL? = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-        .appendingPathComponent("RClick/Templates")
-
     init(file: NewFile, appState: AppState) {
         self.file = file
         self.appState = appState
@@ -47,7 +47,7 @@ struct EditFileTypeSheetView: View {
         _ext = State(initialValue: file.ext)
         _icon = State(initialValue: file.icon)
         _openApp = State(initialValue: file.openApp)
-        _template = State(initialValue: file.template)
+        _draft = State(initialValue: TemplateDraft(file: file))
     }
 
     var body: some View {
@@ -76,38 +76,65 @@ struct EditFileTypeSheetView: View {
                 }
 
                 Section {
-                    HStack {
-                        if let templateUrl = template {
-                            Text(templateUrl.lastPathComponent)
-                            Button {
-                                template = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        Button {
-                            showSelectTemplate = true
-                        } label: {
-                            Text(appLocalized: template == nil ? "Choose Template File" : "Change Template")
-                        }
-                        .fileImporter(
-                            isPresented: $showSelectTemplate,
-                            allowedContentTypes: [.content],
-                            allowsMultipleSelection: false
-                        ) { result in
-                            switch result {
-                            case .success(let files):
-                                if let url = files.first {
-                                    template = url
+                    Toggle(AppLocalization.localized("Blank"), isOn: $draft.blankEnabled)
+                        .accessibilityLabel(AppLocalization.localized("Blank"))
+                    List {
+                        ForEach($draft.entries) { $entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Toggle(AppLocalization.localized("Enabled"), isOn: $entry.enabled)
+                                        .labelsHidden()
+                                        .accessibilityLabel(String(format: AppLocalization.localized("Enable Template %@"), entry.name))
+                                    TextField(AppLocalization.localized("Template Name"), text: $entry.name)
+                                        .textFieldStyle(.roundedBorder)
+                                        .accessibilityLabel(AppLocalization.localized("Template Name"))
+                                        .onSubmit { draft.rename(id: entry.id, name: entry.name) }
+                                    Button(AppLocalization.localized("Replace File")) {
+                                        replacementID = entry.id
+                                        showSelectTemplate = true
+                                    }
+                                    .accessibilityLabel(String(format: AppLocalization.localized("Replace Template %@"), entry.name))
+                                    Button {
+                                        draft.entries.removeAll { $0.id == entry.id }
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .accessibilityLabel(String(format: AppLocalization.localized("Remove Template %@"), entry.name))
                                 }
-                            case .failure:
-                                break
+                                if entry.isMissing && !draft.hasPendingSnapshot(id: entry.id) {
+                                    Text(appLocalized: "Missing Template")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+                        }
+                        .onMove { source, destination in
+                            draft.entries.move(fromOffsets: source, toOffset: destination)
+                        }
+                    }
+                    .frame(minHeight: 120, idealHeight: 160)
+                    Button(AppLocalization.localized("Add Template")) {
+                        replacementID = nil
+                        showSelectTemplate = true
+                    }
+                    .fileImporter(isPresented: $showSelectTemplate, allowedContentTypes: [.item]) { result in
+                        do {
+                            let url = try result.get()
+                            // Only the importer-granted read scope; no bookmark or persistent access.
+                            let scoped = url.startAccessingSecurityScopedResource()
+                            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                            if let replacementID {
+                                try draft.replace(id: replacementID, source: url)
+                            } else {
+                                try draft.add(url, store: appState.newFileTemplateStore)
+                            }
+                        } catch {
+                            templateError = error.localizedDescription
+                            showTemplateError = true
                         }
                     }
                 } header: {
-                    Text(appLocalized: "Template")
+                    Text(appLocalized: "Templates")
                 }
 
                 Section {
@@ -186,56 +213,37 @@ struct EditFileTypeSheetView: View {
                 .keyboardShortcut(.escape)
 
                 Button(AppLocalization.localized(isAdding ? "Add" : "Save")) {
-                    saveChanges()
-                    dismiss()
+                    do { try saveChanges(); dismiss() }
+                    catch { templateError = error.localizedDescription; showTemplateError = true }
                 }
                 .keyboardShortcut(.return)
                 .disabled(name.isEmpty || ext.isEmpty)
             }
             .padding(.bottom, 20)
         }
-        .frame(width: 440, height: 580)
+        .frame(width: 620, height: 760)
+        .alert(Text(appLocalized: "Template Import Failed"), isPresented: $showTemplateError) {
+            Button(AppLocalization.localized("OK")) {}
+        } message: {
+            Text(templateError ?? "")
+        }
     }
 
-    private func saveChanges() {
+    private func saveChanges() throws {
+        for entry in draft.entries { draft.rename(id: entry.id, name: entry.name) }
+        var updated = file
+        updated.name = name
+        updated.ext = ext
+        updated.icon = icon
+        updated.openApp = openApp
+        updated.template = nil
+        updated.blankEnabled = draft.blankEnabled
+        updated.templates = try draft.save(store: appState.newFileTemplateStore, replacing: file.userTemplates)
         if isAdding {
-            var newFile = NewFile(
-                ext: ext,
-                name: name,
-                idx: appState.newFiles.count,
-                icon: icon
-            )
-            if let app = openApp {
-                newFile.openApp = app
-            }
-            if let templateUrl = template {
-                if let templateDir = templatesDir {
-                    try? FileManager.default.createDirectory(at: templateDir, withIntermediateDirectories: true)
-                    let destUrl = templateDir.appendingPathComponent(templateUrl.lastPathComponent)
-                    try? FileManager.default.copyItem(at: templateUrl, to: destUrl)
-                    newFile.template = destUrl
-                }
-            }
-            appState.addNewFile(newFile)
-        } else {
-            if let index = appState.newFiles.firstIndex(where: { $0.id == file.id }) {
-                var updatedFile = file
-                updatedFile.name = name
-                updatedFile.ext = ext
-                updatedFile.icon = icon
-                updatedFile.openApp = openApp
-                if let templateUrl = template {
-                    if let templateDir = templatesDir {
-                        try? FileManager.default.createDirectory(at: templateDir, withIntermediateDirectories: true)
-                        let destUrl = templateDir.appendingPathComponent(templateUrl.lastPathComponent)
-                        try? FileManager.default.copyItem(at: templateUrl, to: destUrl)
-                        updatedFile.template = destUrl
-                    }
-                }
-                appState.newFiles[index] = updatedFile
-            }
-        }
-        Task { @MainActor in
+            updated.idx = appState.newFiles.count
+            appState.addNewFile(updated)
+        } else if let index = appState.newFiles.firstIndex(where: { $0.id == file.id }) {
+            appState.newFiles[index] = updated
             appState.sync()
         }
         messager.sendRunningNotification()

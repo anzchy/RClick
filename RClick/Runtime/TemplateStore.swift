@@ -72,6 +72,8 @@ struct TemplateDraft {
         blankEnabled = file.usesBlank
     }
 
+    func hasPendingSnapshot(id: String) -> Bool { pending[id] != nil }
+
     mutating func replace(id: String, source: URL) throws {
         guard entries.contains(where: { $0.id == id }) else { return }
         pending[id] = try FileWrapper(url: source, options: .immediate)

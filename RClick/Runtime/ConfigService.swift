@@ -67,7 +67,7 @@ final class ConfigService {
         // No schema change: remove only unsupported builtin rows, never user templates.
         let storedNewFiles = (try? modelContext.fetch(newFileDescriptor)) ?? []
         let retired = storedNewFiles.filter {
-            NewFile.isRetiredBuiltin(id: $0.id, ext: $0.fileExtension, hasTemplate: $0.templatePath != nil)
+            NewFile.isRetiredBuiltin(id: $0.id, ext: $0.fileExtension, hasTemplate: $0.templatePath != nil || !($0.templates ?? []).isEmpty)
         }
         for entity in retired { modelContext.delete(entity) }
         if !retired.isEmpty {
@@ -75,7 +75,7 @@ final class ConfigService {
             catch { logger.error("New File migration save failed; reason=persistence") }
         }
         data.newFiles = storedNewFiles.filter {
-            !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.fileExtension, hasTemplate: $0.templatePath != nil)
+            !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.fileExtension, hasTemplate: $0.templatePath != nil || !($0.templates ?? []).isEmpty)
         }.map { entity in
             var file = NewFile(
                 ext: entity.fileExtension,
