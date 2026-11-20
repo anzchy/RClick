@@ -187,7 +187,7 @@ extension SettingsBackup.App {
 @MainActor
 extension SettingsBackup.FileTemplate {
     /// Preserve missing legacy templates for replacement; never substitute Blank silently.
-    func toModel() -> NewFile {
+    func toModel(templateStore: TemplateStore = .standard, existing: [NewFile.Template] = []) -> NewFile {
         var file = NewFile(ext: ext, name: name, enabled: enabled, idx: idx, icon: icon, id: id)
         if let templatePath {
             file.template = URL(fileURLWithPath: templatePath)
@@ -198,7 +198,8 @@ extension SettingsBackup.FileTemplate {
             file.template = nil
             file.templates = templates.map { entry in
                 var metadata = entry
-                metadata.path = nil
+                metadata.path = templateStore.snapshotPath(for: entry.id,
+                    preferredPath: existing.first { $0.id == entry.id }?.path)
                 return metadata
             }
             file.blankEnabled = blankEnabled ?? true
@@ -219,6 +220,14 @@ extension SettingsBackup.CommonFolder {
 
 @MainActor
 extension SettingsBackup {
+    func importOmittedTemplateCount(templateStore: TemplateStore = .standard) -> Int {
+        newFiles.reduce(0) { count, file in
+            // Retain the legacy backup notice convention; modern entries count missing copies.
+            count + (file.templates == nil ? (file.templatePath == nil ? 0 : 1)
+                : file.toModel(templateStore: templateStore).userTemplates.filter(\.isMissing).count)
+        }
+    }
+
     /// 按备份里的顺序和启用状态重建动作，并补齐备份中缺失的内置动作。
     ///
     /// 动作集合由代码维护，设置页没有增删入口；旧备份可能不包含后来新增的动作，

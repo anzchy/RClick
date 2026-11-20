@@ -13,6 +13,20 @@ struct TemplateStore {
             .appendingPathComponent("RClick/Templates", isDirectory: true))
     }
 
+    /// Backups contain IDs, not paths. Reconnect only an existing owned snapshot.
+    func snapshotPath(for id: String, preferredPath: String? = nil) -> String? {
+        guard UUID(uuidString: id) != nil else { return nil }
+        let directory = baseURL.appendingPathComponent(id, isDirectory: true)
+        if let preferredPath {
+            let url = URL(fileURLWithPath: preferredPath)
+            if url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+               owns(url), FileManager.default.fileExists(atPath: url.path) { return url.path }
+        }
+        return (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))?
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .first { owns($0) }.map { directory.appendingPathComponent($0.lastPathComponent).path }
+    }
+
     func importFile(_ source: URL) throws -> NewFile.Template {
         let id = UUID().uuidString
         let snapshot = try FileWrapper(url: source, options: .immediate)

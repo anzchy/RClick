@@ -211,8 +211,8 @@ class AppState: ObservableObject, ActionStateProviding {
         cdirs = data.commonDirs
     }
 
-    @MainActor func sync() {
-        persist()
+    @MainActor func sync(preserveTemplateSnapshots: Bool = false) {
+        persist(preserveTemplateSnapshots: preserveTemplateSnapshots)
     }
 
     // MARK: - 持久化
@@ -243,10 +243,10 @@ class AppState: ObservableObject, ActionStateProviding {
     /// Deliberately non-throwing; a failure lands in `lastSaveError` for the
     /// settings window to show, and is logged at `.error`.
     @MainActor
-    private func persist() {
+    private func persist(preserveTemplateSnapshots: Bool = false) {
         reindexMenuItems()
         do {
-            try configService.save(AppConfigData(apps: apps, actions: actions, newFiles: newFiles, commonDirs: cdirs), templateStore: newFileTemplateStore)
+            try configService.save(AppConfigData(apps: apps, actions: actions, newFiles: newFiles, commonDirs: cdirs), templateStore: newFileTemplateStore, preserveTemplateSnapshots: preserveTemplateSnapshots)
             lastSaveError = nil
         } catch {
             lastSaveError = error.localizedDescription
