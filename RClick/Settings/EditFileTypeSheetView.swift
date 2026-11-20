@@ -238,7 +238,8 @@ struct EditFileTypeSheetView: View {
         updated.openApp = openApp
         updated.template = nil
         updated.blankEnabled = draft.blankEnabled
-        updated.templates = try draft.save(store: appState.newFileTemplateStore, replacing: file.userTemplates)
+        updated.templates = try draft.save(store: appState.newFileTemplateStore, replacing: file.userTemplates,
+            retaining: appState.newFiles.filter { $0.id != file.id }.flatMap(\.userTemplates))
         if isAdding {
             updated.idx = appState.newFiles.count
             appState.addNewFile(updated)
