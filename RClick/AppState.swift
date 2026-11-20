@@ -22,6 +22,7 @@ class AppState: ObservableObject, ActionStateProviding {
 
     @Published var apps: [OpenWithApp] = []
     @Published var actions: [RCAction] = []
+    var newFileTemplateStore = TemplateStore.standard
     @Published var newFiles: [NewFile] = []
     @Published var cdirs: [CommonDir] = []
     @Published var inExt: Bool
@@ -245,7 +246,7 @@ class AppState: ObservableObject, ActionStateProviding {
     private func persist() {
         reindexMenuItems()
         do {
-            try configService.save(AppConfigData(apps: apps, actions: actions, newFiles: newFiles, commonDirs: cdirs))
+            try configService.save(AppConfigData(apps: apps, actions: actions, newFiles: newFiles, commonDirs: cdirs), templateStore: newFileTemplateStore)
             lastSaveError = nil
         } catch {
             lastSaveError = error.localizedDescription
