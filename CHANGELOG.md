@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Direct Delete now always asks for confirmation before permanently removing files. Hold Option while choosing it to skip the prompt
 
 ### Added
-- Implemented multiple snapshots per New File type, including custom types, with a Blank entry, per-template Finder submenus and an editable template list; backups retain metadata and report omitted template files; device validation remains pending
+- Implemented multiple snapshots per New File type, including custom types, with a Blank entry, per-template Finder submenus and an editable template list; backups retain metadata and report omitted template files; custom types requiring a template are hidden until one is available; device validation remains pending
 - Opt-in same-volume Paste (move here), with exclusive no-overwrite moves, partial-failure retry and a durable journal for Undo; Finder/device validation and the Undo release gate remain pending
 - Opt-in Cut action marks selected Finder files as a pending cut locally without changing files
 - Settings backup: export the full configuration as JSON, import it on the same or another Mac, and export the app's logs
