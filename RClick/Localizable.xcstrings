@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Blank is unavailable because this format requires a template.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Blank is unavailable because this format requires a template."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此格式需要模板，因此无法使用空白文件。"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "この形式にはテンプレートが必要なため、空白は使用できません。"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La opción En blanco no está disponible porque este formato requiere una plantilla."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "L’option Vierge est indisponible, car ce format nécessite un modèle."
+        }
+      }
+    }
+  },
   "Template Import Failed": {
     "localizations": {
       "en": {

@@ -256,6 +256,14 @@ struct NewFile: @MainActor RCBase {
     var userTemplates: [Template] {
         templates ?? template.map { [Template(id: "legacy-" + id, name: $0.lastPathComponent, path: $0.path)] } ?? []
     }
+    /// Shared menu/sheet rule; mirrors creation's required Office/iWork formats.
+    func supportsBlank(forExtension extensionOverride: String? = nil) -> Bool {
+        let resourceExtension = (extensionOverride ?? ext).trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let required: Set<String> = ["docx", "pptx", "xlsx", "pages", "key", "numbers"]
+        return Bundle.main.url(forResource: "template", withExtension: resourceExtension) != nil
+            || !(required.contains(id) || required.contains(resourceExtension.lowercased()))
+    }
+
     var usesBlank: Bool { templates == nil && template != nil ? false : blankEnabled }
 
 
