@@ -75,7 +75,7 @@ final class ActionService {
     // MARK: - SystemActions
 
     /// 复制路径到剪贴板
-    /// 复制全部选中项的路径到剪贴板（一行一个），并写入文件 URL。
+    /// 将全部选中路径复制为一个纯文本项，每行一个；沙盒扩展无法发布 public.file-url，复制文件请用 Finder 的 Command-C，移动文件请用剪切 + 粘贴。
     /// 与扩展内的离线快链路共用 Clipboard 实现。
     func copyPath(_ target: [String]) {
         Clipboard.copyPaths(target, to: pasteboard)

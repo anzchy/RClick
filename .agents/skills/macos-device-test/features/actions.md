@@ -27,7 +27,7 @@ used.
 
 1. `ACT-01`: select `alpha.txt` and `beta with spaces.md`; right-click → Copy Path. Result: `pbpaste` prints both
    absolute paths, one per line, in selection order; save it to `$RUN_DIR/ACT-01.txt`. The pasteboard has
-   exactly one item with only the plain-text type. Finder’s Edit > Paste is disabled after Copy Path.
+   exactly one item with only the plain-text type. Finder's Edit > Paste is disabled after Copy Path.
 2. `ACT-02`: same selection plus `中文 名称.txt` → Copy File Name. Result: `pbpaste` prints the three names exactly,
    non-ASCII intact.
 3. `ACT-03`: select `alpha.txt` → Hide. Result: `ls -lO` shows `hidden`; Finder no longer lists it (unless the owner

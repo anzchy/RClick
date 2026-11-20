@@ -635,7 +635,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         sendClickEvent(event)
     }
 
-    /// 快链路：复制全部选中项的路径（每行一个），同时写入文件 URL。
+    /// 快链路：将全部选中路径复制为一个纯文本项，每行一个；沙盒扩展无法发布 public.file-url，复制文件请用 Finder 的 Command-C，移动文件请用剪切 + 粘贴。
     /// 与主程序 ActionService.copyPath 共用 Clipboard 实现，语义不会分叉。
     private func copyPathsLocally(_ itemPaths: [String]) {
         Clipboard.copyPaths(itemPaths)
