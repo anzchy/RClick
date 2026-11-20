@@ -399,6 +399,27 @@ struct NewFileMenuItem: Codable {
         let id: String
         let name: String
     }
+    struct Selection: Equatable {
+        let typeId: String
+        let templateId: String?
+    }
+
+    /// Finder preserves tags, but drops representedObject across its process boundary.
+    /// Length prefixes keep arbitrary type/template IDs unambiguous before hashing.
+    static func leafTag(typeId: String, templateId: String?) -> Int {
+        "newfile_\(typeId.utf8.count):\(typeId)_\(templateId.map { "\($0.utf8.count):\($0)" } ?? "nil")".hash
+    }
+
+    static func selection(forTag tag: Int, in items: [NewFileMenuItem]) -> Selection? {
+        let matches = items.flatMap { item -> [Selection] in
+            let ids: [String?] = item.submenuEntries?.map { Optional($0.id) } ?? [item.directTemplateId]
+            return ids.filter { leafTag(typeId: item.id, templateId: $0) == tag }
+                .map { Selection(typeId: item.id, templateId: $0) }
+        }
+        // Refuse rather than misroute in the unlikely event of an Int hash collision.
+        return matches.count == 1 ? matches.first : nil
+    }
+
     let entries: [Entry]?
     /// Shared render decision, used for flat and folded Finder menus alike.
     var submenuEntries: [Entry]? {

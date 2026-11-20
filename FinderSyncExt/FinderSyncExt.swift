@@ -568,9 +568,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         func leaf(title: String, templateId: String?) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: #selector(handleNewFileClick(_:)), keyEquivalent: "")
             item.target = self
-            var selection = ["typeId": newFile.id]
-            selection["templateId"] = templateId
-            item.representedObject = selection
+            item.tag = NewFileMenuItem.leafTag(typeId: newFile.id, templateId: templateId)
             item.isEnabled = isHostAppRunning
             return item
         }
@@ -610,10 +608,6 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
     private func hashForApp(_ app: AppMenuItem) -> Int {
         return "app_\(app.id)".hash
-    }
-
-    private func hashForNewFile(_ newFile: NewFileMenuItem) -> Int {
-        return "newfile_\(newFile.id)".hash
     }
 
     private func hashForCommonDir(_ commonDir: CommonDirMenuItem) -> Int {
@@ -700,19 +694,17 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     }
 
     @objc private func handleNewFileClick(_ sender: NSMenuItem) {
-        guard let selection = sender.representedObject as? [String: String],
-              let itemId = selection["typeId"],
-              let config = cachedMenuConfig,
-              config.newFiles.contains(where: { $0.id == itemId }) else {
+        guard let config = cachedMenuConfig,
+              let selection = NewFileMenuItem.selection(forTag: sender.tag, in: config.newFiles) else {
             logger.warning("NewFile selection unavailable")
             return
         }
         let event = ClickEventPayload(
-            itemId: itemId,
+            itemId: selection.typeId,
             itemType: .newFile,
             target: newFileTargetPaths(),
             trigger: getTriggerForMenuKind(),
-            templateId: selection["templateId"]
+            templateId: selection.templateId
         )
         sendClickEvent(event)
     }
