@@ -14,7 +14,7 @@ final class MenuService {
     private var menuVersion = 0
 
     /// 从 AppState 实时构建菜单配置
-    func buildConfig(from state: AppState, cutChangeCount: Int? = nil, cutItemCount: Int = 0) -> MenuConfigPayload {
+    func buildConfig(from state: AppState, cutChangeCount: Int? = nil, cutItemCount: Int = 0, newFilesCollapsed: Bool? = nil) -> MenuConfigPayload {
         menuVersion += 1
         return MenuConfigPayload(
             version: menuVersion,
@@ -22,16 +22,20 @@ final class MenuService {
             apps: state.apps.map { $0.toAppMenuItem() },
             // Old backups can restore builtin rows into memory after load-time repair.
             newFiles: state.newFiles.filter {
-                $0.enabled && !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.ext, hasTemplate: $0.template != nil)
-            }.map {
-                NewFileMenuItem(id: $0.id, name: $0.displayName, ext: $0.ext, icon: $0.icon)
+                $0.enabled && !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.ext, hasTemplate: !$0.userTemplates.isEmpty)
+            }.compactMap { file in
+                var entries: [NewFileMenuItem.Entry] = []
+                if file.usesBlank { entries.append(.init(id: NewFile.blankTemplateID, name: AppLocalization.localized("Blank"))) }
+                entries += file.userTemplates.filter { $0.enabled && !$0.isMissing }.map { .init(id: $0.id, name: $0.name) }
+                guard !entries.isEmpty else { return nil }
+                return NewFileMenuItem(id: file.id, name: file.displayName, ext: file.ext, icon: file.icon, entries: entries)
             },
             commonDirs: state.showCommonDirs ? state.cdirs.map {
                 CommonDirMenuItem(id: $0.id, name: $0.displayName, icon: $0.icon, url: $0.url.path)
             } : [],
             actionsCollapsed: state.foldActionsMenu,
             appsCollapsed: state.foldAppsMenu,
-            newFilesCollapsed: state.foldNewFileMenu,
+            newFilesCollapsed: newFilesCollapsed ?? state.foldNewFileMenu,
             commonDirsCollapsed: state.foldCommonDirMenu,
             iconStyle: state.appIconStyle,
             cutChangeCount: cutChangeCount,

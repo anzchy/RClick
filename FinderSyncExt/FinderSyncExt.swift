@@ -565,15 +565,28 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     }
 
     private func makeNewFileItem(_ newFile: NewFileMenuItem) -> NSMenuItem {
-        let item = NSMenuItem(title: newFile.name, action: #selector(handleNewFileClick(_:)), keyEquivalent: "")
-        item.tag = hashForNewFile(newFile)
-        item.target = self
+        func leaf(title: String, templateId: String?) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: #selector(handleNewFileClick(_:)), keyEquivalent: "")
+            item.target = self
+            var selection = ["typeId": newFile.id]
+            selection["templateId"] = templateId
+            item.representedObject = selection
+            item.isEnabled = isHostAppRunning
+            return item
+        }
+        let item: NSMenuItem
+        if let entries = newFile.submenuEntries {
+            item = NSMenuItem(title: newFile.name, action: nil, keyEquivalent: "")
+            let submenu = NSMenu(title: newFile.name)
+            submenu.autoenablesItems = false
+            for entry in entries { submenu.addItem(leaf(title: entry.name, templateId: entry.id)) }
+            item.submenu = submenu
+            item.isEnabled = isHostAppRunning
+        } else {
+            item = leaf(title: newFile.name, templateId: newFile.directTemplateId)
+        }
         item.image = iconProvider.icon(for: newFile.ext, fallbackSymbol: newFile.icon)
         item.image?.accessibilityDescription = newFile.name
-        // 新建文件需要往目标目录写入，必须由主程序执行，离线置灰
-        if !isHostAppRunning {
-            item.isEnabled = false
-        }
         return item
     }
 
@@ -687,18 +700,19 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
     }
 
     @objc private func handleNewFileClick(_ sender: NSMenuItem) {
-        guard let config = cachedMenuConfig,
-              let newFile = config.newFiles.first(where: { hashForNewFile($0) == sender.tag }) else {
-            logger.warning("NewFile not found for tag: \(sender.tag)")
+        guard let selection = sender.representedObject as? [String: String],
+              let itemId = selection["typeId"],
+              let config = cachedMenuConfig,
+              config.newFiles.contains(where: { $0.id == itemId }) else {
+            logger.warning("NewFile selection unavailable")
             return
         }
-        let itemId = newFile.id
-
         let event = ClickEventPayload(
             itemId: itemId,
             itemType: .newFile,
             target: newFileTargetPaths(),
-            trigger: getTriggerForMenuKind()
+            trigger: getTriggerForMenuKind(),
+            templateId: selection["templateId"]
         )
         sendClickEvent(event)
     }

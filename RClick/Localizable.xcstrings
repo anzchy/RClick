@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Blank": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Blank"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "空白"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "空白"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "En blanco"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Vierge"
+        }
+      }
+    }
+  },
   "The template for %@ is missing or unreadable, so no file was created.": {
     "localizations": {
       "en": {

@@ -30,7 +30,8 @@ struct NewFileDefaultsTests {
         let menu = MenuService()
         #expect(menu.buildConfig(from: state).newFiles.map(\.id) == ["custom"])
         state.newFiles[0].template = URL(fileURLWithPath: "/tmp/user.pages")
-        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == ["pages", "custom"])
+        // Missing legacy templates remain in Settings, but are not offered in Finder.
+        #expect(menu.buildConfig(from: state).newFiles.map(\.id) == ["custom"])
     }
 
 }
