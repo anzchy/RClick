@@ -18,6 +18,9 @@ final class NewFileTypeEntity {
     var isEnabled: Bool
     var sortOrder: Int
     var templatePath: String?
+    // nil marks the pre-multiple-template shape. Optional additions permit lightweight migration.
+    var blankEnabled: Bool? = nil
+    @Relationship(deleteRule: .cascade) var templates: [NewFileTemplateEntity]? = nil
     var openAppPath: String?
     var createdAt: Date
     var updatedAt: Date
@@ -43,7 +46,7 @@ final class NewFileTypeEntity {
     }
 
     /// 从 NewFile 转换
-    convenience init(from newFile: NewFile) {
+    @MainActor convenience init(from newFile: NewFile) {
         self.init(
             id: newFile.id,
             fileExtension: newFile.ext,
@@ -54,6 +57,10 @@ final class NewFileTypeEntity {
             templatePath: newFile.template?.path,
             openAppPath: newFile.openApp?.path
         )
+        blankEnabled = newFile.usesBlank
+        templates = newFile.userTemplates.enumerated().map {
+            NewFileTemplateEntity(template: $0.element, sortOrder: $0.offset)
+        }
     }
 
     // 预定义文件类型的工厂方法

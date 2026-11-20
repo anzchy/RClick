@@ -114,6 +114,7 @@ class SharedDataManager {
                 for: AppEntity.self,
                      ActionEntity.self,
                      NewFileTypeEntity.self,
+                     NewFileTemplateEntity.self,
                      CommonDirEntity.self,
                      BookmarkEntity.self,
                      DataVersion.self,

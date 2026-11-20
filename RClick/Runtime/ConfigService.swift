@@ -85,10 +85,23 @@ final class ConfigService {
                 icon: entity.icon,
                 id: entity.id
             )
+            // One-time additive migration. Adopt, never move or overwrite, the legacy file.
+            if entity.blankEnabled == nil {
+                entity.blankEnabled = entity.templatePath == nil
+                entity.templates = entity.templatePath.map { path in
+                    [NewFileTemplateEntity(template: NewFile.Template(
+                        name: URL(fileURLWithPath: path).lastPathComponent, path: path), sortOrder: 0)]
+                } ?? []
+            }
             file.template = entity.templatePath.map { URL(fileURLWithPath: $0) }
+            file.blankEnabled = entity.blankEnabled ?? true
+            file.templates = (entity.templates ?? []).sorted { $0.sortOrder < $1.sortOrder }.map(\.value)
             file.openApp = entity.openAppPath.map { URL(fileURLWithPath: $0) }
             return file
         }
+
+        do { try modelContext.save() }
+        catch { logger.error("New File template migration save failed; reason=persistence") }
 
         // CommonDirs（含旧图标自动修复）
         let commonDirDescriptor = FetchDescriptor<CommonDirEntity>(sortBy: [SortDescriptor(\.sortOrder)])
