@@ -1,6 +1,74 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "Export Complete": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Export Complete"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "导出完成"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "書き出し完了"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Exportación completa"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Exportation terminée"
+        }
+      }
+    }
+  },
+  "%lld templates not included": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld templates not included"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld 个模板未包含在内"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld 個のテンプレートは含まれていません"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld plantillas no incluidas"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld modèles non inclus"
+        }
+      }
+    }
+  },
   "Blank": {
     "localizations": {
       "en": {

@@ -21,6 +21,12 @@ struct SettingsBackup: Codable {
     var newFiles: [FileTemplate]
     var commonDirs: [CommonFolder]
     var preferences: Preferences
+    var omittedTemplateCount: Int {
+        newFiles.reduce(0) { $0 + ($1.templates?.count ?? ($1.templatePath == nil ? 0 : 1)) }
+    }
+    var templateOmissionNotice: String {
+        String(format: AppLocalization.localized("%lld templates not included"), omittedTemplateCount)
+    }
 
     struct App: Codable {
         var id: String
@@ -51,6 +57,8 @@ struct SettingsBackup: Codable {
         var icon: String
         var openAppPath: String?
         var templatePath: String?
+        var blankEnabled: Bool? = nil
+        var templates: [NewFile.Template]? = nil
     }
 
     struct CommonFolder: Codable {
@@ -135,7 +143,13 @@ extension SettingsBackup.FileTemplate {
         idx = file.idx
         icon = file.icon
         openAppPath = file.openApp?.path
-        templatePath = file.template?.path
+        templatePath = nil
+        blankEnabled = file.usesBlank
+        templates = file.userTemplates.map { entry in
+            var metadata = entry
+            metadata.path = nil
+            return metadata
+        }
     }
 }
 
@@ -177,6 +191,15 @@ extension SettingsBackup.FileTemplate {
         var file = NewFile(ext: ext, name: name, enabled: enabled, idx: idx, icon: icon, id: id)
         if let templatePath {
             file.template = URL(fileURLWithPath: templatePath)
+        }
+        if let templates {
+            file.template = nil
+            file.templates = templates.map { entry in
+                var metadata = entry
+                metadata.path = nil
+                return metadata
+            }
+            file.blankEnabled = blankEnabled ?? true
         }
         if let openAppPath, FileManager.default.fileExists(atPath: openAppPath) {
             file.openApp = URL(fileURLWithPath: openAppPath)
