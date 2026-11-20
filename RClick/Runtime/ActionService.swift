@@ -352,12 +352,12 @@ final class ActionService {
         defer { lease.end() }
         let operations = fileOperations
         let alreadyHere = await executor.run {
-            record.paths.allSatisfy { path in
+            record.paths.filter { path in
                 let parent = URL(fileURLWithPath: path).deletingLastPathComponent().resolvingSymlinksInPath()
                 return (try? operations.sameItem(parent, destination)) == true
             }
         }
-        if alreadyHere {
+        if alreadyHere.count == record.paths.count {
             // Pure no-op: do not consume a pending recovery notice or touch its
             // journal, clipboard generation, pending record or menu counters.
             publishConfig = false
@@ -381,12 +381,13 @@ final class ActionService {
         defer { terminationBoundary.unprotectMutation() }
         let result = await executor.run { () -> FileActionResult in
             var result = FileActionResult()
+            result.unchanged = alreadyHere
             let expectedDestination: FileIdentity
             do {
                 if let refusal = try operations.destinationRefusal(destination) { throw refusal }
                 expectedDestination = try operations.fileIdentity(of: destination)
             } catch {
-                result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
+                result.failures = record.paths.filter { !alreadyHere.contains($0) }.map { FileActionFailure(path: $0, error: error) }
                 return result
             }
             var journal: MoveJournal
@@ -406,7 +407,7 @@ final class ActionService {
                 journal = MoveJournal(previous: previous, inProgress: true)
                 journal.deferred = deferred.isEmpty ? nil : deferred
             } catch {
-                result.failures = record.paths.map { FileActionFailure(path: $0, error: error) }
+                result.failures = record.paths.filter { !alreadyHere.contains($0) }.map { FileActionFailure(path: $0, error: error) }
                 return result
             }
             var seen: Set<URL> = []
@@ -422,6 +423,7 @@ final class ActionService {
                 }
             }
             for (path, source, identity) in selection {
+                if result.unchanged.contains(path) { continue }
                 do {
                     if try operations.sameItem(source.deletingLastPathComponent(), destination) {
                         result.unchanged.append(path)
@@ -458,7 +460,8 @@ final class ActionService {
                                 // The rename happened. Never mark that item pending again.
                                 // Preserve every unattempted item and stop the batch.
                                 for remaining in selection.map(\.0) where !result.completed.contains(remaining)
-                                    && !result.failures.contains(where: { $0.path == remaining }) {
+                                    && !result.failures.contains(where: { $0.path == remaining })
+                                    && !result.unchanged.contains(remaining) {
                                     result.failures.append(FileActionFailure(path: remaining, error: error))
                                 }
                                 result.journalNeedsRecovery = true
@@ -478,7 +481,8 @@ final class ActionService {
                         do { try store.persist(journal) }
                         catch {
                             for remaining in selection.map(\.0) where !result.completed.contains(remaining)
-                                && !result.failures.contains(where: { $0.path == remaining }) {
+                                && !result.failures.contains(where: { $0.path == remaining })
+                                    && !result.unchanged.contains(remaining) {
                                 result.failures.append(FileActionFailure(path: remaining, error: error))
                             }
                             result.journalNeedsRecovery = true
