@@ -183,6 +183,16 @@ struct TemplateStoreTests {
         let link = store.baseURL.appendingPathComponent("escape")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: dir)
         #expect(!store.owns(link.appendingPathComponent("source.txt")))
+        // Links to in-store files/packages must not gain legacy ownership either.
+        let package = store.baseURL.appendingPathComponent("Legacy.pages")
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        for (name, target) in [("file-link", legacy), ("package-link", package), ("snapshot-link", victimURL)] {
+            let alias = store.baseURL.appendingPathComponent(name)
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: target)
+            #expect(!store.owns(alias))
+            try store.remove(NewFile.Template(name: "Link", path: alias.path))
+            #expect(FileManager.default.fileExists(atPath: target.path))
+        }
         try store.remove(victim)
         #expect(!FileManager.default.fileExists(atPath: victimURL.path))
         #expect(try Data(contentsOf: source) == Data("owned bytes".utf8))
