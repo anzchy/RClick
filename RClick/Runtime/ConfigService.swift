@@ -66,14 +66,17 @@ final class ConfigService {
         // Idempotent load-time repair, like the common-directory icon repair below.
         // No schema change: remove only unsupported builtin rows, never user templates.
         let storedNewFiles = (try? modelContext.fetch(newFileDescriptor)) ?? []
-        let unsupportedIDs: Set<String> = ["pages", "key", "numbers"]
-        let retired = storedNewFiles.filter { unsupportedIDs.contains($0.id) && $0.templatePath == nil }
+        let retired = storedNewFiles.filter {
+            NewFile.isRetiredBuiltin(id: $0.id, ext: $0.fileExtension, hasTemplate: $0.templatePath != nil)
+        }
         for entity in retired { modelContext.delete(entity) }
         if !retired.isEmpty {
             do { try modelContext.save() }
             catch { logger.error("New File migration save failed; reason=persistence") }
         }
-        data.newFiles = storedNewFiles.filter { !unsupportedIDs.contains($0.id) || $0.templatePath != nil }.map { entity in
+        data.newFiles = storedNewFiles.filter {
+            !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.fileExtension, hasTemplate: $0.templatePath != nil)
+        }.map { entity in
             var file = NewFile(
                 ext: entity.fileExtension,
                 name: entity.name,

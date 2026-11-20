@@ -22,7 +22,7 @@ final class MenuService {
             apps: state.apps.map { $0.toAppMenuItem() },
             // Old backups can restore builtin rows into memory after load-time repair.
             newFiles: state.newFiles.filter {
-                $0.enabled && (!["pages", "key", "numbers"].contains($0.id) || $0.template != nil)
+                $0.enabled && !NewFile.isRetiredBuiltin(id: $0.id, ext: $0.ext, hasTemplate: $0.template != nil)
             }.map {
                 NewFileMenuItem(id: $0.id, name: $0.displayName, ext: $0.ext, icon: $0.icon)
             },

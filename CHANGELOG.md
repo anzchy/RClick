@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Preserve empty-file creation for custom text/code types while requiring valid Office/iWork templates
-- New File uses valid DOCX/PPTX templates and refuses missing templates; unsupported built-in Pages, Keynote and Numbers entries are removed unless they have a user template
+- New File uses valid DOCX/PPTX templates and refuses missing templates; unchanged built-in Pages, Keynote and Numbers entries are removed unless they have a user template; edited extensions are preserved
 - Copy Path is text-only and no longer attempts the file-URL write that caused a sandbox error in the Finder extension; absence of that log message awaits a real-device check
 - Record move and recovery outcome kinds with enum reasons and item counts, without file names, paths or identities
 - Preserve pending Cut, clipboard and Undo journal when Paste targets the same folder; mixed batches retain unchanged items alongside failures
