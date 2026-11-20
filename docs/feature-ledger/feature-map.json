@@ -18,7 +18,7 @@
       "tests": ["RClickTests/ClipboardTests.swift::copyPaths", "RClickTests/ClipboardTests.swift::emptySelection", "RClickTests/ActionServiceTests.swift::copyPathAndFileName"],
       "specs": [],
       "issues": [25, 28],
-      "prs": [27],
+      "prs": [27, 34, 46],
       "changelog": ["Copy Path"]
     },
     {
@@ -32,7 +32,7 @@
       "tests": ["RClickTests/ClipboardTests.swift::copyFileNames", "RClickTests/ActionServiceTests.swift::copyPathAndFileName", "RClickTests/ActionBackfillTests.swift::freshStoreSeedsCopyFileName"],
       "specs": [],
       "issues": [28],
-      "prs": [27],
+      "prs": [27, 34],
       "changelog": ["Copy File Name"]
     },
     {
@@ -43,9 +43,9 @@
       "reachedBy": ["Finder context menu: action id delete-direct; held Option while the menu opens titles it '(skip confirmation)'"],
       "default": "on (Shared/RCBase.swift RCAction.deleteDirect enabled: true)",
       "paths": ["RClick/Runtime/ActionService.swift", "RClick/Runtime/DeleteConfirmation.swift", "RClick/Runtime/ActionExecutor.swift", "RClick/Runtime/AccessLease.swift", "RClick/Runtime/FileOperations.swift", "RClick/Shared/Utils.swift", "RClick/Shared/Constants.swift"],
-      "tests": ["RClickTests/ActionServiceTests.swift::delete", "RClickTests/ActionServiceTests.swift::optionClickSkipsConfirmation", "RClickTests/ActionServiceTests.swift::authorizationIsRequestedBeforeConfirmation", "RClickTests/ActionServiceTests.swift::confirmationOnlySeesAuthorizedPaths", "RClickTests/ActionServiceTests.swift::injectedRemoveFailure", "RClickTests/ActionServiceTests.swift::revokingTheGrant", "RClickTests/FileOperationsTests.swift::removeDeletesTheItem"],
+      "tests": ["RClickTests/ActionServiceTests.swift::delete", "RClickTests/ActionServiceTests.swift::optionClickSkipsConfirmation", "RClickTests/ActionServiceTests.swift::authorizationIsRequestedBeforeConfirmation", "RClickTests/ActionServiceTests.swift::confirmationOnlySeesAuthorizedPaths", "RClickTests/ActionServiceTests.swift::injectedRemoveFailure", "RClickTests/ActionServiceTests.swift::revokingTheGrant", "RClickTests/FileOperationsTests.swift::removeDeletesTheItem", "RClickTests/ProtectedFolderTests.swift"],
       "specs": ["specs/bug-direct-delete-option-state.md"],
-      "issues": [5, 6, 13],
+      "issues": [5, 6, 13, 39],
       "prs": [27, 29],
       "changelog": ["Direct Delete", "Delete Direct"]
     },
@@ -57,10 +57,10 @@
       "reachedBy": ["Finder context menu: action id hide, only after it is enabled in Settings > Actions"],
       "default": "off (Shared/RCBase.swift RCAction.hideFileDir enabled: false)",
       "paths": ["RClick/Runtime/ActionService.swift", "RClick/Shared/Utils.swift", "RClick/Shared/Constants.swift"],
-      "tests": [],
+      "tests": ["RClickTests/ActionServiceTests.swift::hideItems", "RClickTests/ActionServiceTests.swift::hideContents", "RClickTests/ProtectedFolderTests.swift"],
       "specs": [],
-      "issues": [5],
-      "prs": [],
+      "issues": [5, 39],
+      "prs": [29],
       "changelog": ["Hide"]
     },
     {
@@ -71,10 +71,10 @@
       "reachedBy": ["Finder context menu: action id unhide, only after it is enabled in Settings > Actions"],
       "default": "off (Shared/RCBase.swift RCAction.unhideFileDir enabled: false)",
       "paths": ["RClick/Runtime/ActionService.swift"],
-      "tests": [],
+      "tests": ["RClickTests/ActionServiceTests.swift::unhide"],
       "specs": [],
-      "issues": [],
-      "prs": [],
+      "issues": [39],
+      "prs": [29],
       "changelog": ["Unhide"]
     },
     {
@@ -85,11 +85,39 @@
       "reachedBy": ["Finder context menu: action id airdrop, only after it is enabled in Settings > Actions"],
       "default": "off (Shared/RCBase.swift RCAction.airdrop enabled: false)",
       "paths": ["RClick/Runtime/ActionService.swift", "RClick/Shared/Utils.swift"],
-      "tests": [],
+      "tests": ["RClickTests/ActionServiceTests.swift::airDrop", "RClickTests/ProtectedFolderTests.swift"],
       "specs": [],
-      "issues": [5],
-      "prs": [],
+      "issues": [5, 39],
+      "prs": [29],
       "changelog": ["AirDrop"]
+    },
+    {
+      "id": "cut",
+      "name": "Cut",
+      "area": "Finder menu: Actions",
+      "process": ["app", "ipc", "extension", "shared"],
+      "reachedBy": ["Finder context menu on selected items only (never the window background, sidebar or toolbar): action id cut, titled 'Cut', only after Settings > Actions > 'Cut & Paste' is enabled; inline, or under 'Actions' when foldActionsMenu is on"],
+      "default": "off (Shared/RCBase.swift RCAction.cut enabled: false; RClick/Model/ActionEntity.swift cut isEnabled: false)",
+      "paths": ["RClick/Runtime/ActionService.swift", "Shared/PendingCut.swift", "Shared/RCBase.swift", "RClick/Model/ActionEntity.swift", "RClick/Runtime/MenuService.swift", "FinderSyncExt/FinderSyncExt.swift", "RClick/Shared/Utils.swift", "RClick/Shared/Constants.swift"],
+      "tests": ["RClickTests/CutActionServiceTests.swift", "RClickTests/CutIPCIntegrationTests.swift", "RClickTests/PendingCutTests.swift", "RClickTests/ActionBackfillTests.swift::cutBackfills", "RClickTests/MenuCompatibilityTests.swift::pendingCut"],
+      "specs": ["specs/research-cut-paste-undo-best-practices.md"],
+      "issues": [4, 8, 12, 42],
+      "prs": [36],
+      "changelog": ["Cut action", "pending Cut"]
+    },
+    {
+      "id": "paste-move",
+      "name": "Paste (move here)",
+      "area": "Finder menu: Actions",
+      "process": ["app", "ipc", "extension", "shared"],
+      "reachedBy": ["Finder context menu on the window background (destination: the folder shown) or on exactly one selected item, only while RClick's own Cut is still the current clipboard: action id paste-move, titled 'Paste (move here)', behind the same Settings > Actions > 'Cut & Paste' toggle as Cut"],
+      "default": "off (gated by the cut action: Shared/RCBase.swift RCAction.entityID maps paste-move to cut, whose default is enabled: false)",
+      "paths": ["RClick/Runtime/ActionService.swift", "RClick/Runtime/PasteMoveEngine.swift", "RClick/Runtime/UndoJournal.swift", "RClick/Runtime/MoveLogEvent.swift", "RClick/Runtime/MoveTermination.swift", "RClick/Runtime/FileOperations.swift", "Shared/MoveName.swift", "Shared/PendingCut.swift", "RClick/RClickApp.swift", "FinderSyncExt/FinderSyncExt.swift"],
+      "tests": ["RClickTests/PasteActionServiceTests.swift", "RClickTests/PasteFixRoundTests.swift", "RClickTests/PasteNoOpAndLoggingTests.swift", "RClickTests/PasteNoOpJournalFailureTests.swift", "RClickTests/PasteLocalizationTests.swift", "RClickTests/CloudTrashDestinationTests.swift", "RClickTests/MoveNameTests.swift", "RClickTests/PendingCutTests.swift::pasteTargets"],
+      "specs": ["specs/research-cut-paste-undo-best-practices.md"],
+      "issues": [4, 9, 10, 11, 12, 48, 53],
+      "prs": [47],
+      "changelog": ["Paste"]
     },
     {
       "id": "open-with",
@@ -125,13 +153,27 @@
       "area": "Finder menu: New File",
       "process": ["app", "ipc", "extension"],
       "reachedBy": ["Finder context menu on items or the window background: 'New File' submenu (foldNewFileMenu on by default), one item per enabled file type"],
-      "default": "on; TXT, Markdown, DOCX, PPTX, XLSX, Pages, Keynote, Numbers enabled, JSON disabled (Shared/RCBase.swift NewFile.*)",
-      "paths": ["RClick/Runtime/ActionService.swift", "RClick/Resources/template.xlsx", "Shared/RCBase.swift", "Shared/FileTypeIconProvider.swift", "FinderSyncExt/FinderSyncExt.swift"],
-      "tests": ["RClickTests/ActionServiceTests.swift::fileTemplateSurvivesSaveAndReload", "RClickTests/SettingsBackupTests.swift::missingTemplateFallsBack"],
+      "default": "on; TXT, Markdown, DOCX, PPTX, XLSX enabled, JSON disabled (Shared/RCBase.swift NewFile.all; RClick/Model/NewFileTypeEntity.swift createDefaultFileTypes); unchanged built-in Pages, Keynote and Numbers rows without a user template are removed (NewFile.isRetiredBuiltin)",
+      "paths": ["RClick/Runtime/ActionService.swift", "RClick/Runtime/ConfigService.swift", "RClick/Runtime/MenuService.swift", "RClick/Model/NewFileTypeEntity.swift", "Shared/RCBase.swift", "Shared/FileTypeIconProvider.swift", "FinderSyncExt/FinderSyncExt.swift"],
+      "tests": ["RClickTests/NewFileCreationTests.swift", "RClickTests/NewFileDefaultsTests.swift", "RClickTests/NewFileLegacyStoreTests.swift", "RClickTests/NewFileMigrationTests.swift", "RClickTests/ActionServiceTests.swift::newFilePreserves", "RClickTests/ActionServiceTests.swift::fileTemplateSurvivesSaveAndReload", "RClickTests/SettingsBackupTests.swift::missingTemplateFallsBack"],
       "specs": [],
-      "issues": [24, 25],
-      "prs": [],
+      "issues": [24, 25, 49, 51, 53],
+      "prs": [29, 34, 50],
       "changelog": ["New File", "new-file"]
+    },
+    {
+      "id": "new-file-office-templates",
+      "name": "New File: bundled DOCX, PPTX and XLSX templates",
+      "area": "Finder menu: New File",
+      "process": ["app"],
+      "reachedBy": ["Finder context menu > New File > DOCX, PPTX or XLSX: the created file is a copy of the bundled template unless the type has a user template"],
+      "default": "on (DOCX, PPTX and XLSX are enabled built-in types; RClick/Resources/template.docx, template.pptx, template.xlsx)",
+      "paths": ["RClick/Resources/template.docx", "RClick/Resources/template.pptx", "RClick/Resources/template.xlsx", "RClick/Runtime/ActionService.swift"],
+      "tests": ["RClickTests/OfficeTemplateTests.swift", "RClickTests/NewFileCreationTests.swift::office", "RClickTests/NewFileCreationTests.swift::missingRequiredTemplate", "RClickTests/NewFileCreationTests.swift::unavailableOfficeTemplates"],
+      "specs": [],
+      "issues": [24],
+      "prs": [50],
+      "changelog": ["DOCX"]
     },
     {
       "id": "new-file-auto-rename",
@@ -155,10 +197,10 @@
       "reachedBy": ["Finder context menu: 'Common Dirs' submenu (foldCommonDirMenu on by default), only after Settings > Common Dir > Enable common folders", "Settings > Common Dir: enable, collapse, Add Folder, remove"],
       "default": "off (RClick/AppState.swift showCommonDirs = false)",
       "paths": ["RClick/Runtime/ActionService.swift", "RClick/Settings/CommonDirsSettingTabView.swift", "RClick/Model/CommonDirEntity.swift", "Shared/RCBase.swift"],
-      "tests": [],
+      "tests": ["RClickTests/ActionServiceTests.swift::commonDirectory"],
       "specs": [],
       "issues": [],
-      "prs": [],
+      "prs": [29],
       "changelog": ["common folder"]
     },
     {
@@ -199,7 +241,7 @@
       "paths": ["RClick/AppState.swift", "RClick/Runtime/MenuService.swift", "Shared/IconCache.swift", "Shared/FileTypeIconProvider.swift", "Shared/AppPresets.swift", "FinderSyncExt/FinderSyncExt.swift"],
       "tests": ["RClickTests/AppStateDefaultsMigrationTests.swift", "RClickTests/AppPresetsTests.swift::symbolsReuseImages"],
       "specs": [],
-      "issues": [],
+      "issues": [52],
       "prs": [],
       "changelog": ["collapse", "icon style"]
     },
@@ -213,7 +255,7 @@
       "paths": ["FinderSyncExt/FinderSyncExt.swift", "Shared/PeerActivity.swift", "Shared/HintClickLaunch.swift", "Shared/Messager.swift"],
       "tests": ["RClickTests/PeerActivityTests.swift"],
       "specs": [],
-      "issues": [],
+      "issues": [41, 53],
       "prs": [],
       "changelog": ["heartbeat", "hint", "offline"]
     },
@@ -309,10 +351,10 @@
       "reachedBy": ["Settings > New File: Enabled toggles, Add File Type, Edit (name, extension, template, icon, default open app), Delete, drag to reorder, Restore Defaults, Collapse new file menu"],
       "default": "on",
       "paths": ["RClick/Settings/NewFileSettingsTabView.swift", "RClick/Settings/EditFileTypeSheetView.swift", "RClick/Model/NewFileTypeEntity.swift"],
-      "tests": ["RClickTests/ActionServiceTests.swift::fileTemplateSurvivesSaveAndReload", "RClickTests/SettingsBackupTests.swift::missingTemplateFallsBack"],
+      "tests": ["RClickTests/ActionServiceTests.swift::fileTemplateSurvivesSaveAndReload", "RClickTests/SettingsBackupTests.swift::missingTemplateFallsBack", "RClickTests/NewFileDefaultsTests.swift"],
       "specs": [],
-      "issues": [24],
-      "prs": [],
+      "issues": [24, 49, 51],
+      "prs": [50],
       "changelog": ["file type"]
     },
     {
@@ -353,7 +395,7 @@
       "paths": ["RClick/Runtime/SettingsBackup.swift", "RClick/Settings/GeneralSettingsTabView.swift"],
       "tests": ["RClickTests/SettingsBackupTests.swift"],
       "specs": [],
-      "issues": [],
+      "issues": [52],
       "prs": [],
       "changelog": ["backup"]
     },
@@ -421,10 +463,10 @@
       "reachedBy": ["automatic: follows the system language in the Settings window, the menu bar item and the Finder menu"],
       "default": "on",
       "paths": ["RClick/Localizable.xcstrings", "FinderSyncExt/Localizable.xcstrings", "Shared/AppLocalization.swift", "scripts/check-localization.py"],
-      "tests": [],
+      "tests": ["RClickTests/NewFileLocalizationTests.swift", "RClickTests/PasteLocalizationTests.swift"],
       "specs": [],
       "issues": [25],
-      "prs": [],
+      "prs": [34],
       "changelog": ["localization"]
     },
     {
@@ -432,13 +474,13 @@
       "name": "Two-process IPC (signed click, ack, menu config, heartbeat)",
       "area": "Infrastructure",
       "process": ["ipc", "shared"],
-      "reachedBy": ["none (every app-side menu action travels on it)"],
+      "reachedBy": ["none (every app-side menu action travels on it)", "the menu bar item shows a notice after unverifiable Finder messages were rejected"],
       "default": "on",
-      "paths": ["Shared/Messager.swift", "Shared/MessageSecurity.swift", "Shared/PeerActivity.swift"],
-      "tests": ["RClickTests/MessagerIsolationTests.swift", "RClickTests/PeerActivityTests.swift", "RClickTests/LaunchSideEffectsTests.swift::terminationSendsQuit"],
+      "paths": ["Shared/Messager.swift", "Shared/MessageSecurity.swift", "Shared/IPCKeyProvider.swift", "Shared/PeerActivity.swift", "RClick/MenuBarView.swift"],
+      "tests": ["RClickTests/IPCAuthenticationTests.swift", "RClickTests/IPCKeyProviderTests.swift", "RClickTests/MessagerIsolationTests.swift", "RClickTests/PeerActivityTests.swift", "RClickTests/LaunchSideEffectsTests.swift::terminationSendsQuit"],
       "specs": [],
-      "issues": [6, 18, 22],
-      "prs": [20, 23],
+      "issues": [6, 18, 22, 40, 41, 43],
+      "prs": [20, 23, 35, 44],
       "changelog": ["communication", "heartbeat"]
     },
     {
@@ -449,7 +491,7 @@
       "reachedBy": ["none"],
       "default": "on",
       "paths": ["RClick/Model", "RClick/Runtime/ConfigService.swift", "RClick/Shared/DataMigrationManager.swift", "RClick/AppState.swift", "RClick/RClick.entitlements", "FinderSyncExt/FinderSyncExt.entitlements"],
-      "tests": ["RClickTests/SharedModelContainerTests.swift", "RClickTests/ConfigServiceSaveTests.swift", "RClickTests/AppStateDefaultsMigrationTests.swift", "RClickTests/ActionBackfillTests.swift", "RClickTests/AppGroupEntitlementsTests.swift"],
+      "tests": ["RClickTests/SharedModelContainerTests.swift", "RClickTests/ConfigServiceSaveTests.swift", "RClickTests/AppStateDefaultsMigrationTests.swift", "RClickTests/ActionBackfillTests.swift", "RClickTests/AppGroupEntitlementsTests.swift", "RClickTests/NewFileLegacyStoreTests.swift", "RClickTests/NewFileMigrationTests.swift"],
       "specs": [],
       "issues": [14, 22],
       "prs": [19, 23],
@@ -474,7 +516,7 @@
       "name": "Action execution layer (serial executor, file operations, access lease)",
       "area": "Infrastructure",
       "process": ["app"],
-      "reachedBy": ["none (Delete Direct runs on it; Cut / Paste / Undo, #4, will)"],
+      "reachedBy": ["none (Delete Direct and Paste run on it, Cut uses the access lease; Undo, #11, is not built)"],
       "default": "on",
       "paths": ["RClick/Runtime/ActionExecutor.swift", "RClick/Runtime/FileOperations.swift", "RClick/Runtime/AccessLease.swift", "RClick/Runtime/ActionStateProviding.swift"],
       "tests": ["RClickTests/ActionExecutorTests.swift", "RClickTests/FileOperationsTests.swift", "RClickTests/FaultInjectingFileOperationsTests.swift", "RClickTests/BookmarkAccessLeaserTests.swift"],
@@ -482,6 +524,20 @@
       "issues": [13],
       "prs": [27],
       "changelog": []
+    },
+    {
+      "id": "warning-window",
+      "name": "Shared warning window (Cut, Paste, New File)",
+      "area": "Infrastructure",
+      "process": ["app"],
+      "reachedBy": ["automatic: a Cut refusal, a Paste refusal or failure, or a missing New File template opens one window titled with the app name, also while the menu bar icon is hidden"],
+      "default": "on",
+      "paths": ["RClick/Settings/CutWarningView.swift", "RClick/RClickApp.swift"],
+      "tests": [],
+      "specs": [],
+      "issues": [42],
+      "prs": [36, 50],
+      "changelog": ["warning window"]
     }
   ]
 }
