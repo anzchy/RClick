@@ -203,4 +203,31 @@ struct NewFileCreationTests {
         #expect(warnings.count == 3)
     }
 
+    @Test func emptyStoredPathNeverCopiesTheWorkingDirectory() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("cwd")
+        let output = dir.appendingPathComponent("output")
+        for folder in [source, output] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        try Data("canary".utf8).write(to: source.appendingPathComponent("canary"))
+        let state = State()
+        var file = NewFile.txt
+        file.blankEnabled = false
+        file.templates = [.init(id: "empty", name: "Missing", path: "")]
+        state.newFiles = [file]
+        var warnings: [String] = []
+        var revealed: [URL] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(), revealNewFile: { revealed.append($0) })
+        // Keep the pre-fix directory-copy behavior confined to tiny disposable input.
+        // This actor-isolated create path never awaits a permission prompt.
+        let previous = FileManager.default.currentDirectoryPath
+        try #require(FileManager.default.changeCurrentDirectoryPath(source.path))
+        defer { _ = FileManager.default.changeCurrentDirectoryPath(previous) }
+        await service.createFile(rid: "txt", target: [output.path], templateId: "empty", templateWarning: { warnings.append($0) })
+        #expect(warnings.count == 1)
+        #expect(revealed.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: output.path).isEmpty)
+        #expect(try Data(contentsOf: source.appendingPathComponent("canary")) == Data("canary".utf8))
+    }
+
 }

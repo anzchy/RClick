@@ -1055,7 +1055,7 @@ final class ActionService {
         let configuredSource: URL?
         if selectedID == NewFile.blankTemplateID, rcitem.usesBlank {
             configuredSource = nil
-        } else if let selectedID, let entry = users.first(where: { $0.id == selectedID }), let path = entry.path {
+        } else if let selectedID, let entry = users.first(where: { $0.id == selectedID }), !entry.isMissing, let path = entry.path {
             configuredSource = URL(fileURLWithPath: path)
         } else {
             warnTemplateUnavailable()
