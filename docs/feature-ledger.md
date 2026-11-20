@@ -277,8 +277,11 @@ delete its line in the same change.
   - after a full success the clipboard is cleared; after a partial failure the clipboard and the pending cut keep
     only the items that did not move (`:546-563`);
   - before each rename it writes the intent to a journal, `paste-journal.json` in the App Group
-    (`RClick/Runtime/UndoJournal.swift:61-66`); entries are kept for 24 hours and an unreadable journal is set aside
-    (`:76`), so it cannot block later Pastes. Nothing reads the journal back to the user: Undo is not built (#11);
+    (`RClick/Runtime/UndoJournal.swift:61-66`); entries are kept for 24 hours. An unreadable journal is set aside
+    when it can be renamed (`:74-80`); otherwise `load` throws and Paste moves nothing and lists the items with "The
+    move journal could not be read or quarantined" (`RClick/Runtime/ActionService.swift:432`, `:446-448`, `:568`,
+    `:646`). A journal that cannot be saved stops the move and reports the items left (`:514-526`, `:647`). Nothing
+    reads the journal back to the user: Undo is not built (#11);
   - a Quit during a Paste waits for it to finish, with a deadline (`RClick/RClickApp.swift:244-252`,
     `ActionService.deferTermination`);
   - its log lines hold counts and reasons only (`RClick/Runtime/MoveLogEvent.swift`).
