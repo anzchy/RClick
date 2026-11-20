@@ -400,6 +400,12 @@ struct NewFileMenuItem: Codable {
         let name: String
     }
     let entries: [Entry]?
+    /// Shared render decision, used for flat and folded Finder menus alike.
+    var submenuEntries: [Entry]? {
+        guard let entries, entries.count > 1 else { return nil }
+        return entries
+    }
+    var directTemplateId: String? { entries?.first?.id }
     let id: String
     let name: String
     let ext: String
