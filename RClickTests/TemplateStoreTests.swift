@@ -88,4 +88,24 @@ struct TemplateStoreTests {
         #expect(try Data(contentsOf: source) == Data("original".utf8))
     }
 
+    @Test func importedLegacyBackupTemplateCanBeReplacedInTheSheet() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("old.txt")
+        try Data("old".utf8).write(to: source)
+        let backup = SettingsBackup.FileTemplate(id: "custom", ext: ".txt", name: "Custom", enabled: true,
+            idx: 0, icon: "doc", openAppPath: nil, templatePath: source.path)
+        let file = backup.toModel()
+        var draft = TemplateDraft(file: file)
+        let id = try #require(draft.entries.first?.id)
+        try Data("replacement".utf8).write(to: source)
+        try draft.replace(id: id, source: source)
+        let store = TemplateStore(baseURL: dir.appendingPathComponent("Templates"))
+        let saved = try? draft.save(store: store, replacing: file.userTemplates)
+        #expect(saved?.first?.id == id)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: #require(saved?.first?.path))) == Data("replacement".utf8))
+        #expect(try Data(contentsOf: source) == Data("replacement".utf8))
+    }
+
 }
