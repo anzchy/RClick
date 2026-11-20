@@ -240,6 +240,23 @@ struct NewFile: @MainActor RCBase {
     var id: String
     var openApp: URL?
     var template: URL?
+    var blankEnabled = true
+    var templates: [Template]? = nil
+
+    struct Template: Codable, Identifiable, Hashable {
+        var id: String = UUID().uuidString
+        var name: String
+        var enabled = true
+        var path: String?
+        var isMissing: Bool { path.map { !FileManager.default.fileExists(atPath: $0) } ?? true }
+    }
+
+    /// Legacy callers retain their single-template behavior until persisted migration.
+    var userTemplates: [Template] {
+        templates ?? template.map { [Template(id: "legacy-" + id, name: $0.lastPathComponent, path: $0.path)] } ?? []
+    }
+    var usesBlank: Bool { templates == nil && template != nil ? false : blankEnabled }
+
 
     init(ext: String, name: String, enabled: Bool = true, idx: Int, icon: String = "document", id: String = UUID().uuidString) {
         self.ext = ext
