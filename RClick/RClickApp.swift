@@ -49,7 +49,7 @@ struct RClickApp: App {
             .modelContainer(SharedDataManager.sharedModelContainer)
 
         // A Cut warning must also open when the menu bar icon is hidden.
-        Window(AppLocalization.localized("Cut & Paste"), id: CutWarningView.windowID) {
+        Window(AppLocalization.localized("RClick"), id: CutWarningView.windowID) {
             CutWarningView(state: cutWarnings)
         }
         .commandsRemoved()
