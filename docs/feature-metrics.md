@@ -1,7 +1,7 @@
 <!-- GENERATED FILE. Do not edit by hand: run `node scripts/feature-ledger/gen-feature-ledger.mjs`. -->
 # RClick feature metrics
 
-Generated from commit `b33bab07e723221f9a4dfd43b917958490342ce4` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
+Generated from commit `51c7e398d371aed5f7fe3be129a702b068bb9055` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
 This is the quantitative half of the feature ledger. Every cell below is measured from the repository; nothing is typed by hand or estimated.
 The qualitative half, `docs/feature-ledger.md`, cites these cells and never restates them. Maintenance: `docs/agents/feature-ledger.md`.
 
@@ -37,22 +37,22 @@ There is no issue-count column: a feature that is off by default (Hide, Unhide, 
 
 | Feature | Name | Area | Process | Code files | Code lines | Test files | Test cases | Test lines | Last touch | Commits (90 d) | Specs | CHANGELOG |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|
-| `copy-path` | Copy Path | Finder menu: Actions | extension, shared | 3 | 888 | 2 | 4 | 62 | e7e842c 2026-11-20 | 30 | 0 | 5 |
-| `copy-file-name` | Copy File Name | Finder menu: Actions | app, ipc, shared | 3 | 963 | 3 | 3 | 39 | e7e842c 2026-11-20 | 33 | 0 | 3 |
-| `delete-direct` | Delete Direct | Finder menu: Actions | app, ipc | 7 | 849 | 2 | 13 | 205 | 7d64b98 2026-11-19 | 43 | 1 | 4 |
-| `hide` | Hide | Finder menu: Actions | app, ipc | 3 | 664 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 38 | 0 | 3 |
-| `unhide` | Unhide | Finder menu: Actions | app, ipc | 1 | 610 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 28 | 0 | 2 |
-| `airdrop` | AirDrop | Finder menu: Actions | app, ipc | 2 | 648 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 37 | 0 | 4 |
-| `open-with` | Open With (configured apps) | Finder menu: Open With | app, ipc, extension, shared | 4 | 1588 | 3 | 5 | 95 | f802109 2026-11-19 | 49 | 0 | 3 |
-| `open-in-terminal` | Open in Terminal (containing-folder rule) | Finder menu: Open With | app, shared | 3 | 1053 | 1 | 1 | 23 | 7d64b98 2026-11-19 | 30 | 0 | 1 |
-| `new-file` | New File (templates) | Finder menu: New File | app, ipc, extension | 4 | 1599 | 2 | 2 | 33 | f802109 2026-11-19 | 50 | 0 | 6 |
-| `new-file-auto-rename` | New File: select and rename after creation | Finder menu: New File | app | 2 | 657 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 30 | 0 | 2 |
-| `common-dirs` | Common Dirs | Finder menu: Common Dirs | app, ipc, extension | 4 | 1086 | 0 | 0 | 0 | 7d64b98 2026-11-19 | 32 | 0 | 3 |
-| `finder-menu` | RClick section in the Finder context menu | Finder menu: presence | extension, app, ipc | 4 | 1370 | 1 | 3 | 59 | c9dbec0 2026-11-19 | 51 | 0 | 4 |
-| `finder-toolbar-button` | RClick toolbar button in Finder | Finder menu: presence | extension | 2 | 871 | 1 | 3 | 59 | f802109 2026-11-19 | 27 | 0 | 2 |
-| `menu-layout` | Menu sections: collapse toggles and icon style | Finder menu: presence | app, extension, shared | 6 | 984 | 2 | 7 | 79 | f802109 2026-11-19 | 35 | 0 | 3 |
-| `connection-state` | Connection-state UX (offline menu, hint relaunch, no-ack alert) | Finder menu: presence | extension, ipc, shared | 4 | 1046 | 1 | 1 | 23 | c9dbec0 2026-11-19 | 42 | 0 | 5 |
-| `observed-volumes` | Observed folders and external volumes | Finder menu: presence | extension, shared | 2 | 589 | 1 | 3 | 89 | f802109 2026-11-19 | 24 | 1 | 1 |
+| `copy-path` | Copy Path | Finder menu: Actions | extension, shared | 3 | 888 | 2 | 4 | 62 | 51c7e39 2026-11-20 | 31 | 0 | 5 |
+| `copy-file-name` | Copy File Name | Finder menu: Actions | app, ipc, shared | 3 | 963 | 3 | 3 | 39 | 51c7e39 2026-11-20 | 34 | 0 | 3 |
+| `delete-direct` | Delete Direct | Finder menu: Actions | app, ipc | 7 | 849 | 2 | 13 | 205 | 51c7e39 2026-11-20 | 44 | 1 | 4 |
+| `hide` | Hide | Finder menu: Actions | app, ipc | 3 | 664 | 0 | 0 | 0 | 51c7e39 2026-11-20 | 39 | 0 | 3 |
+| `unhide` | Unhide | Finder menu: Actions | app, ipc | 1 | 610 | 0 | 0 | 0 | 51c7e39 2026-11-20 | 29 | 0 | 2 |
+| `airdrop` | AirDrop | Finder menu: Actions | app, ipc | 2 | 648 | 0 | 0 | 0 | 51c7e39 2026-11-20 | 38 | 0 | 4 |
+| `open-with` | Open With (configured apps) | Finder menu: Open With | app, ipc, extension, shared | 4 | 1588 | 3 | 5 | 95 | 51c7e39 2026-11-20 | 50 | 0 | 3 |
+| `open-in-terminal` | Open in Terminal (containing-folder rule) | Finder menu: Open With | app, shared | 3 | 1053 | 1 | 1 | 23 | 51c7e39 2026-11-20 | 31 | 0 | 1 |
+| `new-file` | New File (templates) | Finder menu: New File | app, ipc, extension | 4 | 1599 | 2 | 2 | 33 | 51c7e39 2026-11-20 | 51 | 0 | 6 |
+| `new-file-auto-rename` | New File: select and rename after creation | Finder menu: New File | app | 2 | 657 | 0 | 0 | 0 | 51c7e39 2026-11-20 | 31 | 0 | 2 |
+| `common-dirs` | Common Dirs | Finder menu: Common Dirs | app, ipc, extension | 4 | 1086 | 0 | 0 | 0 | 51c7e39 2026-11-20 | 33 | 0 | 3 |
+| `finder-menu` | RClick section in the Finder context menu | Finder menu: presence | extension, app, ipc | 4 | 1370 | 1 | 3 | 59 | 51c7e39 2026-11-20 | 52 | 0 | 4 |
+| `finder-toolbar-button` | RClick toolbar button in Finder | Finder menu: presence | extension | 2 | 871 | 1 | 3 | 59 | 51c7e39 2026-11-20 | 28 | 0 | 2 |
+| `menu-layout` | Menu sections: collapse toggles and icon style | Finder menu: presence | app, extension, shared | 6 | 984 | 2 | 7 | 79 | 51c7e39 2026-11-20 | 36 | 0 | 3 |
+| `connection-state` | Connection-state UX (offline menu, hint relaunch, no-ack alert) | Finder menu: presence | extension, ipc, shared | 4 | 1046 | 1 | 1 | 23 | 51c7e39 2026-11-20 | 43 | 0 | 5 |
+| `observed-volumes` | Observed folders and external volumes | Finder menu: presence | extension, shared | 2 | 589 | 1 | 3 | 89 | 51c7e39 2026-11-20 | 25 | 1 | 1 |
 | `settings-window` | Settings window | Settings | app | 3 | 379 | 0 | 0 | 0 | 8ebfe21 2026-11-19 | 19 | 0 | 1 |
 | `menu-bar-item` | Menu bar item | Settings | app | 3 | 661 | 0 | 0 | 0 | 8ebfe21 2026-11-19 | 30 | 0 | 0 |
 | `launch-at-login` | Launch at login | Settings | app | 2 | 479 | 0 | 0 | 0 | 8b1ebd0 2026-11-17 | 14 | 0 | 2 |
