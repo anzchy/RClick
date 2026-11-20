@@ -112,4 +112,25 @@ struct SettingsBackupTests {
         #expect(Set(actions.map(\.id)) == Set(RCAction.all.map(\.id)))
         #expect(actions.map(\.idx) == Array(0..<actions.count))
     }
+    @Test func exportOmitsSnapshotBytesAndPathsButImportKeepsEveryRowAndReportsCount() throws {
+        let state = AppState()
+        var file = NewFile.txt
+        file.blankEnabled = false
+        file.templates = [.init(id: "a", name: "Letter", enabled: false, path: "/tmp/private-snapshot"),
+            .init(id: "b", name: "Memo", path: nil)]
+        state.newFiles = [file]
+        let backup = SettingsBackup(appState: state)
+        let encoded = try JSONEncoder().encode(backup)
+        #expect(!String(decoding: encoded, as: UTF8.self).contains("private-snapshot"))
+        let decoded = try JSONDecoder().decode(SettingsBackup.self, from: encoded)
+        #expect(decoded.schemaVersion == 1)
+        #expect(decoded.omittedTemplateCount == 2)
+        #expect(decoded.templateOmissionNotice.contains("2"))
+        let restored = try #require(decoded.newFiles.first).toModel()
+        #expect(restored.userTemplates.map(\.name) == ["Letter", "Memo"])
+        #expect(restored.userTemplates.map(\.enabled) == [false, true])
+        #expect(restored.userTemplates.allSatisfy { $0.isMissing })
+        #expect(restored.usesBlank == false)
+    }
+
 }

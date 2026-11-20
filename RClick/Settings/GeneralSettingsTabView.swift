@@ -29,6 +29,9 @@ struct GeneralSettingsTabView: View {
     @State private var showDirImporter = false
     @State private var wrongFold = false
     @State private var showAlert = false
+    @State private var showBackupResult = false
+    @State private var backupResultTitle = ""
+    @State private var backupResultMessage = ""
 
     let messager = Messager.shared
 
@@ -213,6 +216,11 @@ struct GeneralSettingsTabView: View {
         } message: {
             Text(appLocalized: "Folder access permission is required to use this feature.")
         }
+        .alert(Text(AppLocalization.localized(backupResultTitle)), isPresented: $showBackupResult) {
+            Button(AppLocalization.localized("OK")) {}
+        } message: {
+            Text(backupResultMessage)
+        }
         .sheet(isPresented: $showFolderPermissionsSheet) {
             FolderPermissionsSheetView(bookmarkManager: bookmarkManager)
         }
@@ -258,9 +266,15 @@ struct GeneralSettingsTabView: View {
                     let encoder = JSONEncoder()
                     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                     encoder.dateEncodingStrategy = .iso8601
-                    let data = try encoder.encode(SettingsBackup(appState: store))
+                    let backup = SettingsBackup(appState: store)
+                    let data = try encoder.encode(backup)
                     try data.write(to: url, options: .atomic)
                     logger.info("导出设置到：\(url.path)")
+                    if backup.omittedTemplateCount > 0 {
+                        backupResultTitle = "Export Complete"
+                        backupResultMessage = backup.templateOmissionNotice
+                        showBackupResult = true
+                    }
                 } catch {
                     logger.error("export settings failed: \(error.localizedDescription)")
                     presentError(title: "Export Failed", message: error.localizedDescription)
@@ -331,13 +345,15 @@ struct GeneralSettingsTabView: View {
         backup.preferences.apply()
         store.sync()
 
-        if skippedApps > 0 {
-            let alert = NSAlert()
-            alert.messageText = AppLocalization.localized("Import Complete")
-            alert.informativeText = AppLocalization.localized("Some apps in the backup are not installed on this Mac and were skipped.")
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: AppLocalization.localized("OK"))
-            alert.runModal()
+        if skippedApps > 0 || backup.omittedTemplateCount > 0 {
+            backupResultTitle = "Import Complete"
+            var notices: [String] = []
+            if skippedApps > 0 {
+                notices.append(AppLocalization.localized("Some apps in the backup are not installed on this Mac and were skipped."))
+            }
+            if backup.omittedTemplateCount > 0 { notices.append(backup.templateOmissionNotice) }
+            backupResultMessage = notices.joined(separator: "\n")
+            showBackupResult = true
         }
     }
 
