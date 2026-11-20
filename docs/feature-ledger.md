@@ -78,7 +78,7 @@ delete its line in the same change.
    `/`, while Finder paths do not; it also `print`s every comparison. Issue #5, PR #29 (open).
 5. `ipc`: the HMAC key is a source constant (`Shared/MessageSecurity.swift:26`) and messages carry no nonce or
    timestamp, so any local process can forge or replay a `.click`. Issue #6.
-6. `copy-path`: Copy Path is text-only; the file-URL write that caused the extension’s sandbox error has been
+6. `copy-path`: Copy Path is text-only; the file-URL write that caused the extension's sandbox error has been
    removed (`Shared/Clipboard.swift`). Absence of that error on a real device is **NOT VERIFIED** pending a new
    device run. Issue [#25](https://github.com/anzchy/RClick/issues/25) records the failing file-URL flavour.
 7. `localization`: the app logs missing-localization errors for TXT, Markdown, Pages, Keynote and Numbers. Issue #25,
@@ -114,7 +114,7 @@ delete its line in the same change.
 
 ### `copy-path`
 - **What:** puts every selected item's full path on the pasteboard, one per line, in one plain-text-only
-  pasteboard item (`Shared/Clipboard.swift`; CHANGELOG [Unreleased] › Changed). Finder’s Command-C copies files;
+  pasteboard item (`Shared/Clipboard.swift`; CHANGELOG [Unreleased] › Changed). Finder's Command-C copies files;
   Copy Path does not enable Finder file paste. Embedded newlines in names are preserved, making the line-separated
   text ambiguous for those names.
 - **Status:** `shipped-on`, `partial` (findings 2 and 6).
