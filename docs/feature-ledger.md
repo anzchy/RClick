@@ -57,9 +57,10 @@ roster's private record; no claim depends on reading it. A result that only a pr
 | [Issue #12 comment](https://github.com/anzchy/RClick/issues/12#issuecomment-7041176305) | `38d356a` (main) | `38d356a` | `i-device-20261120` | Copy Path, Cut, Paste and New File rows on a Debug build, the offline menu as observed; its NOT VERIFIED rows; defects filed as #51 to #54 |
 
 PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
-menu was read through an Accessibility helper. The issue #12 comment names a Debug build. No public evidence covers
-the Settings window (except the import observed in issue #52), the menu bar item, updates, launch at login or
-localization.
+menu was read through an Accessibility helper. The issue #12 comment names a Debug build. Public evidence on the
+Settings window covers two rows only: the import observed in issue #52 (`settings-backup`) and Add File Type without
+a template in the issue #12 comment and issue #51 (`new-file-settings`). No public evidence covers the rest of the
+Settings window, the menu bar item, updates, launch at login or localization.
 
 ## Open findings
 
