@@ -4,8 +4,12 @@ import Foundation
 @MainActor
 struct TemplateStore {
     let baseURL: URL
+    private static let hostedBaseURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RClick-test-templates-\(ProcessInfo.processInfo.processIdentifier)-\(UUID().uuidString)", isDirectory: true)
+
     static var standard: TemplateStore {
-        TemplateStore(baseURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        if TestHost.isActive { return TemplateStore(baseURL: hostedBaseURL) }
+        return TemplateStore(baseURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RClick/Templates", isDirectory: true))
     }
 

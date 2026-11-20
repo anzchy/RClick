@@ -123,4 +123,13 @@ struct TemplateStoreTests {
         #expect(try Data(contentsOf: legacy) == Data("shared bytes".utf8))
     }
 
+    @Test func hostedStandardStoreNeverUsesApplicationSupport() {
+        #expect(TestHost.isActive)
+        let root = TemplateStore.standard.baseURL.standardizedFileURL.resolvingSymlinksInPath().path
+        let temp = FileManager.default.temporaryDirectory.standardizedFileURL.resolvingSymlinksInPath().path
+        #expect(root.hasPrefix(temp + "/"))
+        #expect(!root.contains("/Library/Application Support/"))
+        #expect(TemplateStore.standard.baseURL == TemplateStore.standard.baseURL)
+    }
+
 }
