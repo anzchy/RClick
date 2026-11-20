@@ -201,12 +201,33 @@ struct PasteActionServiceTests {
             try FileManager.default.moveItem(at: item, to: f.source.appendingPathComponent("saved-old.txt"))
             try Data("replacement".utf8).write(to: item)
         }
+        let beforeRecord = f.service.pendingCut
+        let beforeClipboard = f.board.changeCount
+        let beforeURLs = f.board.pasteboardItems?.map { $0.string(forType: .fileURL) }
+        let journalEncoder = JSONEncoder()
+        journalEncoder.outputFormatting = .sortedKeys
+        let beforeJournal = try f.journal.load().map { try journalEncoder.encode($0) }
+        let beforeWrites = f.journal.history.withLock { $0.count }
+        let updates = Counter()
+        let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: f.service, queue: nil) { _ in
+            updates.value.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
         await f.paste(destination)
         #expect(f.operations.renameCalls.isEmpty)
         if kind != "missing" { #expect(FileManager.default.fileExists(atPath: item.path)) }
         #expect(f.leaser.balance == 0)
-        if kind == "same-folder" { #expect(f.warnings.isEmpty) }
-        else { #expect(f.warnings.count == 1) }
+        if kind == "same-folder" {
+            #expect(f.warnings.isEmpty)
+            #expect(f.board.changeCount == beforeClipboard)
+            #expect(f.board.pasteboardItems?.map { $0.string(forType: .fileURL) } == beforeURLs)
+            #expect(f.service.pendingCut?.paths == beforeRecord?.paths)
+            #expect(f.service.pendingCut?.identities == beforeRecord?.identities)
+            #expect(f.service.pendingCut?.changeCount == beforeRecord?.changeCount)
+            #expect(try f.journal.load().map { try journalEncoder.encode($0) } == beforeJournal)
+            #expect(f.journal.history.withLock { $0.count } == beforeWrites)
+            #expect(updates.value.withLock { $0 } == 0)
+        } else { #expect(f.warnings.count == 1) }
     }
 
     @Test func successfulPastePersistsOneRestartStableUndoRecord() async throws {
