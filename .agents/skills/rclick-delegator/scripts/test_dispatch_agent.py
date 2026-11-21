@@ -1,6 +1,7 @@
 """Offline CLI dispatch contract: fake terminal transport, real reset and marker writer."""
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -93,7 +94,7 @@ elif args[:2] == ['pane', 'read']:
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
         if enters < 2: print('Where should the new conversation run?')
         else: print('>_ OpenAI Codex (v0.167.0)\\n' + repo + '\\n› Ask Codex to do anything\\nContext 0% used')
-    else: print(os.environ.get('CLAUDE_FOOTER', 'Context 0% used'))
+    else: print(os.environ.get('CLAUDE_RESET_SCREEN', 'Claude Code v2.1.310\\n\\n────────────────────\\n❯\\n────────────────────\\n' + os.environ.get('CLAUDE_FOOTER', 'Context 0% used')))
 ''')
 
     def write_exec(self, path, text):
@@ -335,6 +336,19 @@ elif args[:2] == ['pane', 'read']:
         result = self.run_dispatch(LISTENER_RESULT='event already exists', LISTENER_EXIT='2', CREATE_EVENT='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
+
+
+    def test_claude_older_zero_context_is_not_reset_completion(self):
+        result = self.run_dispatch(CLAUDE_FOOTER='Context 0% used\nEarlier transcript\nContext 14% used')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
+        self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+
+    def test_captured_claude_fresh_screen_is_accepted(self):
+        screen = (SCRIPTS / 'fixtures/claude-screens/idle-fresh.ansi').read_text()
+        result = self.run_dispatch(CLAUDE_RESET_SCREEN=screen)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 

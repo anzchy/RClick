@@ -46,11 +46,27 @@ def run(argv):
 
 
 def read_pane():
-    return run(['herdr', 'pane', 'read', args.pane, '--source', 'recent-unwrapped', '--lines', '100'])
+    screen = run(['herdr', 'pane', 'read', args.pane, '--source', 'recent-unwrapped', '--lines', '100'])
+    return re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', screen).replace('\xa0', ' ')
 
 
 def send_keys():
     run(['herdr', 'pane', 'send-keys', args.pane, 'Enter'])
+
+
+def fresh_claude(screen):
+    lines = [line.strip() for line in screen.splitlines() if line.strip()]
+    footers = [i for i, line in enumerate(lines) if re.match(r'^Context\s', line)]
+    composers = [i for i, line in enumerate(lines) if line.startswith('❯')]
+    welcomes = [i for i, line in enumerate(lines) if 'Claude Code' in line]
+    if not footers or not composers or not welcomes:
+        return False
+    footer, composer, welcome = footers[-1], composers[-1], welcomes[-1]
+    banner = [line for line in lines[welcome + 1:composer]
+              if not re.fullmatch(r'[─━]+', line) and not line.startswith('✘ Auto-update failed')]
+    return (welcome < composer < footer and len(lines) - footer <= 5 and len(banner) <= 2
+            and (lines[composer] == '❯' or lines[composer].startswith('❯ Try '))
+            and bool(re.fullmatch(r'Context\s+(?:[█░]+\s+)?0%\s*(?:used)?', lines[footer])))
 
 
 def live_status(screen):
@@ -185,7 +201,7 @@ try:
         for attempt in range(20):
             run(['sleep', '0.25'])
             screen = read_pane()
-            if re.search(r'^\s*Context\s+(?:[█░]+\s+)?0%\s*(?:used)?\s*$', screen, re.MULTILINE):
+            if fresh_claude(screen):
                 break
         else:
             raise RuntimeError('Claude reset did not confirm Context 0%\n' + screen[-4000:])
