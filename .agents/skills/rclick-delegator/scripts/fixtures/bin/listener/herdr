@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Listener identity scenarios, parameterized with data rather than generated programs."""
+import json
+import os
+import sys
+from pathlib import Path
+
+mode = os.environ['LISTENER_HERDR_MODE']
+if mode == 'forbidden':
+    print('lookup-forbidden', file=sys.stderr)
+    sys.exit(1)
+previous = []
+if mode != 'idle':
+    calls = Path(os.environ['LISTENER_CALLS'])
+    previous = calls.read_text().splitlines() if calls.exists() else []
+    with calls.open('a') as out:
+        out.write((sys.argv[-1] if mode == 'pane' else ' '.join(sys.argv[1:])) + '\n')
+if mode == 'report':
+    if previous and sys.argv[-1] != 'w1:p3':
+        sys.stderr.write('agent_not_found: name lost')
+        sys.exit(1)
+    done = len(previous) >= 2
+    if done:
+        Path(os.environ['LISTENER_REPORT']).write_text('Report-Task: pane-report\nDONE\n')
+    terminal = 'term_replaced' if os.environ['LISTENER_MISMATCH'] == 'True' and done else 'term_abc123'
+    agent = {'name': 'worker' if not previous else '', 'pane_id': 'w1:p3',
+             'terminal_id': terminal, 'agent_status': 'done' if done else 'working'}
+elif mode == 'pane':
+    if sys.argv[-1] != 'w1:p3':
+        sys.exit(1)
+    agent = {'pane_id': 'w1:p3', 'terminal_id': 'term_abc123', 'agent_status': 'done'}
+elif mode == 'resolve':
+    if sys.argv[-1] == 'unknown':
+        sys.stderr.write('agent_not_found: unknown')
+        sys.exit(1)
+    agent = {'name': 'worker', 'pane_id': 'w1:p3', 'terminal_id': 'term_abc123', 'agent_status': 'working'}
+elif mode == 'idle':
+    agent = {'name': 'gpt-auditor', 'terminal_id': 'term_abc123', 'agent_status': 'idle'}
+else:
+    raise ValueError(mode)
+print(json.dumps({'result': {'type': 'agent_info', 'agent': agent}}))
