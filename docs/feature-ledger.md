@@ -143,8 +143,14 @@ delete its line in the same change.
     - Import saves with `preserveTemplateSnapshots: true` (`RClick/Settings/GeneralSettingsTabView.swift:350`), so the
       snapshots of the entries an import replaces stay in the Templates folder (`RClick/Runtime/ConfigService.swift:193`).
     - Save writes new and replacement snapshots before the database save (`RClick/Settings/EditFileTypeSheetView.swift:247`,
-      `TemplateDraft.save`); when the database save fails it rolls back (`ConfigService.swift:190-191`) and the fresh
-      copy stays. Cleanup only looks at paths a stored entry referenced (`:161-164`), so neither is removed later.
+      `TemplateDraft.save`). When the database save fails it rolls back (`ConfigService.swift:190-191`), but
+      `AppState` keeps the updated `newFiles` (`AppState.persist` only sets `lastSaveError`), so the next successful
+      save in the same session persists the fresh copy and deletes a replaced one (`ConfigService.swift:194-196`).
+      Only a relaunch before that save leaves the fresh copy unreferenced. Cleanup only looks at paths a stored entry
+      referenced (`:161-164`), so neither an import's leftover nor such a copy is removed later.
+    - When one of several snapshot writes fails, the sheet stays open (`EditFileTypeSheetView.swift:221-223`) and the
+      copies already written are not referenced; a second Save writes them again under a fresh name
+      (`TemplateStore.write`, `RClick/Runtime/TemplateStore.swift:52-55`), so the first copies stay unreferenced.
     - A snapshot deletion that throws after the database save succeeded (`ConfigService.swift:195-197`) is reported
       through `AppState.lastSaveError` as a failed save, although the settings were saved.
     No issue filed yet.
@@ -631,8 +637,9 @@ delete its line in the same change.
   - a list of the type's templates: enable switch, name field, Replace File, remove, drag to reorder, and "Missing
     Template" under an entry whose stored file is gone (`:88-120`); Add Template opens a file picker for any item
     (`:122-142`). The picked file is read once under the picker's own access, with no bookmark kept (`:128-131`).
-  - Edits are staged in a `TemplateDraft` in memory until Save; Cancel discards them and leaves no copy
-    (`RClick/Runtime/TemplateStore.swift:99-152`, `TemplateStoreTests.cancellingDraftLeavesNoCopies`). Save writes the
+  - Edits are staged in a `TemplateDraft` in memory until Save; Cancel before any Save discards them and leaves no
+    copy (`RClick/Runtime/TemplateStore.swift:99-152`, `TemplateStoreTests.cancellingDraftLeavesNoCopies`; after a
+    failed Save see finding 16). Save writes the
     new and replacement snapshots, then persists (`EditFileTypeSheetView.swift:238-257`); a replacement keeps the
     entry's id, name and position (`TemplateStoreTests.savedDraftKeepsSnapshotsAndReplacementMetadataThenRemovesOnlyOwnedFiles`).
     A snapshot the stored entries referenced before the save and no saved entry references any more is deleted, when
