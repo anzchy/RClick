@@ -141,7 +141,17 @@ try:
         for attempt in range(10):
             run(['sleep', '0.25'])
             screen = read_pane()
-            if re.search(r'^\s*(?:[•✻✽✶✳⏺]\s*)?Working\b', screen, re.IGNORECASE | re.MULTILINE):
+            working = bool(re.search(r'^\s*(?:[•✻✽✶✳⏺]\s*)?Working\b', screen, re.IGNORECASE | re.MULTILINE))
+            if not working and args.kind == 'claude':
+                # Claude's reliable status covers spinner verbs such as Thinking.
+                # Codex metadata can be stale: it must show visible Working instead.
+                info = json.loads(run(['herdr', 'agent', 'get', args.pane]))['result']
+                record = info['agent']
+                if (info.get('type') != 'agent_info' or record.get('pane_id') != args.pane
+                        or record.get('terminal_id') != target.get('terminal_id')):
+                    raise RuntimeError('Claude working status has a changed pane/terminal identity')
+                working = record.get('agent_status') == 'working'
+            if working:
                 print('DISPATCHED ' + event)
                 sys.exit(0)
     raise RuntimeError('pane never showed Working after 3 Enter attempts; pane tail:\n' + screen[-4000:])

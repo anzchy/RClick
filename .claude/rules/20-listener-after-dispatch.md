@@ -27,7 +27,8 @@ finish before registration. Any manual dispatch must register its listener immed
 
 Claude reset uses `/clear` and requires `Context 0%`; Codex uses `reset.sh`, which handles `/new` and the
 current-worktree chooser and proves a fresh session. A NEW Codex session must actually show `Working` after
-submission. The helper checks both kinds for `Working`, allows at most three Enter attempts (ten reads each),
+submission. The helper requires visible `Working` for Codex; for Claude it also accepts herdr's `working` status with the
+matching pane/terminal identity. It allows at most three Enter attempts (ten reads each),
 and fails with the pane tail if submission never starts. A failed dispatch requests listener stop if the start
 created state; inspect any cleanup failure before another dispatch.
 
