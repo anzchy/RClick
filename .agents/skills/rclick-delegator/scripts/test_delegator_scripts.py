@@ -925,6 +925,22 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
+    def test_controller_handles_closed_stdin_and_invalid_metadata(self):
+        import io
+        from unittest.mock import patch
+        for stdin in (None, io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")):
+            with self.subTest(stdin=stdin), patch.object(sys, "stdin", stdin), \
+                    patch.object(reset_screen.subprocess, "run") as run, \
+                    patch("sys.stdout", new_callable=io.StringIO) as output:
+                run.side_effect = [subprocess.CompletedProcess([], 0, b"\xff"),
+                                   subprocess.CompletedProcess([], 0, b">_ OpenAI Codex (v0.166.0)\nContext 0% used\n")]
+                try:
+                    code = reset_screen.main(["fixture-agent", "fixture-pane", "old", "old-session", "0.1", "0.01"])
+                except (AttributeError, UnicodeDecodeError) as error:
+                    code = str(error)
+                self.assertEqual(code, 0)
+                self.assertEqual(output.getvalue(), self.SUCCESS)
+
     def test_final_full_poll_interval_accepts_context_after_deadline(self):
         now = 0.0
         def advance(seconds):
