@@ -2196,6 +2196,27 @@ class ArchiveTests(unittest.TestCase):
             self.assertNotEqual(self.command(['archive', '--event', 'live', '--state-root', str(root)]), 0)
             self.assertTrue(event.exists())
 
+    def test_archive_refuses_live_worker_before_waiting_on_its_delivery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'listeners'
+            event = root / 'busy'
+            event.mkdir(parents=True)
+            (event / 'config.json').write_text('{}')
+            (event / 'pid').write_text(str(os.getpid()))
+            flock = listen_notify.fcntl.flock
+            # Probe lock contention at the OS boundary, with no sleeps or time budgets.
+            def nonblocking(fd, operation):
+                return flock(fd, operation | listen_notify.fcntl.LOCK_NB
+                             if operation == listen_notify.fcntl.LOCK_EX else operation)
+            with (event / 'delivery.lock').open('a') as held:
+                flock(held, listen_notify.fcntl.LOCK_EX)
+                with patch.object(listen_notify.fcntl, 'flock', nonblocking), redirect_stderr(io.StringIO()) as err:
+                    code = self.command(['archive', '--event', 'busy', '--state-root', str(root)])
+                self.assertEqual(code, 2)
+                self.assertIn('event worker is still running', err.getvalue())
+                self.assertTrue(event.exists())
+                self.assertEqual(list(root.parent.glob('listeners-archive-*')), [])
+
     def test_existing_stale_report_exposes_dead_polling_worker(self):
         with tempfile.TemporaryDirectory() as tmp:
             event = Path(tmp) / 'dead'

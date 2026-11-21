@@ -1144,27 +1144,32 @@ def archive_listener(state_root, event):
         raise ValueError("invalid event ID: " + event)
     root = Path(state_root).expanduser().resolve()
     event_dir = root / event
-    if event_dir.is_symlink() or not (event_dir / "config.json").is_file():
-        raise ValueError("unknown event or symlink: " + event)
-    # Serialize against a start/restart and against a send already under way.
-    with _locked(root.parent / (root.name + ".start.lock")), _locked(event_dir / "launch.lock"), _locked(event_dir / "delivery.lock"):
-        if _worker_state(event_dir / "pid") == "running":
-            raise ValueError("event worker is still running: " + event)
-        try:
-            status = _read_json(event_dir / "status.json")
-        except (OSError, ValueError):
-            status = {}
-        if isinstance(status, dict) and status.get("cleanup_error"):
-            raise ValueError("unresolved poll cleanup: " + event)
-        archive = root.parent / ("listeners-archive-" + time.strftime("%Y%m%d", time.gmtime()))
-        archive.mkdir(parents=True, exist_ok=True)
-        target = archive / event
-        # A parent lock prevents two archive commands from racing the existence check.
-        with _locked(archive / ".archive.lock"):
-            if target.exists():
-                raise ValueError("archive destination already exists: " + str(target))
-            event_dir.rename(target)
-        return target
+    # Check the path under the same registry lock as new CLI starts and archives.
+    with _locked(root.parent / (root.name + ".start.lock")):
+        if event_dir.is_symlink() or not (event_dir / "config.json").is_file():
+            raise ValueError("unknown event or symlink: " + event)
+        with _locked(event_dir / "launch.lock"):
+            # A live worker may hold delivery.lock while deferring a send for hours.
+            # Refuse it before trying that lock, without blocking unrelated starts.
+            if _worker_state(event_dir / "pid") == "running":
+                raise ValueError("event worker is still running: " + event)
+            with _locked(event_dir / "delivery.lock"):
+                try:
+                    status = _read_json(event_dir / "status.json")
+                except (OSError, ValueError):
+                    status = {}
+                if isinstance(status, dict) and status.get("cleanup_error"):
+                    raise ValueError("unresolved poll cleanup: " + event)
+                archive = root.parent / ("listeners-archive-" + time.strftime("%Y%m%d", time.gmtime()))
+                archive.mkdir(parents=True, exist_ok=True)
+                target = archive / event
+                # A parent lock prevents archive destination collisions across state roots.
+                with _locked(archive / ".archive.lock"):
+                    if target.exists():
+                        raise ValueError("archive destination already exists: " + str(target))
+                    event_dir.rename(target)
+                return target
+
 
 
 def _positive_int(value):
