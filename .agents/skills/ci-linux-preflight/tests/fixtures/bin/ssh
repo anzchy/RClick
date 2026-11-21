@@ -1,0 +1,15 @@
+#!/bin/sh
+[ "${RCLICK_PREFLIGHT_FIXTURE_WARMUP:-}" != 1 ] || exit 0
+printf '%s\n' "$*" >> "$FAKE_CALLS"
+tmp=$(mktemp)
+cat > "$tmp"
+cat "$tmp" >> "$FAKE_INPUTS"
+if [ "$FAKE_SSH_FAIL" = 1 ]; then echo unreachable >&2; exit 1; fi
+if [ "$FAKE_NO_BIN_ZSH" = 1 ]; then sed 's#/bin/zsh#/missing-zsh#g' "$tmp" > "$tmp.nozsh"; mv "$tmp.nozsh" "$tmp"; fi
+for item in "$@"; do last=$item; done
+# Preserve pipefail's refusal if transforming the input fails, using POSIX sh.
+sed "s#export PATH=/opt/node/bin:/usr/local/bin:/usr/bin:/bin#export PATH=$FAKE_BIN:/usr/local/bin:/usr/bin:/bin#g" "$tmp" > "$tmp.input" || exit $?
+HOME="$FAKE_HOST_HOME" PATH="$FAKE_BIN:$PATH" /bin/bash -c "$last" < "$tmp.input"
+fixture_status=$?
+rm -f "$tmp" "$tmp.input"
+exit "$fixture_status"

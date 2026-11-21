@@ -1,0 +1,3 @@
+#!/bin/sh
+[ "${RCLICK_PREFLIGHT_FIXTURE_WARMUP:-}" != 1 ] || exit 0
+if [ "$1" = "--version" ]; then echo 'ps from procps-ng 3.3.17'; else exec /bin/ps "$@"; fi

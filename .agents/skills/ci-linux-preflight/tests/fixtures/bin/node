@@ -1,0 +1,3 @@
+#!/bin/sh
+[ "${RCLICK_PREFLIGHT_FIXTURE_WARMUP:-}" != 1 ] || exit 0
+if [ "$1" = "--version" ]; then echo v22.23.5; else exec "$REAL_NODE" "$@"; fi
