@@ -506,7 +506,7 @@ LIVE_RESET_SCREEN_0167 = Path(__file__).with_name("fixtures").joinpath("reset-fr
 
 def run_screen_reset(self, *, delay=0, context="Context 0% used", deadline="2", poll="0.01",
                      prefix="", startup=">_ OpenAI Codex (v0.166.0)",
-                     ready_boundary=">_ OpenAI Codex (v0.166.0)", locale=None, old_context="",
+                     ready_boundary=">_ OpenAI Codex (v0.166.0)", old_context="",
                      session_before="", session_after="", session_delay=0):
     """Replay finite pane events through the production controller using virtual time."""
     now = 0.0
@@ -581,19 +581,31 @@ class ResetTests(unittest.TestCase):
                                  if (root / "agent-gets").exists() else [])
             return result, time.monotonic() - started
 
+    def test_cli_reset_success_and_failure_under_c_locale(self):
+        from unittest.mock import patch
+        real_run = subprocess.run
+        for context, expected_code, expected_output in (
+                ("Context 0% used", 0, self.SUCCESS),
+                ("Context 12% used", 1, "FAIL reset fixture-agent: Context 12% used after /new\n")):
+            with self.subTest(context=context), patch.object(subprocess, "run", wraps=real_run) as run:
+                result, _ = self.run_reset(context=context, locale="C")
+                self.assertEqual(run.call_args.kwargs["env"]["LC_ALL"], "C")
+                self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, expected_output)
+
     def test_real_saved_screen_with_missing_session_id_succeeds(self):
-        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN, ready_boundary="", locale="C")
+        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_real_codex_0167_fresh_screen_succeeds(self):
-        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN_0167, ready_boundary="", locale="C")
+        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN_0167, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_codex_0167_screen_over_a_prior_transcript_still_fails(self):
         screen = LIVE_RESET_SCREEN_0167.replace("› Ask Codex to do anything", "› hello\n• Hello!\n› Ask Codex to do anything")
-        result, _ = self.run_screen_reset(context=screen, ready_boundary="", locale="C", deadline="0.3")
+        result, _ = self.run_screen_reset(context=screen, ready_boundary="", deadline="0.3")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("FAIL reset fixture-agent", result.stdout)
 
@@ -608,7 +620,7 @@ class ResetTests(unittest.TestCase):
                                                       transcript + "\n› Ask Codex to do anything")
                     screen = screen.replace("Context 0%", f"Context {percent}%")
                     result, _ = self.run_screen_reset(context=screen, ready_boundary="", startup="",
-                                               deadline="0.1", locale="C",
+                                               deadline="0.1",
                                                session_before="old-session", session_after="old-session")
                     self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                     self.assertEqual(result.stdout, self.NO_BOUNDARY)
@@ -633,7 +645,7 @@ class ResetTests(unittest.TestCase):
     def test_empty_welcome_screen_allows_known_tips_and_box_art(self):
         screen = LIVE_RESET_SCREEN.replace("› Ask Codex to do anything",
             "╭──╮\n│  │\n╰──╯\n  Tip: Use /help to see available commands.\n› Ask Codex to do anything")
-        result, _ = self.run_screen_reset(context=screen, ready_boundary="", locale="C")
+        result, _ = self.run_screen_reset(context=screen, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -644,7 +656,7 @@ class ResetTests(unittest.TestCase):
 
     def test_unchanged_session_id_accepts_real_saved_screen(self):
         result, _ = self.run_screen_reset(session_before="old-session", session_after="old-session",
-                                   context=LIVE_RESET_SCREEN, ready_boundary="", locale="C")
+                                   context=LIVE_RESET_SCREEN, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -845,11 +857,11 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
-    def test_non_header_boundaries_never_prove_session_in_c_locale(self):
+    def test_non_header_boundaries_never_prove_session(self):
         for boundary in ("/new", "> /new", "❯ /new", "› /new", "Starting MCP servers (3/4)"):
             for context in ("Context 0% used", "Context 12% used"):
                 with self.subTest(boundary=boundary, context=context):
-                    result, _ = self.run_screen_reset(ready_boundary=boundary, locale="C", context=context, deadline="0.1")
+                    result, _ = self.run_screen_reset(ready_boundary=boundary, context=context, deadline="0.1")
                     self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                     self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
@@ -965,7 +977,7 @@ class ResetFreshScreenTests(unittest.TestCase):
 
     def assert_stale(self, screen, expected=None):
         result, _ = self.run_reset(context=screen, ready_boundary="", startup="",
-                                   deadline="0.1", locale="C",
+                                   deadline="0.1",
                                    session_before="old-session", session_after="old-session")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, expected or self.NO_BOUNDARY)
@@ -989,21 +1001,21 @@ class ResetFreshScreenTests(unittest.TestCase):
     def test_saved_real_fresh_screen_passes(self):
         for screen in (self.SCREEN, self.SCREEN.replace("\n", "\r\n")):
             with self.subTest(crlf="\r" in screen):
-                result, _ = self.run_reset(context=screen, ready_boundary="", locale="C",
+                result, _ = self.run_reset(context=screen, ready_boundary="",
                                            session_before="old-session", session_after="old-session")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_title_directly_after_leading_cwd_metadata_passes(self):
         screen = "\n~/fixture-worktree\n" + self.SCREEN.lstrip()
-        result, _ = self.run_reset(context=screen, ready_boundary="", locale="C")
+        result, _ = self.run_reset(context=screen, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_old_scrollback_above_complete_fresh_header_passes(self):
         self.assert_fresh("old transcript\nContext 12% used\n" + self.SCREEN)
 
     def assert_fresh(self, screen, **kwargs):
-        result, _ = self.run_reset(context=screen, ready_boundary="", locale="C",
+        result, _ = self.run_reset(context=screen, ready_boundary="",
                                    session_before="old-session", session_after="old-session", deadline="0.1", **kwargs)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
@@ -1022,7 +1034,9 @@ class ResetFreshScreenTests(unittest.TestCase):
 
     def test_twenty_five_row_pane_read_reaches_fresh_title(self):
         self.assertGreater(len(self.SCREEN.splitlines()), 25)
-        result, _ = ResetTests.run_reset(self, context=self.SCREEN, ready_boundary="", pane_height=25)
+        result, _ = ResetTests.run_reset(self, context=self.SCREEN, ready_boundary="", pane_height=25,
+                                         locale="C", session_before="old-session",
+                                         session_after="old-session", deadline="0.1")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -1058,7 +1072,7 @@ class ResetShortScreenTests(unittest.TestCase):
 
     def replay(self, screen, **kwargs):
         return self.run_reset(context=screen, ready_boundary="", startup="", deadline="0.1",
-                              locale="C", session_before="old-session", session_after="old-session", **kwargs)
+                              session_before="old-session", session_after="old-session", **kwargs)
 
     def assert_rejected(self, screen, expected=None):
         result, _ = self.replay(screen)
@@ -1072,7 +1086,7 @@ class ResetShortScreenTests(unittest.TestCase):
             for identity in ("", "old-session"):
                 with self.subTest(residue=screen == self.TITLELESS, identity=identity):
                     result, _ = self.run_reset(context=screen, ready_boundary="", startup="", deadline="0.1",
-                                               locale="C", session_before=identity, session_after=identity)
+                                               session_before=identity, session_after=identity)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -1120,14 +1134,14 @@ class ResetShortScreenTests(unittest.TestCase):
     def test_changed_identity_remains_independent_of_logo_placeholder(self):
         screen = self.TITLELESS.replace("› Ask Codex to do anything", "")
         result, _ = self.run_reset(context=screen, ready_boundary="", startup="", deadline="0.1",
-                                   locale="C", session_before="old-session", session_after="new-session")
+                                   session_before="old-session", session_after="new-session")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_changed_identity_accepts_logo_without_placeholder_or_residue(self):
         screen = self.TITLELESS.removeprefix(self.RESIDUE).replace("› Ask Codex to do anything", "")
         result, _ = self.run_reset(context=screen, ready_boundary="", startup="", deadline="0.1",
-                                   locale="C", session_before="old-session", session_after="new-session")
+                                   session_before="old-session", session_after="new-session")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -1184,7 +1198,7 @@ class ResetShortScreenTests(unittest.TestCase):
         for startup, context in ((candidate, "Context 0% used"), ("Context 0% used", candidate)):
             with self.subTest(logo_first=startup == candidate):
                 result, _ = self.run_reset(delay=1, startup=startup, context=context,
-                                           ready_boundary="", deadline="0.1", locale="C",
+                                           ready_boundary="", deadline="0.1",
                                            session_before="old-session", session_after="old-session")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_CONTEXT)
