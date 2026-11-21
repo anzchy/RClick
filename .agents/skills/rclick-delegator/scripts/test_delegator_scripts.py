@@ -877,6 +877,18 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
+    def test_control_characters_do_not_split_a_screen_line(self):
+        for separator in ("\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"):
+            with self.subTest(separator=repr(separator)):
+                screen = ">_ OpenAI Codex (v0.166.0)" + separator + "Context 0% used"
+                self.assertEqual(reset_screen.footer(screen), (False, ""))
+
+    def test_cli_preserves_control_characters_in_screen_reads(self):
+        result, _ = self.run_reset(context=">_ OpenAI Codex (v0.166.0)\rContext 0% used",
+                                   ready_boundary="", startup="", deadline="0.1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, self.NO_BOUNDARY)
+
     def test_timeout_elapsed_is_virtual(self):
         result, elapsed = self.run_screen_reset(context="", deadline="0.1", poll="0.025")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
