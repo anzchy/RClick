@@ -66,15 +66,20 @@ if args == ['pane', 'list']:
         {'pane_id': 'w1:p2', 'terminal_id': 'term_worker', 'cwd': repo, 'foreground_cwd': repo,
          'agent': kind}]}}))
 elif args[:2] == ['agent', 'get']:
+    prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
+    working = False
+    if prompts and os.environ.get('CLAUDE_SPINNER') == '1':
+        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
+        working = enters >= int(os.environ['ENTERS_NEEDED'])
     print(json.dumps({'result': {'type': 'agent_info', 'agent': {'pane_id': 'w1:p2',
-        'terminal_id': 'term_worker', 'agent_status': 'idle'}}}, separators=(',', ':')))
+        'terminal_id': os.environ.get('WORKING_TERMINAL', 'term_worker') if working else 'term_worker', 'agent_status': 'working' if working else 'idle'}}}, separators=(',', ':')))
 elif args[:2] == ['pane', 'get']:
     print(json.dumps({'result': {'pane': {'agent_session': {'value': 'session'}}}}))
 elif args[:2] == ['pane', 'read']:
     prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
     if prompts:
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
-        print('Working (esc to interrupt)' if enters >= int(os.environ['ENTERS_NEEDED']) else 'idle: prompt waiting')
+        print(('✻ Thinking…' if os.environ.get('CLAUDE_SPINNER') == '1' else 'Working (esc to interrupt)') if enters >= int(os.environ['ENTERS_NEEDED']) else 'idle: prompt waiting')
     elif kind == 'codex':
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
         if enters < 2: print('Where should the new conversation run?')
@@ -259,6 +264,23 @@ elif args[:2] == ['pane', 'read']:
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Claude reset did not confirm Context 0%', result.stderr)
         self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
+        self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_claude_working_status_confirms_a_spinner_with_a_different_verb(self):
+        result = self.run_dispatch(CLAUDE_SPINNER='1')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('DISPATCHED i61-test-r1-1120', result.stdout)
+        self.assertEqual(self.calls()[-1], ['agent', 'get', 'w1:p2'])
+
+    def test_working_metadata_requires_claude_and_the_pinned_terminal(self):
+        result = self.run_dispatch(CLAUDE_SPINNER='1', WORKING_TERMINAL='term_replaced')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('changed pane/terminal identity', result.stderr)
+        self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+        self.log.unlink()
+        result = self.run_dispatch(kind='codex', CLAUDE_SPINNER='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('never showed Working', result.stderr)
         self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
 
