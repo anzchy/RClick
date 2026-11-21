@@ -1138,6 +1138,35 @@ def listener_status(state_root):
     return lines, attention
 
 
+def archive_listener(state_root, event):
+    """Move one inactive event with all evidence; never overwrite or delete an entry."""
+    if not EVENT_PATTERN.fullmatch(event):
+        raise ValueError("invalid event ID: " + event)
+    root = Path(state_root).expanduser().resolve()
+    event_dir = root / event
+    if event_dir.is_symlink() or not (event_dir / "config.json").is_file():
+        raise ValueError("unknown event or symlink: " + event)
+    # Serialize against a start/restart and against a send already under way.
+    with _locked(event_dir / "launch.lock"), _locked(event_dir / "delivery.lock"):
+        if _worker_state(event_dir / "pid") == "running":
+            raise ValueError("event worker is still running: " + event)
+        try:
+            status = _read_json(event_dir / "status.json")
+        except (OSError, ValueError):
+            status = {}
+        if isinstance(status, dict) and status.get("cleanup_error"):
+            raise ValueError("unresolved poll cleanup: " + event)
+        archive = root.parent / ("listeners-archive-" + time.strftime("%Y%m%d", time.gmtime()))
+        archive.mkdir(parents=True, exist_ok=True)
+        target = archive / event
+        # A parent lock prevents two archive commands from racing the existence check.
+        with _locked(archive / ".archive.lock"):
+            if target.exists():
+                raise ValueError("archive destination already exists: " + str(target))
+            event_dir.rename(target)
+        return target
+
+
 def _positive_int(value):
     parsed = int(value)
     if parsed < 1:
@@ -1187,6 +1216,9 @@ def _build_parser():
     stop.add_argument("--state-root", type=Path, default=default_root)
     stop.add_argument("--wait-seconds", type=float, default=None,
                       help="how long to wait for the worker (above 0, at most 300; default 30)")
+    archive = subparsers.add_parser("archive", help="move one inactive event to a dated archive; never delete")
+    archive.add_argument("--event", required=True)
+    archive.add_argument("--state-root", type=Path, default=default_root)
     run = subparsers.add_parser("run", help="internal detached worker")
     run.add_argument("--event-dir", required=True, type=Path)
     return parser
@@ -1329,6 +1361,14 @@ def main(argv=None):
         except Exception as error:
             print(type(error).__name__ + ": " + str(error), file=sys.stderr, flush=True)
             return 1
+        return 0
+    if args.command == "archive":
+        try:
+            target = archive_listener(args.state_root, args.event)
+        except (OSError, ValueError) as error:
+            print(type(error).__name__ + ": " + str(error), file=sys.stderr)
+            return 2
+        print("archived event={} path={}".format(args.event, target))
         return 0
     if args.command == "status":
         lines, attention = listener_status(args.state_root.expanduser())

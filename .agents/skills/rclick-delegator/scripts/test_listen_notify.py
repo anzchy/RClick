@@ -6,6 +6,8 @@ def setUpModule():
 
 
 import importlib.util
+import io
+from contextlib import redirect_stderr
 import json
 import os
 import signal
@@ -2135,6 +2137,74 @@ class ListenerTests(unittest.TestCase):
         self.assertIn("Operation not permitted", status.get("cleanup_error", ""))
         _lines, attention = listen_notify.listener_status(self.event_dir.parent)
         self.assertTrue(attention)
+
+
+class ArchiveTests(unittest.TestCase):
+    def command(self, argv):
+        try:
+            return listen_notify.main(argv)
+        except SystemExit as error:
+            return error.code
+
+    def test_new_start_refuses_any_existing_event_before_lookup_or_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'same').mkdir()
+            argv = ['start', '--new', '--event', 'same', '--task', 'same', '--agent', 'worker',
+                    '--route', 'codex-thread', '--thread', '11111111-2222-4333-8444-555555555555',
+                    '--handoff', str(root / 'report'), '--poll', 'handoff', '--state-root', str(root)]
+            with patch.object(listen_notify, '_resolve_agent', side_effect=AssertionError('no lookup')), redirect_stderr(io.StringIO()) as err:
+                code = self.command(argv)
+            self.assertEqual(code, 2)
+            self.assertIn('event already exists', err.getvalue())
+            self.assertEqual(list((root / 'same').iterdir()), [])
+
+    def test_archive_moves_dead_event_with_all_evidence_and_never_overwrites(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'listeners'
+            event = root / 'old-event'
+            event.mkdir(parents=True)
+            for name, text in {'config.json': '{"event":"old-event"}',
+                               'status.json': '{"state":"polling"}', 'notification.txt': 'keep me'}.items():
+                (event / name).write_text(text)
+            expected = root.parent / 'listeners-archive-20261120' / 'old-event'
+            with patch.object(listen_notify.time, 'strftime', return_value='20261120'):
+                code = self.command(['archive', '--event', 'old-event', '--state-root', str(root)])
+                self.assertEqual(code, 0)
+                self.assertFalse(event.exists())
+                self.assertEqual((expected / 'notification.txt').read_text(), 'keep me')
+                self.assertEqual(json.loads((expected / 'status.json').read_text()), {'state': 'polling'})
+                event.mkdir()
+                (event / 'config.json').write_text('{}')
+                self.assertNotEqual(self.command(['archive', '--event', 'old-event', '--state-root', str(root)]), 0)
+                self.assertTrue(event.exists())
+                self.assertEqual((expected / 'notification.txt').read_text(), 'keep me')
+
+    def test_archive_refuses_live_worker_unknown_event_and_unsafe_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'listeners'
+            event = root / 'live'
+            event.mkdir(parents=True)
+            (event / 'config.json').write_text('{}')
+            (event / 'pid').write_text(str(os.getpid()))
+            for name in ('live', 'unknown', '../escape'):
+                with self.subTest(name=name):
+                    self.assertNotEqual(self.command(['archive', '--event', name, '--state-root', str(root)]), 0)
+            self.assertTrue(event.exists())
+            (event / 'pid').unlink()
+            (event / 'status.json').write_text('{"state":"stopped","cleanup_error":"poll may survive"}')
+            self.assertNotEqual(self.command(['archive', '--event', 'live', '--state-root', str(root)]), 0)
+            self.assertTrue(event.exists())
+
+    def test_existing_stale_report_exposes_dead_polling_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event = Path(tmp) / 'dead'
+            event.mkdir()
+            (event / 'config.json').write_text('{}')
+            (event / 'status.json').write_text('{"state":"polling"}')
+            lines, attention = listen_notify.listener_status(Path(tmp))
+            self.assertTrue(attention)
+            self.assertEqual(lines, ['attention dead state=polling worker=stopped'])
 
 if __name__ == "__main__":
     unittest.main()
