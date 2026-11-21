@@ -1,0 +1,69 @@
+#!/bin/sh
+case "$1 $2" in
+  'agent get')
+    echo "$3" >> "$RESET_STATE/agent-gets"
+    # Only the pane resolves: the herdr name is lost after a reset plus a dispatched prompt (#107).
+    if [ "$3" != fixture-pane ]; then
+      printf '{"error":{"code":"agent_not_found","message":"agent target %s not found"},"id":"cli:agent:get"}\n' "$3"
+      exit 1
+    fi
+    if [ -n "$RESET_AGENT_GET" ]; then printf '%s\n' "$RESET_AGENT_GET"; exit "$RESET_AGENT_GET_EXIT"; fi
+    printf '{"agent_status":"%s","value":"old-session"}\n' "$RESET_STATUS"
+    ;;
+  'pane get')
+    count=0
+    [ ! -f "$RESET_STATE/gets" ] || count=$(cat "$RESET_STATE/gets")
+    echo $((count + 1)) > "$RESET_STATE/gets"
+    session=$RESET_SESSION_BEFORE
+    if [ -f "$RESET_STATE/enters" ] && [ "$(cat "$RESET_STATE/enters")" -ge 2 ] &&
+       [ "$(cat "$RESET_STATE/reads")" -ge "$RESET_SESSION_DELAY" ]; then
+      session=$RESET_SESSION_AFTER
+    fi
+    printf '{"result":{"pane":{"other":{"value":"wrong-id"},"agent_session":{"value":"%s"}}}}\n' "$session"
+    ;;
+  'pane send-text')
+    echo sent >> "$RESET_STATE/sends"
+    echo 0 > "$RESET_STATE/enters"
+    echo 0 > "$RESET_STATE/reads"
+    ;;
+  'pane send-keys')
+    echo sent >> "$RESET_STATE/sends"
+    n=$(cat "$RESET_STATE/enters")
+    echo $((n + 1)) > "$RESET_STATE/enters"
+    ;;
+  'pane read')
+    if [ ! -f "$RESET_STATE/enters" ]; then
+      printf '%s\n' "$RESET_OLD_CONTEXT"
+      exit 0
+    fi
+    n=$(cat "$RESET_STATE/enters")
+    if [ "$RESET_CHOOSER" = 0 ]; then
+      echo 'ordinary pane, no chooser'
+    elif [ "$n" -lt 2 ]; then
+      echo 'Where should the new conversation run?'
+    else
+      n=$(cat "$RESET_STATE/reads")
+      echo $((n + 1)) > "$RESET_STATE/reads"
+      # A recent snapshot defaults to the pane height unless --lines expands it.
+      limit=$RESET_PANE_HEIGHT
+      shift 3
+      while [ "$#" -gt 0 ]; do
+        if [ "$1" = --lines ]; then limit=$2; shift; fi
+        shift
+      done
+      if [ "$limit" -gt 0 ]; then
+        exec 3>&1
+        exec > "$RESET_STATE/screen"
+        trap 'tail -n "$limit" "$RESET_STATE/screen" >&3' EXIT
+      fi
+      printf '%s\n' "$RESET_PREFIX"
+      if [ "$n" -lt "$RESET_DELAY" ] || [ -z "$RESET_CONTEXT" ]; then
+        printf '%s\n' "$RESET_STARTUP"
+      else
+        printf '%s\n' "$RESET_READY_BOUNDARY"
+        printf '%s\n' "$RESET_CONTEXT"
+      fi
+    fi
+    ;;
+  *) exit 90 ;;
+esac

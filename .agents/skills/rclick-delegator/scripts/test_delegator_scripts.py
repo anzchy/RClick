@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+FIXTURE_BIN = Path(__file__).resolve().parent / "fixtures" / "bin"
+
 def git(cwd, *args, env=None):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=env).stdout
 
@@ -485,88 +487,13 @@ class ResetTests(unittest.TestCase):
     def run_reset(self, *, delay=0, context="Context 0% used", status="idle", chooser=True, deadline="2",
                   poll="0.01", prefix="", startup=">_ OpenAI Codex (v0.166.0)", timer_var=None, old_context="",
                   ready_boundary=">_ OpenAI Codex (v0.166.0)", locale=None, session_before="", session_after="", session_delay=0, pane_height=0,
-                  agent_get="", agent_get_exit=1):
+                  agent_get="", agent_get_exit=1, herdr_override=None, use_defaults=False):
         import time
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            herdr = root / "herdr"
-            herdr.write_text('''#!/bin/sh
-case "$1 $2" in
-  'agent get')
-    echo "$3" >> "$RESET_STATE/agent-gets"
-    # Only the pane resolves: the herdr name is lost after a reset plus a dispatched prompt (#107).
-    if [ "$3" != fixture-pane ]; then
-      printf '{"error":{"code":"agent_not_found","message":"agent target %s not found"},"id":"cli:agent:get"}\\n' "$3"
-      exit 1
-    fi
-    if [ -n "$RESET_AGENT_GET" ]; then printf '%s\\n' "$RESET_AGENT_GET"; exit "$RESET_AGENT_GET_EXIT"; fi
-    printf '{"agent_status":"%s","value":"old-session"}\\n' "$RESET_STATUS"
-    ;;
-  'pane get')
-    count=0
-    [ ! -f "$RESET_STATE/gets" ] || count=$(cat "$RESET_STATE/gets")
-    echo $((count + 1)) > "$RESET_STATE/gets"
-    session=$RESET_SESSION_BEFORE
-    if [ -f "$RESET_STATE/enters" ] && [ "$(cat "$RESET_STATE/enters")" -ge 2 ] &&
-       [ "$(cat "$RESET_STATE/reads")" -ge "$RESET_SESSION_DELAY" ]; then
-      session=$RESET_SESSION_AFTER
-    fi
-    printf '{"result":{"pane":{"other":{"value":"wrong-id"},"agent_session":{"value":"%s"}}}}\\n' "$session"
-    ;;
-  'pane send-text')
-    echo sent >> "$RESET_STATE/sends"
-    echo 0 > "$RESET_STATE/enters"
-    echo 0 > "$RESET_STATE/reads"
-    ;;
-  'pane send-keys')
-    echo sent >> "$RESET_STATE/sends"
-    n=$(cat "$RESET_STATE/enters")
-    echo $((n + 1)) > "$RESET_STATE/enters"
-    ;;
-  'pane read')
-    if [ ! -f "$RESET_STATE/enters" ]; then
-      printf '%s\\n' "$RESET_OLD_CONTEXT"
-      exit 0
-    fi
-    n=$(cat "$RESET_STATE/enters")
-    if [ "$RESET_CHOOSER" = 0 ]; then
-      echo 'ordinary pane, no chooser'
-    elif [ "$n" -lt 2 ]; then
-      echo 'Where should the new conversation run?'
-    else
-      n=$(cat "$RESET_STATE/reads")
-      echo $((n + 1)) > "$RESET_STATE/reads"
-      # A recent snapshot defaults to the pane height unless --lines expands it.
-      limit=$RESET_PANE_HEIGHT
-      shift 3
-      while [ "$#" -gt 0 ]; do
-        if [ "$1" = --lines ]; then limit=$2; shift; fi
-        shift
-      done
-      if [ "$limit" -gt 0 ]; then
-        exec 3>&1
-        exec > "$RESET_STATE/screen"
-        trap 'tail -n "$limit" "$RESET_STATE/screen" >&3' EXIT
-      fi
-      printf '%s\\n' "$RESET_PREFIX"
-      if [ "$n" -lt "$RESET_DELAY" ] || [ -z "$RESET_CONTEXT" ]; then
-        printf '%s\\n' "$RESET_STARTUP"
-      else
-        printf '%s\\n' "$RESET_READY_BOUNDARY"
-        printf '%s\\n' "$RESET_CONTEXT"
-      fi
-    fi
-    ;;
-  *) exit 90 ;;
-esac
-''')
-            herdr.chmod(0o755)
-            # Bypass external sleeps; deadline still uses the real monotonic shell timer.
-            sleep = root / "sleep"
-            sleep.write_text("#!/bin/sh\nexit 0\n")
-            sleep.chmod(0o755)
-            env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+            env = {**os.environ, "PATH": str(FIXTURE_BIN / "path-default") + os.pathsep + os.environ["PATH"],
+                   "RCLICK_HERDR": str(FIXTURE_BIN / "herdr-reset"), "RCLICK_SLEEP": str(FIXTURE_BIN / "sleep"),
                    "RESET_SESSION_BEFORE": session_before, "RESET_SESSION_AFTER": session_after,
                    "RESET_SESSION_DELAY": str(session_delay),
                    "RESET_AGENT_GET": agent_get, "RESET_AGENT_GET_EXIT": str(agent_get_exit),
@@ -575,6 +502,10 @@ esac
                    "RESET_PREFIX": prefix, "RESET_STARTUP": startup,
                    "RESET_OLD_CONTEXT": old_context, "RESET_READY_BOUNDARY": ready_boundary,
                    "RCLICK_RESET_CONTEXT_SECS": deadline, "RCLICK_RESET_POLL_SECS": poll}
+            if use_defaults:
+                env.pop("RCLICK_HERDR"); env.pop("RCLICK_SLEEP")
+            if herdr_override is not None:
+                env["RCLICK_HERDR"] = herdr_override
             if locale:
                 env["LC_ALL"] = locale
             if timer_var:
@@ -902,6 +833,14 @@ esac
         self.assertEqual(result.stdout, self.SUCCESS)
         self.assertTrue(result.agent_gets)
         self.assertEqual(set(result.agent_gets), {"fixture-pane"})
+
+    def test_reset_honors_explicit_herdr_and_keeps_path_defaults(self):
+        result, _ = self.run_reset(status="busy", herdr_override="/usr/bin/false")
+        self.assertIn("cannot read pane fixture-pane", result.stdout)
+        self.assertEqual(result.pane_sends, "")
+        result, _ = self.run_reset(use_defaults=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_busy_status_refuses_reset(self):
         result, _ = self.run_reset(status="busy")
