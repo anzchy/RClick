@@ -164,12 +164,14 @@ delete its line in the same change.
     (`FinderSyncExt/FinderSyncExt.swift:567-590`) and its click handler (`:696-710`) run in no test. Finder's delivery
     of direct and type-submenu leaves PASSed on the device at `e729e01` (issue #49 comment); no test would catch a
     later change to that code. No issue filed yet.
-20. `new-file-settings`: Restore Defaults on the New File tab replaces every type at once and deletes every template
-    snapshot RClick owns, with no confirmation (`RClick/Settings/NewFileSettingsTabView.swift:38-39`,
-    `AppState.resetFiletypeItems`, `RClick/AppState.swift:201-204`, cleanup at `RClick/Runtime/ConfigService.swift:193-197`);
-    CHANGELOG [Unreleased] › Changed states the deletion; the issue #49 device comment observed it and calls the missing
-    confirmation accepted. Delete File Type and Reset All Settings ask first
-    (`NewFileSettingsTabView.swift:117-133`, `RClick/Settings/GeneralSettingsTabView.swift:410`). No issue filed yet.
+20. `new-file-settings`: Restore Defaults on the New File tab replaces every type at once and, once that save has
+    persisted, deletes every owned snapshot a stored entry referenced, with no confirmation
+    (`RClick/Settings/NewFileSettingsTabView.swift:38-39`, `AppState.resetFiletypeItems`, `RClick/AppState.swift:201-204`;
+    the rule in `persistence`, `RClick/Runtime/ConfigService.swift:160-197`). Copies no stored row referenced (finding
+    16) and files outside the Templates folder are not deleted. CHANGELOG [Unreleased] › Changed states the deletion;
+    the issue #49 device comment observed the custom type, its templates and their stored copies removed and calls
+    the missing confirmation accepted. Delete File Type and Reset All Settings ask first
+    (`NewFileSettingsTabView.swift:117-133`, `RClick/Settings/GeneralSettingsTabView.swift:408-421`). No issue filed yet.
 
 ## Finder menu: Actions
 
@@ -632,15 +634,21 @@ delete its line in the same change.
     (`RClick/Runtime/TemplateStore.swift:99-152`, `TemplateStoreTests.cancellingDraftLeavesNoCopies`). Save writes the
     new and replacement snapshots, then persists (`EditFileTypeSheetView.swift:238-257`); a replacement keeps the
     entry's id, name and position (`TemplateStoreTests.savedDraftKeepsSnapshotsAndReplacementMetadataThenRemovesOnlyOwnedFiles`).
-    A snapshot that no saved entry references any more is deleted only after the save has persisted
-    (`RClick/Runtime/ConfigService.swift:190-197`; see `persistence`). A file that cannot be read when picked, or a
+    A snapshot the stored entries referenced before the save and no saved entry references any more is deleted, when
+    RClick owns it, only after the save has persisted (`RClick/Runtime/ConfigService.swift:160-197`; the rule in
+    `persistence`). A file that cannot be read when picked, or a
     snapshot that cannot be written on Save, shows "Template Import Failed" with the error and keeps the sheet open
     (`EditFileTypeSheetView.swift:132-135`, `:221-223`, `:231-235`); a failed database save is not shown there: it
     lands in `AppState.lastSaveError` for the settings window (`RClick/AppState.swift` `persist`).
-  Restore Defaults and Delete File Type persist through the same path, so they delete the snapshots RClick owns for
-  the rows they drop; a file the user picked is never deleted (CHANGELOG [Unreleased] › Changed;
-  `TemplateStoreTests.restoreDefaultsDeletesSnapshotsAndRestoresBlankWithoutTouchingSource`). Restore Defaults asks
-  for no confirmation (finding 20).
+  Delete File Type (`AppState.deleteNewFile`) and Restore Defaults (`AppState.resetFiletypeItems`, which sets
+  `NewFile.all`, six types with no template, `RClick/AppState.swift:201-204`) save through `AppState.persist`, so
+  they follow the deletion rule in `persistence`: after the save persisted, each snapshot a stored entry of a dropped
+  row referenced is deleted when RClick owns it; for Restore Defaults that is every such snapshot of every type,
+  because no saved entry references one any more. A file outside the Templates folder is never deleted, and copies no
+  stored row referenced (finding 16) stay (`RClick/Runtime/ConfigService.swift:160-197`;
+  `TemplateStoreTests.restoreDefaultsDeletesSnapshotsAndRestoresBlankWithoutTouchingSource`). CHANGELOG [Unreleased] ›
+  Changed says Restore Defaults and Reset All Settings "remove user template snapshots from the app's Templates
+  folder"; the code removes only the referenced, owned ones. Restore Defaults asks for no confirmation (finding 20).
 - **Status:** `shipped-on`, `partial` (finding 7: an extension typed without a dot; finding 10: the default open
   app is never used).
 - **Tests:** `TemplateStoreTests` (no aliasing of same-named files, Cancel, replace, remove, Restore Defaults, a legacy
@@ -733,14 +741,21 @@ delete its line in the same change.
 - **Device:** never run.
 
 ### `reset-all-settings`
-- **What:** Reset All Settings… restores apps, actions (Cut off), the six built-in file types, common folders and
-  preferences after a confirmation, and turns launch at login off (`RClick/Settings/GeneralSettingsTabView.swift:388-422`,
-  `resetAllSettings` and `resetToDefaults`; CHANGELOG [Unreleased] › Fixed). Folder grants are kept: `resetToDefaults`
-  (`:403-422`) never touches `BookmarkManager`, and `RClick/Runtime/ConfigService.swift`, which it saves through, has
-  no bookmark code.
+- **What:** Reset All Settings… restores apps, actions (Cut off), the six built-in file types (`NewFile.all`, Blank
+  on, no template), common folders and preferences after a confirmation, and turns launch at login off
+  (`GeneralSettingsTabView.resetAllSettings` and `resetToDefaults`, `RClick/Settings/GeneralSettingsTabView.swift:408-442`;
+  CHANGELOG [Unreleased] › Fixed). It saves with `store.sync()` (`:440`), so New File templates follow the deletion
+  rule in `persistence`: after the save persisted, and only if the last load read the New File rows, every snapshot
+  a stored entry referenced is deleted when RClick owns it; a template file outside the Templates folder is never
+  deleted, and copies no stored row referenced stay (`RClick/Runtime/ConfigService.swift:160-197`; CHANGELOG
+  [Unreleased] › Changed states the removal). Folder grants are kept: `resetToDefaults` (`:423-442`) never touches
+  `BookmarkManager`, and `RClick/Runtime/ConfigService.swift`, which it saves through, has no bookmark code.
 - **Status:** `shipped-on`.
-- **Tests:** none.
-- **Device:** never run.
+- **Tests:** none drives Reset All Settings; the snapshot deletion it relies on is pinned through Restore Defaults
+  (`TemplateStoreTests.restoreDefaultsDeletesSnapshotsAndRestoresBlankWithoutTouchingSource`).
+- **Issues:** #49 (the template snapshots it now deletes).
+- **Device:** never run: neither the issue #49 nor the issue #12 device comment has a Reset All Settings row (the
+  issue #49 comment's Restore Defaults row is the New File tab's button, see `new-file-settings`).
 
 ### `update`
 - **What:** Settings > About checks GitHub releases, shows the new version, downloads the zip, checks the staged
@@ -836,14 +851,25 @@ delete its line in the same change.
     Templates folder that the entry does not own is read as missing (`:116-123`; `TemplateStore.owns`,
     `RClick/Runtime/TemplateStore.swift:70-84`); a migrated type whose entry is missing leaves the Finder menu (see
     `new-file` › Default).
-  - Deletion: `ConfigService.save` deletes a prior snapshot that no saved entry still references, only after the
-    database save succeeded and only when the last load could read the New File rows; a failed save rolls back
-    (`RClick/Runtime/ConfigService.swift:160-197`; `TemplatePersistenceTests`). `TemplateStore.remove` deletes only
-    a path RClick owns: a regular file or folder directly in the Templates folder (the pre-#49 copies), or a child of
-    the folder named after that entry's id, never a symbolic link and never a file the user picked
-    (`RClick/Runtime/TemplateStore.swift:70-97`; `TemplateStoreTests.legacyDirectoryPathCannotAdoptOrRemoveAnotherEntriesSnapshots`,
-    `removingAnEntryKeepsLegacyCopyUsedByAnotherType`). Import saves without this cleanup (see `settings-backup`;
-    finding 16).
+  - Deletion, the one rule every New File save follows (`ConfigService.save`, `RClick/Runtime/ConfigService.swift:160-197`):
+    - what it looks at: the template paths the stored rows referenced just before this save, read from the
+      database (`priorTemplates`, `:161-164`; a pre-#49 row contributes its one `templatePath`), minus every path a
+      saved entry still references (`:194-195`); a copy no stored row referenced is never looked at (finding 16);
+    - when: only after the database save succeeded (a failed save rolls back and deletes nothing, `:190-191`), only
+      when the last load could read the New File rows (`newFileReadFailed`, `:193`), and never for a save with
+      `preserveTemplateSnapshots` (import, `:193`);
+    - what it deletes: `TemplateStore.remove` deletes a path only if it exists, is not a symbolic link and RClick
+      owns it for that entry's id: a child of the folder named after the entry's id, or a file or folder directly in
+      the Templates folder whose name is not a UUID (the pre-#49 copies) (`RClick/Runtime/TemplateStore.swift:70-95`).
+      A path outside the Templates folder, such as a pre-#49 template the user kept elsewhere and #49 adopted, is
+      never deleted;
+    - a removal that throws stops the loop and is reported as a failed save (finding 16).
+    Tests: `TemplatePersistenceTests` (a failed save or load deletes no snapshot),
+    `TemplateStoreTests.legacyDirectoryPathCannotAdoptOrRemoveAnotherEntriesSnapshots`,
+    `removingAnEntryKeepsLegacyCopyUsedByAnotherType`,
+    `restoreDefaultsDeletesSnapshotsAndRestoresBlankWithoutTouchingSource` (an owned snapshot deleted, an outside file
+    kept). Delete File Type, Restore Defaults and Reset All Settings save through this rule (see `new-file-settings`,
+    `reset-all-settings`); import saves without it (see `settings-backup`; finding 16).
   - Under the unit-test host the store's root is a per-process temporary folder, never Application Support
     (`TemplateStore.standard`, `:9-13`; `TemplateStoreTests.hostedStandardStoreNeverUsesApplicationSupport`).
   The Paste journal is a separate file in the same App Group container (see `paste-move`).
