@@ -600,7 +600,7 @@ class ResetTests(unittest.TestCase):
     def test_short_old_nonzero_screen_waits_for_real_fresh_screen(self):
         old = LIVE_RESET_SCREEN.replace("› Ask Codex to do anything", "› hello\n• Hello!")
         old = old.replace("Context 0%", "Context 3%")
-        result, _ = self.run_screen_reset(delay=1, startup=old, context=LIVE_RESET_SCREEN,
+        result, _ = self.run_reset(delay=1, startup=old, context=LIVE_RESET_SCREEN,
                                    ready_boundary="", session_before="old-session", session_after="old-session")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
@@ -633,7 +633,7 @@ class ResetTests(unittest.TestCase):
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_session_id_change_is_polled_before_success(self):
-        result, _ = self.run_screen_reset(session_before="old-session", session_after="new-session", session_delay=2, ready_boundary="")
+        result, _ = self.run_reset(session_before="old-session", session_after="new-session", session_delay=2, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
         self.assertGreaterEqual(result.pane_gets, 4)
