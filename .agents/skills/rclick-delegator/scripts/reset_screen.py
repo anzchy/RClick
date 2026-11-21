@@ -181,7 +181,7 @@ def wait_for_context(read, session, old_session, seconds, interval,
         now = monotonic()
         if now >= deadline:
             return ("no-context" if boundary_seen else "no-boundary"), ""
-        sleep(min(interval, deadline - now))
+        sleep(interval)
 
 
 def outcome(name, old, seconds, kind, context):
