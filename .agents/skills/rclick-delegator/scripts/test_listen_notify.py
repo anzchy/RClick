@@ -7,7 +7,7 @@ def setUpModule():
 
 import importlib.util
 import io
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 import json
 import os
 import signal
@@ -2142,7 +2142,8 @@ class ListenerTests(unittest.TestCase):
 class ArchiveTests(unittest.TestCase):
     def command(self, argv):
         try:
-            return listen_notify.main(argv)
+            with redirect_stdout(io.StringIO()):
+                return listen_notify.main(argv)
         except SystemExit as error:
             return error.code
 
