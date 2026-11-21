@@ -63,10 +63,11 @@ Full reference: [references/guide.md](references/guide.md). Read it once before 
    - Set the ownership fences only after reading the code.
    - The implementer works test-first with Matt Pocock's `/tdd` and verifies with the `rclick-verify` skill. Fill the
      brief's `## Verify (rclick-verify)` section with this ticket's checks and Finder expectations.
-3. **Dispatch.** Reset the pane, then send a one-line prompt that points at the brief and carries a task ID
+3. **Dispatch.** Send a one-line prompt that points at the brief and carries a task ID
+   (`<item>-implementation-r1`). Put long instructions in the brief file; the helper strips exactly one final
+   newline and refuses any other newline in the prompt file.
    - For every dispatch, fix, confirm, or resumed phase, read [the listener rule](../../../.claude/rules/20-listener-after-dispatch.md) and use `$SK/scripts/dispatch-agent.sh` with a new task ID; require `DISPATCHED <event>`.
-   (`<item>-implementation-r1`).
-   - Start a listener event at once (guide §3.3). `listen-notify.py start --agent <name> --agent-pane <source pane_id> …` resolves the source
+   - Register a listener before submitting the prompt (guide §3.3), so a fast report cannot predate registration. `listen-notify.py start --agent <name> --agent-pane <source pane_id> …` resolves the source
      pane once and pins its terminal (name lookup is the fallback when `--agent-pane` is absent); polling follows that pane across session/name changes after reset. An unknown source is refused
      before state is created; resumes reuse the event pins without a lookup; a changed terminal is a poll error.
    - `reset.sh <name> <pane>` finds the agent by pane; the name is only a label, so don't rename before a reset.
