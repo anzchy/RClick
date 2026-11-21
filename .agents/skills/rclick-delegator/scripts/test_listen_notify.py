@@ -33,6 +33,17 @@ SCREENS = Path(__file__).with_name("fixtures") / "claude-screens"
 DIALOG_SCREEN = (SCREENS / "dialog-ask-one.ansi").read_text()
 
 
+def listener_fixture(test, tool, mode, **values):
+    """Select a committed PATH fixture without creating or chmodding a program."""
+    binary_dir = SCRIPT.parent / "fixtures" / "bin" / "listener"
+    env = {f"LISTENER_{tool.upper()}_MODE": mode,
+           "PATH": str(binary_dir) + os.pathsep + os.environ["PATH"]}
+    env.update({"LISTENER_" + key: str(value) for key, value in values.items()})
+    scope = patch.dict(os.environ, env)
+    scope.start()
+    test.addCleanup(scope.stop)
+
+
 def claude_screen(*box, label=" rclick-delegator ─"):
     lines = ["✻ Crunched for 2m 3s · done 11:14 PM",
              " " * 80 + "✘ Auto-update failed · Run claude doctor",
@@ -48,25 +59,8 @@ class PaneStartTests(unittest.TestCase):
             with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 calls, report = root / "calls", root / "report.md"
-                herdr = root / "herdr"
-                herdr.write_text("#!/usr/bin/env python3\n"
-                    "import json, sys\nfrom pathlib import Path\n"
-                    f"calls, report = Path({str(calls)!r}), Path({str(report)!r})\n"
-                    "previous = calls.read_text().splitlines() if calls.exists() else []\n"
-                    "with calls.open('a') as f: f.write(' '.join(sys.argv[1:]) + '\\n')\n"
-                    "target = sys.argv[-1]\n"
-                    "if previous and target != 'w1:p3':\n"
-                    "    sys.stderr.write('agent_not_found: name lost'); sys.exit(1)\n"
-                    "done = len(previous) >= 2\n"
-                    "if done: report.write_text('Report-Task: pane-report\\nDONE\\n')\n"
-                    f"terminal = 'term_replaced' if {mismatch!r} and done else 'term_abc123'\n"
-                    "print(json.dumps({'result': {'type': 'agent_info', 'agent': "
-                    "{'name': 'worker' if not previous else '', 'pane_id': 'w1:p3', "
-                    "'terminal_id': terminal, 'agent_status': 'done' if done else 'working'}}}))\n")
-                herdr.chmod(0o755)
-                codex = root / "codex"
-                codex.write_text("#!/bin/sh\nprintf 'scratch queued\\n'\n")
-                codex.chmod(0o755)
+                listener_fixture(self, 'herdr', 'report', CALLS=calls, REPORT=report, MISMATCH=mismatch)
+                listener_fixture(self, 'codex', 'queued')
                 args = listen_notify._build_parser().parse_args([
                     "start", "--event", "pane-report", "--task", "pane-report", "--agent", "worker",
                     "--thread", "11111111-2222-4333-8444-555555555555", "--handoff", str(report),
@@ -108,15 +102,8 @@ class PaneStartTests(unittest.TestCase):
     def test_explicit_pane_start_and_resume_without_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            herdr = root / "herdr"
             calls = root / "calls"
-            herdr.write_text("#!/usr/bin/env python3\n"
-                "import json, sys\n"
-                f"with open({str(calls)!r}, 'a') as f: f.write(sys.argv[-1] + '\\n')\n"
-                "if sys.argv[-1] != 'w1:p3': sys.exit(1)\n"
-                "print(json.dumps({'result': {'type': 'agent_info', 'agent': "
-                "{'pane_id': 'w1:p3', 'terminal_id': 'term_abc123', 'agent_status': 'done'}}}))\n")
-            herdr.chmod(0o755)
+            listener_fixture(self, 'herdr', 'pane', CALLS=calls)
             report = root / "report.md"
             report.write_text("DONE")
             base = ["start", "--event", "explicit", "--task", "explicit", "--agent", "lost",
@@ -131,7 +118,7 @@ class PaneStartTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("lost done", result.stdout)
                 # Resume without a pane argument must perform no lookup at all.
-                herdr.write_text("#!/bin/sh\necho lookup-forbidden >&2\nexit 1\n")
+                listener_fixture(self, 'herdr', 'forbidden')
                 resumed = listen_notify._config_from_args(listen_notify._build_parser().parse_args(base))
                 self.assertEqual(resumed["poll"], config["poll"])
                 self.assertEqual(resumed["agent_terminal"], "term_abc123")
@@ -145,17 +132,8 @@ class PaneStartTests(unittest.TestCase):
     def test_start_resolves_name_once_and_refuses_unknown_without_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            herdr = root / "herdr"
             calls = root / "calls"
-            herdr.write_text("#!/usr/bin/env python3\n"
-                             "import json, sys\n"
-                             f"with open({str(calls)!r}, 'a') as f: f.write(' '.join(sys.argv[1:]) + '\\n')\n"
-                             "if sys.argv[-1] == 'unknown':\n"
-                             "    sys.stderr.write('agent_not_found: unknown'); sys.exit(1)\n"
-                             "print(json.dumps({'result': {'type': 'agent_info', 'agent': "
-                             "{'name': 'worker', 'pane_id': 'w1:p3', 'terminal_id': 'term_abc123', "
-                             "'agent_status': 'working'}}}))\n")
-            herdr.chmod(0o755)
+            listener_fixture(self, 'herdr', 'resolve', CALLS=calls)
             base = ["start", "--event", "pin-test", "--task", "pin-test", "--agent", "worker",
                     "--thread", "11111111-2222-4333-8444-555555555555",
                     "--handoff", str(root / "report.md"), "--handoff-marker", "pin-test",
@@ -1429,17 +1407,8 @@ class ListenerTests(unittest.TestCase):
         fake_bin = self.root / "fake-report-bin"
         fake_bin.mkdir()
         captured = self.root / "report-message.txt"
-        herdr = fake_bin / "herdr"
-        herdr.write_text("#!/bin/sh\nprintf '%s\\n' '{\"id\":\"cli:agent:get\",\"result\":{\"type\":\"agent_info\",\"agent\":{\"name\":\"gpt-auditor\",\"terminal_id\":\"term_abc123\",\"agent_status\":\"idle\"}}}'\n")
-        herdr.chmod(0o755)
-        codex = fake_bin / "codex"
-        codex.write_text(
-            "#!/usr/bin/env python3\n"
-            "import os, sys\n"
-            "open(os.environ['CAPTURED_MESSAGE'], 'w').write(sys.argv[-1])\n"
-            "print('scratch queued')\n"
-        )
-        codex.chmod(0o755)
+        listener_fixture(self, 'herdr', 'idle')
+        listener_fixture(self, 'codex', 'capture-message')
         args = listen_notify._build_parser().parse_args([
             "start", "--event", self.event_dir.name, "--task", "issue90-report-test",
             "--thread", self.config["thread"], "--agent", "gpt-auditor",
@@ -1468,12 +1437,8 @@ class ListenerTests(unittest.TestCase):
     def test_real_report_worker_rejects_prefix_collision_and_blank_config(self):
         fake_bin = self.root / "fake-identity-bin"
         fake_bin.mkdir()
-        herdr = fake_bin / "herdr"
-        herdr.write_text("#!/bin/sh\nprintf '%s\\n' '{\"id\":\"cli:agent:get\",\"result\":{\"type\":\"agent_info\",\"agent\":{\"name\":\"gpt-auditor\",\"terminal_id\":\"term_abc123\",\"agent_status\":\"idle\"}}}'\n")
-        herdr.chmod(0o755)
-        codex = fake_bin / "codex"
-        codex.write_text("#!/bin/sh\nprintf 'scratch queued\\n'\n")
-        codex.chmod(0o755)
+        listener_fixture(self, 'herdr', 'idle')
+        listener_fixture(self, 'codex', 'queued')
         environment = dict(os.environ)
         environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
         args = listen_notify._build_parser().parse_args([
@@ -1529,18 +1494,21 @@ class ListenerTests(unittest.TestCase):
         self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
         self.assertNotIn("shell", kwargs)
 
+    def test_transport_does_not_create_an_executable(self):
+        write = Path.write_text
+
+        def data_only(path, text, *args, **kwargs):
+            self.assertFalse(text.startswith("#!"), "transport must use a committed executable")
+            return write(path, text, *args, **kwargs)
+
+        with patch.object(Path, "write_text", data_only):
+            self.test_cli_run_uses_a_scratch_transport_and_never_queues_a_real_thread()
+
     def test_cli_run_uses_a_scratch_transport_and_never_queues_a_real_thread(self):
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
         captured = self.root / "captured-argv.json"
-        fake_codex = fake_bin / "codex"
-        fake_codex.write_text(
-            "#!/usr/bin/env python3\n"
-            "import json, os, sys\n"
-            "open(os.environ['CAPTURED_ARGV'], 'w').write(json.dumps(sys.argv[1:]))\n"
-            "print('scratch queue receipt')\n"
-        )
-        fake_codex.chmod(0o755)
+        listener_fixture(self, 'codex', 'capture-argv')
         self.handoff.write_text("DONE\n")
         os.utime(self.handoff, (1_800_000_001, 1_800_000_001))
         self.config["poll"] = [
@@ -1571,24 +1539,9 @@ class ListenerTests(unittest.TestCase):
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
         captured = self.root / "captured-argv.json"
-        codex = fake_bin / "codex"
-        codex.write_text(
-            "#!/usr/bin/env python3\n"
-            "import json, os, sys\n"
-            "open(os.environ['CAPTURED_ARGV'], 'w').write(json.dumps(sys.argv[1:]))\n"
-            "print('scratch queue receipt')\n"
-        )
-        codex.chmod(0o755)
+        listener_fixture(self, 'codex', 'capture-argv')
         child_pid_path = self.root / "child.pid"
-        hung_poll = self.root / "hung-poll.py"
-        hung_poll.write_text(
-            "import os, signal, subprocess, sys, time\n"
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            "child = subprocess.Popen([sys.executable, '-c', "
-            "'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
-            "open(sys.argv[1], 'w').write(str(child.pid))\n"
-            "time.sleep(60)\n"
-        )
+        hung_poll = SCRIPT.parent / "fixtures" / "listener-hung-poll.py"
         self.config["poll"] = [sys.executable, str(hung_poll), str(child_pid_path)]
         self.config["poll_deadline_seconds"] = 0.25
         self.handoff.write_text("DONE\n")
@@ -1645,12 +1598,8 @@ class ListenerTests(unittest.TestCase):
         # silently, and the listener showed `polling` until the deadline.
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
-        codex = fake_bin / "codex"
-        codex.write_text("#!/usr/bin/env python3\nprint('scratch queue receipt')\n")
-        codex.chmod(0o755)
-        poll = self.root / "poll-idle.sh"
-        poll.write_text("#!/usr/bin/env python3\nprint('done')\n")
-        poll.chmod(0o644)
+        listener_fixture(self, 'codex', 'queued')
+        poll = SCRIPT.parent / "fixtures" / "listener-unexecutable-poll.sh"
         self.config["poll"] = [str(poll), "gpt-imple-3", "120", "600", "w1:p3", "term_abc123"]
         self.config["poll_deadline_seconds"] = 60
         (self.event_dir / "config.json").write_text(json.dumps(self.config))
@@ -1676,8 +1625,7 @@ class ListenerTests(unittest.TestCase):
                 worker.communicate(timeout=2)
 
     def test_supervisor_that_exits_without_a_result_stops_the_wait(self):
-        dying = self.root / "dying-supervisor.py"
-        dying.write_text("import sys\nsys.exit(3)\n")
+        dying = SCRIPT.parent / "fixtures" / "listener-exit.py"
         started = time.monotonic()
         with patch.object(listen_notify, "__file__", str(dying)):
             with self.assertRaisesRegex(RuntimeError, "without a result"):
@@ -1688,23 +1636,9 @@ class ListenerTests(unittest.TestCase):
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
         captured = self.root / "captured-argv.json"
-        codex = fake_bin / "codex"
-        codex.write_text(
-            "#!/usr/bin/env python3\n"
-            "import json, os, sys\n"
-            "open(os.environ['CAPTURED_ARGV'], 'w').write(json.dumps(sys.argv[1:]))\n"
-            "print('scratch queue receipt')\n"
-        )
-        codex.chmod(0o755)
+        listener_fixture(self, 'codex', 'capture-argv')
         child_pid_path = self.root / "child.pid"
-        poller = self.root / "exiting-poll.py"
-        poller.write_text(
-            "import subprocess, sys\n"
-            "child = subprocess.Popen([sys.executable, '-c', "
-            "'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
-            "open(sys.argv[1], 'w').write(str(child.pid))\n"
-            "print('gpt-imple-3 idle 12:00:00', flush=True)\n"
-        )
+        poller = SCRIPT.parent / "fixtures" / "listener-child-poll.py"
         self.config["poll"] = [sys.executable, str(poller), str(child_pid_path)]
         self.config["poll_deadline_seconds"] = 0.5
         self.handoff.write_text("DONE\n")
@@ -1781,18 +1715,7 @@ class ListenerTests(unittest.TestCase):
         """A codex on PATH that records its argv; with block, it waits for `release` before answering."""
         fake_bin = self.root / "fake-stop-bin"
         fake_bin.mkdir(exist_ok=True)
-        codex = fake_bin / "codex"
-        codex.write_text(
-            "#!{}\n"
-            "import json, os, sys, time\n"
-            "root = os.environ['STOP_TEST_ROOT']\n"
-            "open(os.path.join(root, 'codex-started'), 'w').write(str(os.getpid()))\n"
-            "while {} and not os.path.exists(os.path.join(root, 'release')):\n"
-            "    time.sleep(0.02)\n"
-            "open(os.path.join(root, 'codex-argv.json'), 'w').write(json.dumps(sys.argv[1:]))\n"
-            "print('scratch queue receipt')\n".format(sys.executable, bool(block))
-        )
-        codex.chmod(0o755)
+        listener_fixture(self, 'codex', 'stop', BLOCK=block)
         environment = dict(os.environ)
         environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
         environment["STOP_TEST_ROOT"] = str(self.root)
@@ -1801,14 +1724,7 @@ class ListenerTests(unittest.TestCase):
     def _polling_worker(self, event_dir, config, environment):
         """A real detached `run` worker whose fake poller ignores TERM and records `pid ppid`."""
         child_path = event_dir.parent.parent / (config["event"] + ".poller")
-        poller = self.root / "stubborn-poll.py"
-        poller.write_text(
-            "import os, signal, sys, time\n"
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            "open(sys.argv[1] + '.tmp', 'w').write('{} {}'.format(os.getpid(), os.getppid()))\n"
-            "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
-            "time.sleep(60)\n"
-        )
+        poller = SCRIPT.parent / "fixtures" / "listener-stubborn-poll.py"
         config = dict(config, poll=[sys.executable, str(poller), str(child_path)])
         event_dir.mkdir(parents=True, exist_ok=True)
         (event_dir / "config.json").write_text(json.dumps(config))
@@ -1896,8 +1812,7 @@ class ListenerTests(unittest.TestCase):
     def test_stop_during_codex_delivery_lets_the_send_finish_and_reports_delivered(self):
         # gpt F1: a send in flight completes and records its receipt; stop reports what happened.
         environment = self._fake_codex(block=True)
-        poller = self.root / "quick-poll.py"
-        poller.write_text("print('gpt-imple-3 idle 12:00:00')\n")
+        poller = SCRIPT.parent / "fixtures" / "listener-quick-poll.py"
         self.config["poll"] = [sys.executable, str(poller)]
         self.handoff.write_text("DONE\n")
         os.utime(self.handoff, (1_800_000_001, 1_800_000_001))
@@ -2090,11 +2005,7 @@ class ListenerTests(unittest.TestCase):
         self._codex_ready()
         fake_bin = self.root / "slow-bin"
         fake_bin.mkdir()
-        (fake_bin / "codex").write_text(
-            "#!{}\nimport os, time\nroot = os.environ['STOP_TEST_ROOT']\n"
-            "with open(os.path.join(root, 'codex-accepted'), 'a') as f: f.write('x')\n"
-            "time.sleep(3)\nprint('late receipt')\n".format(sys.executable))
-        (fake_bin / "codex").chmod(0o755)
+        listener_fixture(self, 'codex', 'late')
         environment = {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"], "STOP_TEST_ROOT": str(self.root)}
         outcome = {}
         with patch.dict(os.environ, environment), \
