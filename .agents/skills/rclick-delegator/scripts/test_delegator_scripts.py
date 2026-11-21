@@ -913,6 +913,17 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
+    def test_final_full_poll_interval_accepts_context_after_deadline(self):
+        now = 0.0
+        def advance(seconds):
+            nonlocal now
+            now += seconds
+        kind, context = reset_screen.wait_for_context(
+            lambda: ">_ OpenAI Codex (v0.166.0)\n" + ("Context 0% used" if now >= 0.12 else ""),
+            lambda: "", "", 0.1, 0.075, sleep=advance, monotonic=lambda: now)
+        self.assertEqual((kind, context), ("context", "Context 0% used"))
+        self.assertAlmostEqual(now, 0.15)
+
     def test_timeout_elapsed_is_virtual(self):
         result, elapsed = self.run_screen_reset(context="", deadline="0.1", poll="0.025")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
