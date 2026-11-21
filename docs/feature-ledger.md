@@ -1,6 +1,6 @@
 # RClick feature ledger
 
-The hand-inspected inventory of every feature RClick ships today. **Verified against `e729e01`** (issue #49's code on main
+The hand-inspected inventory of every feature RClick ships today. **Verified against `e729e01`** (#49's code, rebased on main
 `453241c`, 2026-11-20) by reading the code, the specs, and the issues and PRs on `anzchy/RClick`: at `e729e01` the
 files #49 changed and the blocks that cite them were re-read; every other block carries the full read at `38d356a`,
 whose code `453241c` keeps (`git diff 38d356a 453241c` touches only `docs/` and one delegator brief template). Nothing here was checked by running the
@@ -57,7 +57,7 @@ roster's private record; no claim depends on reading it. A result that only a pr
 | [PR #34](https://github.com/anzchy/RClick/pull/34) › Device | `78a1fc6` (a PR #34 head) | `d94db82` (final head `066c542`; `git diff 78a1fc6 066c542` touches only `specs/`) | `i28-i32-device-20261118` | Copy Path and Copy File Name on literal percent names; the file-URL FAIL that issue #25 tracked; its NOT VERIFIED list |
 | [PR #35](https://github.com/anzchy/RClick/pull/35) › Device | `0f598ad` (PR #35 head) | `723b6c5`, same tree | none named | the per-install Keychain key, a replayed click rejected, recovery after relaunch, the rejection notice; its NOT VERIFIED list and the release gate (issue #40) |
 | [Issue #12 comment](https://github.com/anzchy/RClick/issues/12#issuecomment-7041176305) | `38d356a` (main) | `38d356a` | `i-device-20261120` | Copy Path, Cut, Paste and New File rows on a Debug build, the offline menu as observed; its NOT VERIFIED rows; defects filed as #51 to #54 |
-| [Issue #49 comment](https://github.com/anzchy/RClick/issues/49#issuecomment-7058423784) | `e729e01` (issue #49's code on main `453241c`) | | `i-device-20261121` | New File from the real Finder menu in both layouts, several templates per type (flat and folded, folded also after a relaunch), the edit sheet's template rows, same-Mac export and import, Restore Defaults, the offline menu as observed; its NOT VERIFIED rows; no product FAIL |
+| [Issue #49 comment](https://github.com/anzchy/RClick/issues/49#issuecomment-7058423784) | `e729e01` (#49's code, rebased on main `453241c`) | | `i-device-20261121` | New File from the real Finder menu in both layouts, several templates per type (flat and folded, folded also after a relaunch), the edit sheet's template rows, same-Mac export and import, Restore Defaults, the offline menu as observed; its NOT VERIFIED rows; no product FAIL |
 
 PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
 menu was read through an Accessibility helper. The issue #12 and issue #49 comments name a Debug build; the issue #49 comment
