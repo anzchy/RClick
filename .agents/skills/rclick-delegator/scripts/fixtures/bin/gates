@@ -10,5 +10,5 @@ from pathlib import Path
 
 config = json.loads(Path('.gates-fixture.json').read_text())
 Path(os.environ['GATES_FIXTURE_MARKER']).touch()
-subprocess.run(['/bin/sh', '-c', config['body']], check=True)
+subprocess.run(['/bin/sh', '-c', config['body']])
 raise SystemExit(config['exit_code'])
