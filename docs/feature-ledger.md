@@ -780,7 +780,8 @@ delete its line in the same change.
   Apple product names resolve in every supported language (CHANGELOG [Unreleased] › Fixed, PR #34). The New File
   template strings (the Blank label, the edit sheet's template list, "%lld templates not included") are app catalog
   keys only: the app localizes "Blank" before it sends the menu (`RClick/Runtime/MenuService.swift:28`) and template
-  names are the user's text, so the extension catalog has no template key. "%lld templates not included" has no
+  names are the user's text, so the extension catalog has no key the extension renders for templates (it holds a
+  `"Template"` key in all five languages that no extension code uses). "%lld templates not included" has no
   plural variants in `RClick/Localizable.xcstrings`, so a count of one reads "1 templates" in English.
 - **Status:** `shipped-on`.
 - **Tests:** `NewFileLocalizationTests` (built-in names in every app language, Simplified Chinese product names),
