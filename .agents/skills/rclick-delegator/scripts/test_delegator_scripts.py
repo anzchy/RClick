@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+import reset_screen
 
 FIXTURE_BIN = Path(__file__).resolve().parent / "fixtures" / "bin"
 
@@ -478,8 +479,42 @@ LIVE_RESET_SCREEN = Path(__file__).with_name("fixtures").joinpath("reset-fresh-c
 LIVE_RESET_SCREEN_0167 = Path(__file__).with_name("fixtures").joinpath("reset-fresh-codex-0167.txt").read_text()
 
 
+
+def run_screen_reset(self, *, delay=0, context="Context 0% used", deadline="2", poll="0.01",
+                     prefix="", startup=">_ OpenAI Codex (v0.166.0)",
+                     ready_boundary=">_ OpenAI Codex (v0.166.0)", locale=None, old_context="",
+                     session_before="", session_after="", session_delay=0):
+    """Replay finite pane events through the production controller using virtual time."""
+    now = 0.0
+    reads = 0
+    gets = 1  # initial pane identity, before /new
+
+    def session():
+        nonlocal gets
+        gets += 1
+        return session_after if reads >= session_delay else session_before
+
+    def read():
+        nonlocal reads
+        screen = startup if reads < delay or not context else ready_boundary + "\n" + context
+        reads += 1
+        return prefix + "\n" + screen + "\n"
+
+    def advance(seconds):
+        nonlocal now
+        now += seconds
+
+    kind, context = reset_screen.wait_for_context(read, session, session_before,
+        float(deadline), float(poll), sleep=advance, monotonic=lambda: now)
+    code, output = reset_screen.outcome("fixture-agent", session_before or "old-session", deadline, kind, context)
+    result = subprocess.CompletedProcess([], code, output, "")
+    result.pane_gets = gets
+    return result, now
+
 class ResetTests(unittest.TestCase):
     """Run the real reset CLI through chooser/startup/context transitions."""
+
+    run_screen_reset = run_screen_reset
 
     SUCCESS = ("reset fixture-agent old_session=old-session Context 0% used "
                "(verify the session id changes after the next turn)\n")
@@ -523,18 +558,18 @@ class ResetTests(unittest.TestCase):
             return result, time.monotonic() - started
 
     def test_real_saved_screen_with_missing_session_id_succeeds(self):
-        result, _ = self.run_reset(context=LIVE_RESET_SCREEN, ready_boundary="", locale="C")
+        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN, ready_boundary="", locale="C")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_real_codex_0167_fresh_screen_succeeds(self):
-        result, _ = self.run_reset(context=LIVE_RESET_SCREEN_0167, ready_boundary="", locale="C")
+        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN_0167, ready_boundary="", locale="C")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_codex_0167_screen_over_a_prior_transcript_still_fails(self):
         screen = LIVE_RESET_SCREEN_0167.replace("› Ask Codex to do anything", "› hello\n• Hello!\n› Ask Codex to do anything")
-        result, _ = self.run_reset(context=screen, ready_boundary="", locale="C", deadline="0.3")
+        result, _ = self.run_screen_reset(context=screen, ready_boundary="", locale="C", deadline="0.3")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("FAIL reset fixture-agent", result.stdout)
 
@@ -548,7 +583,7 @@ class ResetTests(unittest.TestCase):
                     screen = LIVE_RESET_SCREEN.replace("› Ask Codex to do anything",
                                                       transcript + "\n› Ask Codex to do anything")
                     screen = screen.replace("Context 0%", f"Context {percent}%")
-                    result, _ = self.run_reset(context=screen, ready_boundary="", startup="",
+                    result, _ = self.run_screen_reset(context=screen, ready_boundary="", startup="",
                                                deadline="0.1", locale="C",
                                                session_before="old-session", session_after="old-session")
                     self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -558,14 +593,14 @@ class ResetTests(unittest.TestCase):
         for percent in (0, 3):
             with self.subTest(percent=percent):
                 screen = LIVE_RESET_SCREEN + f"› hello\n• Hello!\n› Ask Codex to do anything\nContext {percent}% used"
-                result, _ = self.run_reset(context=screen, ready_boundary="", startup="", deadline="0.1")
+                result, _ = self.run_screen_reset(context=screen, ready_boundary="", startup="", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_short_old_nonzero_screen_waits_for_real_fresh_screen(self):
         old = LIVE_RESET_SCREEN.replace("› Ask Codex to do anything", "› hello\n• Hello!")
         old = old.replace("Context 0%", "Context 3%")
-        result, _ = self.run_reset(delay=1, startup=old, context=LIVE_RESET_SCREEN,
+        result, _ = self.run_screen_reset(delay=1, startup=old, context=LIVE_RESET_SCREEN,
                                    ready_boundary="", session_before="old-session", session_after="old-session")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
@@ -574,17 +609,17 @@ class ResetTests(unittest.TestCase):
     def test_empty_welcome_screen_allows_known_tips_and_box_art(self):
         screen = LIVE_RESET_SCREEN.replace("› Ask Codex to do anything",
             "╭──╮\n│  │\n╰──╯\n  Tip: Use /help to see available commands.\n› Ask Codex to do anything")
-        result, _ = self.run_reset(context=screen, ready_boundary="", locale="C")
+        result, _ = self.run_screen_reset(context=screen, ready_boundary="", locale="C")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_changed_session_id_proves_markerless_footer(self):
-        result, _ = self.run_reset(session_before="old-session", session_after="new-session", ready_boundary="")
+        result, _ = self.run_screen_reset(session_before="old-session", session_after="new-session", ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_unchanged_session_id_accepts_real_saved_screen(self):
-        result, _ = self.run_reset(session_before="old-session", session_after="old-session",
+        result, _ = self.run_screen_reset(session_before="old-session", session_after="old-session",
                                    context=LIVE_RESET_SCREEN, ready_boundary="", locale="C")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
@@ -592,13 +627,13 @@ class ResetTests(unittest.TestCase):
     def test_unchanged_session_id_rejects_stale_screen_without_header(self):
         for screen in ("Context 0% used", "/new\nContext 0% used", "Starting MCP servers\nContext 0% used"):
             with self.subTest(screen=screen):
-                result, _ = self.run_reset(session_before="old-session", session_after="old-session",
+                result, _ = self.run_screen_reset(session_before="old-session", session_after="old-session",
                                            context=screen, ready_boundary="", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_session_id_change_is_polled_before_success(self):
-        result, _ = self.run_reset(session_before="old-session", session_after="new-session", session_delay=2, ready_boundary="")
+        result, _ = self.run_screen_reset(session_before="old-session", session_after="new-session", session_delay=2, ready_boundary="")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
         self.assertGreaterEqual(result.pane_gets, 4)
@@ -606,7 +641,7 @@ class ResetTests(unittest.TestCase):
     def test_session_id_unavailable_on_either_side_uses_header(self):
         for before, after in (("", "new-session"), ("old-session", "")):
             with self.subTest(before=before, after=after):
-                result, _ = self.run_reset(session_before=before, session_after=after,
+                result, _ = self.run_screen_reset(session_before=before, session_after=after,
                                            context=LIVE_RESET_SCREEN, ready_boundary="")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.SUCCESS)
@@ -615,18 +650,18 @@ class ResetTests(unittest.TestCase):
         for context, expected in (("", "no context line after 0.1s"),
                                   ("Context 12% used", "Context 12% used after /new")):
             with self.subTest(context=context):
-                result, _ = self.run_reset(session_before="old-session", session_after="new-session",
+                result, _ = self.run_screen_reset(session_before="old-session", session_after="new-session",
                                            context=context, ready_boundary="", startup="", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, f"FAIL reset fixture-agent: {expected}\n")
 
     def test_real_status_line_needs_proof_and_rejects_nonzero(self):
-        result, _ = self.run_reset(context=LIVE_RESET_SCREEN.replace("Context 0%", "Context 12%"),
+        result, _ = self.run_screen_reset(context=LIVE_RESET_SCREEN.replace("Context 0%", "Context 12%"),
                                    ready_boundary="", deadline="0.1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "FAIL reset fixture-agent: Context 12% used after /new\n")
         footer = LIVE_RESET_SCREEN.splitlines()[-2]
-        result, _ = self.run_reset(context=footer, ready_boundary="", deadline="0.1")
+        result, _ = self.run_screen_reset(context=footer, ready_boundary="", deadline="0.1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
@@ -634,7 +669,7 @@ class ResetTests(unittest.TestCase):
         for header in ('> >_ OpenAI Codex (v0.166.0)', '" >_ OpenAI Codex (v0.166.0)"',
                        '```\n>_ OpenAI Codex (v0.166.0)\n```'):
             with self.subTest(header=header):
-                result, _ = self.run_reset(context=header + "\nContext 0% used", ready_boundary="", deadline="0.1")
+                result, _ = self.run_screen_reset(context=header + "\nContext 0% used", ready_boundary="", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
@@ -642,20 +677,20 @@ class ResetTests(unittest.TestCase):
         for delay, startup, context in ((0, "", "Context 0% used\n>_ OpenAI Codex (v0.166.0)"),
                                          (1, ">_ OpenAI Codex (v0.166.0)", "Context 0% used")):
             with self.subTest(delay=delay):
-                result, _ = self.run_reset(delay=delay, startup=startup, context=context,
+                result, _ = self.run_screen_reset(delay=delay, startup=startup, context=context,
                                            ready_boundary="", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY if delay == 0 else
                                  "FAIL reset fixture-agent: no context line after 0.1s\n")
 
     def test_changed_id_does_not_accept_footer_under_chooser(self):
-        result, _ = self.run_reset(session_before="old-session", session_after="new-session",
+        result, _ = self.run_screen_reset(session_before="old-session", session_after="new-session",
                                    prefix="Where should the new conversation run?", ready_boundary="", deadline="0.1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "FAIL reset fixture-agent: no context line after 0.1s\n")
 
     def test_unchanged_session_id_without_header_waits_on_nonzero_footer(self):
-        result, elapsed = self.run_reset(session_before="old-session", session_after="old-session",
+        result, elapsed = self.run_screen_reset(session_before="old-session", session_after="old-session",
                                          context="Context 12% used", ready_boundary="", deadline="0.1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
@@ -667,28 +702,28 @@ class ResetTests(unittest.TestCase):
                        'The pane says ' + footer.strip(), '```\n' + footer + '\n```',
                        '~~~\n' + footer + '\n~~~'):
             with self.subTest(quoted=quoted):
-                result, _ = self.run_reset(context=quoted, deadline="0.1")
+                result, _ = self.run_screen_reset(context=quoted, deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_unchanged_id_with_header_uses_bottommost_footer(self):
         for context in ("Context 12% used", "Context 0% used\nContext 12% used"):
             with self.subTest(context=context):
-                result, _ = self.run_reset(session_before="old-session", session_after="old-session", context=context)
+                result, _ = self.run_screen_reset(session_before="old-session", session_after="old-session", context=context)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, "FAIL reset fixture-agent: Context 12% used after /new\n")
 
     def test_later_ordering_marker_requires_new_header(self):
         for marker in ("/new", "Starting MCP servers", "Where should the new conversation run?"):
             with self.subTest(marker=marker):
-                result, _ = self.run_reset(context=marker + "\nContext 0% used", deadline="0.1")
+                result, _ = self.run_screen_reset(context=marker + "\nContext 0% used", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, "FAIL reset fixture-agent: no context line after 0.1s\n")
 
     def test_empty_startup_reads_preserve_success(self):
         for delay in (0, 1, 3, 12):
             with self.subTest(delay=delay):
-                result, _ = self.run_reset(delay=delay)
+                result, _ = self.run_screen_reset(delay=delay)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -698,7 +733,7 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_missing_context_waits_for_and_names_timeout(self):
-        result, elapsed = self.run_reset(context="", deadline="0.1")
+        result, elapsed = self.run_screen_reset(context="", deadline="0.1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "FAIL reset fixture-agent: no context line after 0.1s\n")
         self.assertGreaterEqual(elapsed, 0.09)
@@ -725,18 +760,18 @@ class ResetTests(unittest.TestCase):
     def test_stale_zero_before_title_cannot_prove_fresh_screen(self):
         for marker in ("Where should the new conversation run?", "/new", "Starting MCP servers (3/4)"):
             with self.subTest(marker=marker):
-                result, _ = self.run_reset(delay=3, context="Context 12% used", deadline="0.1",
+                result, _ = self.run_screen_reset(delay=3, context="Context 12% used", deadline="0.1",
                                            prefix=f"Context 0% used\n{marker}")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_old_nonzero_above_title_cannot_prove_fresh_screen(self):
-        result, _ = self.run_reset(prefix="Context 12% used\n/new", deadline="0.1")
+        result, _ = self.run_screen_reset(prefix="Context 12% used\n/new", deadline="0.1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_bottommost_new_footer_decides(self):
-        result, _ = self.run_reset(context="Context 0% used\nContext 12% used")
+        result, _ = self.run_screen_reset(context="Context 0% used\nContext 12% used")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "FAIL reset fixture-agent: Context 12% used after /new\n")
 
@@ -744,12 +779,12 @@ class ResetTests(unittest.TestCase):
         for quote in ('The issue says "Context 0% used" during startup.', '"Context 0% used"',
                       '> Context 0% used'):
             with self.subTest(quote=quote):
-                result, _ = self.run_reset(context="", deadline="0.1", startup=f">_ OpenAI Codex (v0.166.0)\n{quote}")
+                result, _ = self.run_screen_reset(context="", deadline="0.1", startup=f">_ OpenAI Codex (v0.166.0)\n{quote}")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_markerless_stale_footer_cannot_succeed_early(self):
-        result, _ = self.run_reset(old_context="Context 0% used", delay=3, deadline="0.1",
+        result, _ = self.run_screen_reset(old_context="Context 0% used", delay=3, deadline="0.1",
                                    startup="Context 0% used", context="Context 12% used", ready_boundary="")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
@@ -758,31 +793,31 @@ class ResetTests(unittest.TestCase):
                    "check the pane\n")
 
     def test_unchanged_markerless_zero_never_proves_reset(self):
-        result, _ = self.run_reset(old_context="Context 0% used", deadline="0.1", ready_boundary="")
+        result, _ = self.run_screen_reset(old_context="Context 0% used", deadline="0.1", ready_boundary="")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_blank_then_stale_zero_never_proves_reset(self):
-        result, _ = self.run_reset(old_context="Context 0% used", delay=1, startup="", deadline="0.1",
+        result, _ = self.run_screen_reset(old_context="Context 0% used", delay=1, startup="", deadline="0.1",
                                    ready_boundary="")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_boundary_does_not_latch_across_reads(self):
-        result, _ = self.run_reset(delay=1, startup="/new", deadline="0.1", ready_boundary="")
+        result, _ = self.run_screen_reset(delay=1, startup="/new", deadline="0.1", ready_boundary="")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_footer_under_last_chooser_is_not_session_context(self):
         for context in ("Context 0% used", "Context 37% used"):
             with self.subTest(context=context):
-                result, _ = self.run_reset(prefix="/new\nWhere should the new conversation run?",
+                result, _ = self.run_screen_reset(prefix="/new\nWhere should the new conversation run?",
                                            context=context, ready_boundary="", deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_chooser_footer_waits_for_started_session(self):
-        result, _ = self.run_reset(delay=1, startup="Where should the new conversation run?\nContext 37% used")
+        result, _ = self.run_screen_reset(delay=1, startup="Where should the new conversation run?\nContext 37% used")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
 
@@ -790,7 +825,7 @@ class ResetTests(unittest.TestCase):
         for boundary in ("/new", "> /new", "❯ /new", "› /new", "Starting MCP servers (3/4)"):
             for context in ("Context 0% used", "Context 12% used"):
                 with self.subTest(boundary=boundary, context=context):
-                    result, _ = self.run_reset(ready_boundary=boundary, locale="C", context=context, deadline="0.1")
+                    result, _ = self.run_screen_reset(ready_boundary=boundary, locale="C", context=context, deadline="0.1")
                     self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                     self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
@@ -801,20 +836,20 @@ class ResetTests(unittest.TestCase):
             if boundary == '> /new':
                 continue
             with self.subTest(boundary=boundary):
-                result, _ = self.run_reset(ready_boundary=boundary, deadline="0.1")
+                result, _ = self.run_screen_reset(ready_boundary=boundary, deadline="0.1")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_fenced_context_quote_is_ignored(self):
         for fence in ("```", "~~~"):
             with self.subTest(fence=fence):
-                result, _ = self.run_reset(context="", deadline="0.1",
+                result, _ = self.run_screen_reset(context="", deadline="0.1",
                                            startup=f">_ OpenAI Codex (v0.166.0)\n{fence}text\nContext 0% used\n{fence}\nStill starting")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, self.NO_BOUNDARY)
 
     def test_fenced_reset_marker_does_not_freshen_stale_footer(self):
-        result, _ = self.run_reset(old_context="Context 0% used", deadline="0.1",
+        result, _ = self.run_screen_reset(old_context="Context 0% used", deadline="0.1",
                                    context="Context 0% used\n```\n/new\n```", ready_boundary="")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.NO_BOUNDARY)
@@ -822,7 +857,7 @@ class ResetTests(unittest.TestCase):
     def test_nonzero_context_fails_even_after_startup(self):
         for delay in (0, 3):
             with self.subTest(delay=delay):
-                result, _ = self.run_reset(delay=delay, context="Context 12% used")
+                result, _ = self.run_screen_reset(delay=delay, context="Context 12% used")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, "FAIL reset fixture-agent: Context 12% used after /new\n")
 
@@ -841,6 +876,11 @@ class ResetTests(unittest.TestCase):
         result, _ = self.run_reset(use_defaults=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, self.SUCCESS)
+
+    def test_timeout_elapsed_is_virtual(self):
+        result, elapsed = self.run_screen_reset(context="", deadline="0.1", poll="0.025")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(elapsed, 0.1)
 
     def test_busy_status_refuses_reset(self):
         result, _ = self.run_reset(status="busy")
@@ -871,7 +911,7 @@ class ResetTests(unittest.TestCase):
 class ResetFreshScreenTests(unittest.TestCase):
     """#434: welcome-like transcript must not re-prove a stale screen."""
 
-    run_reset = ResetTests.run_reset
+    run_reset = run_screen_reset
     SUCCESS = ResetTests.SUCCESS
     NO_BOUNDARY = ResetTests.NO_BOUNDARY
     SCREEN = Path(__file__).with_name("fixtures").joinpath("reset-fresh-codex.txt").read_text()
@@ -935,7 +975,9 @@ class ResetFreshScreenTests(unittest.TestCase):
 
     def test_twenty_five_row_pane_read_reaches_fresh_title(self):
         self.assertGreater(len(self.SCREEN.splitlines()), 25)
-        self.assert_fresh(self.SCREEN, pane_height=25)
+        result, _ = ResetTests.run_reset(self, context=self.SCREEN, ready_boundary="", pane_height=25)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, self.SUCCESS)
 
     def test_last_title_with_dirty_body_revokes_earlier_fresh_screen(self):
         self.assert_stale(self.SCREEN + "\n>_ OpenAI Codex (v0.166.0)\n~/fixture-worktree\n› old prompt\nContext 0% used")
@@ -953,7 +995,7 @@ class ResetFreshScreenTests(unittest.TestCase):
 class ResetShortScreenTests(unittest.TestCase):
     """#468: compact replays derived from the saved real Codex pane, not raw captures."""
 
-    run_reset = ResetTests.run_reset
+    run_reset = run_screen_reset
     SUCCESS = ResetTests.SUCCESS
     NO_BOUNDARY = ResetTests.NO_BOUNDARY
     NO_CONTEXT = "FAIL reset fixture-agent: no context line after 0.1s\n"
