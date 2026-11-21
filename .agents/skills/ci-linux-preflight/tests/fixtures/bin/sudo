@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "${RCLICK_PREFLIGHT_FIXTURE_WARMUP:-}" != 1 ] || exit 0
+if [ "${FAKE_SUDO_PASSWORDLESS:-}" = 1 ]; then exit 0; fi
+exit 1

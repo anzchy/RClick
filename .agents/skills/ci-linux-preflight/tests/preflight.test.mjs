@@ -1,8 +1,8 @@
 // Behavioral tests for ci-linux-preflight, adapted from picsee's scripts/agents/ci-linux-preflight.test.mjs.
 // Every run goes through a fake ssh/rsync/flock/timeout in a temporary HOME: no network, no real host.
-import test, { describe } from 'node:test';
+import test, { before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync, readlinkSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, readdirSync, readlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -10,11 +10,31 @@ import { parseWorkflow, workflowAt, PYTHON_VERSION } from '../scripts/workflow.m
 import { checkSummary } from '../scripts/summary.mjs';
 
 const root = resolve(import.meta.dirname, '../../../..');
+const fixtures = join(import.meta.dirname, 'fixtures');
+const warmedFixtures = new Set();
+
 const skill = join(root, '.agents/skills/ci-linux-preflight/scripts');
 const tool = join(skill, 'preflight.mjs');
 const realGit = spawnSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).stdout.trim();
 const realPython = spawnSync('/usr/bin/which', ['python3'], { encoding: 'utf8' }).stdout.trim();
 const exec = (cmd, args, options = {}) => spawnSync(cmd, args, { encoding: 'utf8', ...options });
+function executableFixtures(directory = fixtures) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const file = join(directory, entry.name);
+    return entry.isDirectory() ? executableFixtures(file)
+      : statSync(file).isFile() && (statSync(file).mode & 0o111) ? [file] : [];
+  }).sort();
+}
+
+// New archive inodes pay Gatekeeper costs here, before any scenario deadline starts.
+before(() => {
+  for (const file of executableFixtures()) {
+    const result = exec(file, [], { env: { ...process.env, RCLICK_PREFLIGHT_FIXTURE_WARMUP: '1' } });
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    warmedFixtures.add(file);
+  }
+});
+
 const run = (args, options = {}) => exec(process.execPath, [tool, ...args], options);
 const runAsync = (args, options = {}) => new Promise(done => {
   const child = spawn(process.execPath, [tool, ...args], options);
@@ -38,15 +58,20 @@ function fixture(first = pythonStep, second = tap, sample = 'pass') {
   const base = mkdtempSync(join(tmpdir(), 'rclick-preflight-'));
   const repo = join(base, 'repo');
   const hostHome = join(base, 'host');
-  const bin = join(base, 'bin');
+  const bin = join(fixtures, 'bin');
   mkdirSync(join(repo, '.github/workflows'), { recursive: true });
   mkdirSync(join(repo, '.agents/skills/ci-linux-preflight'), { recursive: true });
   mkdirSync(hostHome);
-  mkdirSync(bin);
-  cpSync(skill, join(repo, '.agents/skills/ci-linux-preflight/scripts'), { recursive: true });
-  // The integration fixture controls the preflight result; env-check itself is tested below.
-  writeFileSync(join(repo, '.agents/skills/ci-linux-preflight/scripts/env-check.sh'),
-    '#!/bin/bash\nif [ "${FAKE_ENV_CHECK_FAIL:-}" = 1 ]; then echo "fixture environment mismatch" >&2; exit 1; fi\nexit 0\n');
+  const copiedSkill = join(repo, '.agents/skills/ci-linux-preflight/scripts');
+  mkdirSync(copiedSkill);
+  // These sources are interpreted by Node/bash, never executed as new programs.
+  for (const name of readdirSync(skill)) {
+    if (name !== 'env-check.sh') {
+      writeFileSync(join(copiedSkill, name), readFileSync(join(skill, name)), { mode: 0o644 });
+    }
+  }
+  // Git archives the link; each simulated checkout reuses the committed no-op fixture.
+  symlinkSync(join(fixtures, 'env-check.sh'), join(copiedSkill, 'env-check.sh'));
   const workflow = [
     'jobs:', '  agent-tooling:', '    name: Agent tooling', '    runs-on: ubuntu-latest', '    steps:',
     '      - name: Checkout PR head', '        uses: actions/checkout@abc', '        with:',
@@ -60,18 +85,6 @@ function fixture(first = pythonStep, second = tap, sample = 'pass') {
   ].join('\n');
   writeFileSync(join(repo, '.github/workflows/agent-tooling.yml'), workflow);
   writeFileSync(join(repo, 'sample_test.py'), `import unittest\nclass Sample(unittest.TestCase):\n def test_case(self):\n  ${SAMPLE[sample]}\n`);
-  for (const [name, body] of Object.entries({
-    node: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v22.23.5; else exec "$REAL_NODE" "$@"; fi\n`,
-    git: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "git version \${FAKE_GIT_VERSION:-2.56.1}"; exit; fi\nif [ "$FAKE_REMOTE_WRONG_HEAD" = 1 ]; then case "$*" in *'rev-parse HEAD'*) printf '%040d\\n' 0; exit;; esac; fi\nexec "$REAL_GIT" "$@"\n`,
-    python3: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Python \${FAKE_PYTHON_VERSION:-3.14.10}"; else exec "$REAL_PYTHON" "$@"; fi\n`,
-    zsh: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 'zsh 5.8'; else exec /bin/zsh "$@"; fi\n`,
-    ps: `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 'ps from procps-ng 3.3.17'; else exec /bin/ps "$@"; fi\n`,
-    sudo: `#!/bin/sh\nexit 1\n`,
-    flock: `#!/bin/sh\nif [ "${'$'}FAKE_BUSY" = 1 ]; then exit 1; fi\nexit 0\n`,
-    timeout: `#!/usr/bin/env node\nconst {spawnSync}=require('node:child_process');const a=process.argv.slice(2);a.shift();const seconds=Number(a.shift());const cmd=a.shift();const r=spawnSync(cmd,a,{stdio:'inherit',timeout:seconds*1000});process.exit(r.error?.code==='ETIMEDOUT'?124:r.status??75);\n`,
-    rsync: `#!/bin/sh\nif [ "$FAKE_RSYNC_FAIL" = 1 ]; then echo 'transfer failed' >&2; exit 1; fi\ncp "$3" "\${4#*:}"\n`,
-    ssh: `#!/bin/bash\nset -o pipefail\nprintf '%s\\n' "$*" >> "$FAKE_CALLS"\ntmp=$(mktemp)\ncat > "$tmp"\ncat "$tmp" >> "$FAKE_INPUTS"\nif [ "$FAKE_SSH_FAIL" = 1 ]; then echo unreachable >&2; exit 1; fi\nif [ "$FAKE_NO_BIN_ZSH" = 1 ]; then sed 's#/bin/zsh#/missing-zsh#g' "$tmp" > "$tmp.nozsh"; mv "$tmp.nozsh" "$tmp"; fi\nfor item in "$@"; do last=$item; done\nsed "s#export PATH=/opt/node/bin:/usr/local/bin:/usr/bin:/bin#export PATH=$FAKE_BIN:/usr/local/bin:/usr/bin:/bin#g" "$tmp" | HOME="$FAKE_HOST_HOME" PATH="$FAKE_BIN:$PATH" /bin/bash -c "$last"\nstatus=$?\nrm -f "$tmp"\nexit $status\n`,
-  })) writeFileSync(join(bin, name), body, { mode: 0o755 });
   for (const args of [['init', '-q'], ['config', 'user.name', 'Fixture'], ['config', 'user.email', 'fixture@example.test'], ['add', '.github/workflows/agent-tooling.yml', '.agents/skills/ci-linux-preflight/scripts', 'sample_test.py'], ['commit', '-qm', 'fixture']]) {
     const result = exec(realGit, args, { cwd: repo });
     assert.equal(result.status, 0, result.stderr);
@@ -91,6 +104,13 @@ function remoteAsync(f, head, args = [], { stepTimeout = 3, deadline = 5 } = {})
 function leftoverRunDirs(f) { return readdirSync(join(f.hostHome, 'ci')).filter(name => name.startsWith('rclick-run.')); }
 
 describe('ci-linux-preflight', { concurrency: true }, () => {
+test('every static executable is warmed before timed scenarios', () => {
+  const expected = readdirSync(fixtures, { recursive: true }).map(name => join(fixtures, name))
+    .filter(path => statSync(path).isFile() && (statSync(path).mode & 0o111));
+  assert.ok(expected.length > 0);
+  assert.deepEqual([...warmedFixtures].sort(), expected.sort());
+});
+
 test('real Agent tooling workflow maps cleanly and rejects unsupported YAML', () => {
   const real = parseWorkflow(readFileSync(join(root, '.github/workflows/agent-tooling.yml'), 'utf8'));
   assert.deepEqual(real.steps.map(step => step.kind), ['checkout', 'setup-node', 'setup-python', 'provision', 'run', 'run', 'run']);
@@ -302,10 +322,8 @@ test('the whole-run deadline bounds a step even when its step timeout is longer'
   const clock = join(f.base, 'clock.cjs');
   writeFileSync(clock, 'Date.now = () => 0;\n');
   f.env.NODE_OPTIONS = `--require ${JSON.stringify(clock)}`;
-  const timeout = join(f.bin, 'timeout');
   const timeoutSeconds = join(f.base, 'timeout-seconds');
-  writeFileSync(timeout, readFileSync(timeout, 'utf8').replace('const r=spawnSync',
-    `require('node:fs').writeFileSync(${JSON.stringify(timeoutSeconds)}, String(seconds));const r=spawnSync`));
+  f.env.FAKE_TIMEOUT_SECONDS = timeoutSeconds;
   const result = await remoteAsync(f, f.sha, [], { stepTimeout: 30, deadline: 1 });
   assert.equal(readFileSync(timeoutSeconds, 'utf8'), '1', 'the step must run with the whole-run budget, not its 30s timeout');
   assert.equal(result.status, 1, result.stderr + result.stdout);
@@ -324,7 +342,7 @@ test('environment mismatch and an unsupported workflow fail closed', async () =>
   const newPython = exec('/bin/bash', [check], { env: { ...f.env, FAKE_PYTHON_VERSION: '3.12.3' } });
   assert.notEqual(newPython.status, 0);
   assert.match(newPython.stdout, /python3 Python 3\.12\.3 FAIL/);
-  writeFileSync(join(f.bin, 'sudo'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  f.env.FAKE_SUDO_PASSWORDLESS = '1';
   const privileged = exec('/bin/bash', [check], { env: f.env });
   assert.notEqual(privileged.status, 0);
   assert.match(privileged.stdout, /sudo passwordless FAIL/);
@@ -354,7 +372,7 @@ test('the environment check runs with bash and reports the actual mismatch', asy
 
 test('the fake SSH outcome does not depend on passwordless sudo on the test machine', async () => {
   const f = fixture();
-  writeFileSync(join(f.bin, 'sudo'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  f.env.FAKE_SUDO_PASSWORDLESS = '1';
   const result = await runFixtureAsync(f);
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(readFileSync(summaryPath(result), 'utf8'), /outcome=PASS/);

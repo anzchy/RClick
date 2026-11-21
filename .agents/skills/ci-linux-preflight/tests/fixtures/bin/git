@@ -1,0 +1,5 @@
+#!/bin/sh
+[ "${RCLICK_PREFLIGHT_FIXTURE_WARMUP:-}" != 1 ] || exit 0
+if [ "$1" = "--version" ]; then echo "git version ${FAKE_GIT_VERSION:-2.56.1}"; exit; fi
+if [ "$FAKE_REMOTE_WRONG_HEAD" = 1 ]; then case "$*" in *'rev-parse HEAD'*) printf '%040d\n' 0; exit;; esac; fi
+exec "$REAL_GIT" "$@"
