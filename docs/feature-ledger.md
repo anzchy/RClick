@@ -94,7 +94,7 @@ delete its line in the same change.
    files created by New File carry a quarantine attribute. Issue #53.
 7. `new-file`, `new-file-settings`: a custom type whose extension was typed without a dot creates `Untitled<ext>`:
    the sheet stores the field verbatim and `ActionService.getUniqueFilePath`
-   (`RClick/Runtime/ActionService.swift:1085-1099`) appends the extension with no dot. Issue #51 (device FAIL in the
+   (`RClick/Runtime/ActionService.swift:1100-1114`) appends the extension with no dot. Issue #51 (device FAIL in the
    issue #12 comment).
 8. `settings-backup`, `menu-layout`: importing a backup does not restore `foldActionsMenu` (issue #52, observed on
    the device). `SettingsBackup.Preferences.apply` (`RClick/Runtime/SettingsBackup.swift:223-229`) writes that key, so
@@ -342,44 +342,73 @@ delete its line in the same change.
 
 ### `new-file`
 - **What:** creates `Untitled<ext>` (or a numbered variant) in the clicked folder, or the folder of a clicked file
-  (`ActionService.createFile`, `getUniqueFilePath`, `RClick/Runtime/ActionService.swift:997-1099`). The contents
-  come from the type's user template if it has one. Else a type that requires a template (DOCX, PPTX, XLSX, Pages,
-  Keynote or Numbers by id or extension, or any extension with a bundled `template.<ext>`) uses the bundled
-  `template.<ext>`, which exists for DOCX, PPTX and XLSX only (`RClick/Resources/`); any other type gets an empty
-  file. A type that requires a template and has no readable, non-empty one creates nothing and says so in the shared
-  warning window (`:1039-1048`). Folder and package templates are copied whole; the write never replaces an existing
-  file (`:1075`). A write that fails anyway (for example a name taken between the check and the write, or a
-  read-only folder) is only logged (`:1077-1078`): no message reaches the user.
+  (`ActionService.createFile`, `getUniqueFilePath`, `RClick/Runtime/ActionService.swift:997-1114`). Each type has a
+  list of entries: a Blank entry and the user's templates (`NewFile.blankTemplateID`, `NewFile.Template`,
+  `Shared/RCBase.swift:243-267`). The menu lists Blank when it is switched on and the format allows it, then every
+  enabled template whose stored file exists (`RClick/Runtime/MenuService.swift:26-31`):
+  - no entry: the type is left out of the menu (`:30`), so a custom type whose format requires a template and that
+    has none is hidden (CHANGELOG [Unreleased] › Added);
+  - one entry: one item that creates directly;
+  - two or more: the type opens a submenu of its entries (`NewFileMenuItem.submenuEntries`, `Shared/RCBase.swift:433`),
+    the same in the flat and the folded layout (`FinderSyncExt.makeNewFileItem`,
+    `FinderSyncExt/FinderSyncExt.swift:567-590`; folded, that is a third level under New File).
+  Blank is allowed unless the format requires a template and RClick bundles none for it: DOCX, PPTX and XLSX have a
+  bundled Blank, Pages, Keynote and Numbers (by id or extension) do not (`NewFile.supportsBlank`,
+  `Shared/RCBase.swift:260-265`). The click carries the chosen entry's id. Blank creates an empty file for a type that
+  does not require a template and a copy of the bundled `template.<ext>` for DOCX, PPTX and XLSX
+  (`RClick/Runtime/ActionService.swift:1056-1087`); a template entry creates a byte copy of its stored snapshot,
+  folders and packages copied whole (`:1058-1059`, `:1071-1086`). The new file's name does not depend on the
+  template (`getUniqueFilePath`). A click whose entry is unknown, switched off, or whose file is missing, unreadable
+  or empty for a required format creates nothing and shows the shared warning (`:1049-1063`, `:1077-1085`). A click
+  without an entry id (an older extension's click) uses Blank when it is on, else the first enabled template
+  (`:1054`; finding 15). The write never replaces an existing file (`:1075`, `:1090`); a write that fails anyway is
+  only logged (`:1092-1094`).
+- **Template snapshots:** a template is a copy RClick keeps under `Application Support/RClick/Templates/<entry id>/`,
+  so two templates with the same file name never share a copy, and a replacement is written as a fresh copy beside
+  the old one (`TemplateStore.write`, `RClick/Runtime/TemplateStore.swift:37-59`); the original file is only read.
+  Template names are unique within a type, case-insensitively (`TemplateDraft.uniqueName`, `:123-131`). An entry whose
+  stored file no longer exists keeps its row and is left out of the menu (`NewFile.Template.isMissing`,
+  `Shared/RCBase.swift:252`). See `new-file-settings` for editing and `persistence` for deletion.
 - **Status:** `shipped-on`, `partial` (finding 7: an extension without a dot; finding 11: an unreachable branch).
-- **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:261` `NewFile.all`;
-  `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`). At every load a stored row is deleted when its id
-  is `pages`, `key` or `numbers`, its extension is exactly the matching `.pages`, `.key` or `.numbers`, and it has no
-  user template (`NewFile.isRetiredBuiltin`, `Shared/RCBase.swift:257-258`; called at
-  `RClick/Runtime/ConfigService.swift:69-78`). Nothing else is checked: a row whose name, icon, order or enabled
+- **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:287` `NewFile.all`;
+  `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`); every type starts with Blank on and no template.
+  A type stored before this change with one user template is migrated at load to that template with Blank off, so
+  its menu item is unchanged (`RClick/Runtime/ConfigService.swift:106-113`; see `persistence`). At every load a stored
+  row is deleted when its id is `pages`, `key` or `numbers`, its extension is exactly the matching `.pages`, `.key` or
+  `.numbers`, and it has no user template (`NewFile.isRetiredBuiltin`, `Shared/RCBase.swift:283-285`; called at
+  `RClick/Runtime/ConfigService.swift:87-96`). Nothing else is checked: a row whose name, icon, order or enabled
   switch was edited is deleted too; only a different extension or a user template keeps it
-  (`NewFileLegacyStoreTests`). Such a row is also left out of the menu (`RClick/Runtime/MenuService.swift`).
+  (`NewFileLegacyStoreTests`). Such a row is also left out of the menu (`RClick/Runtime/MenuService.swift:25`).
   A collapsed "New File" submenu by default (`RClick/AppState.swift` `foldNewFileMenu = true`).
 - **Reached:** Finder menu on items or the window background.
-- **Runs in:** the app, over IPC; an ungranted folder prompts first. The extension builds each item disabled while
-  RClick is offline (`FinderSyncExt/FinderSyncExt.swift:574`); the issue #12 run observed the submenu enabled
+- **Runs in:** the app, over IPC; an ungranted folder prompts first. The extension only renders the entries the app
+  sent and returns the chosen ids (see `ipc`). It builds each item and each type submenu disabled while RClick is
+  offline (`FinderSyncExt/FinderSyncExt.swift:572`, `:582`); the issue #12 run observed the New File submenu enabled
   offline (finding 6).
 - **Tests:** `NewFileCreationTests` (missing template, empty custom types, bundled bytes, user templates, folder
-  templates, the warning), `NewFileDefaultsTests`, `NewFileLegacyStoreTests`, `NewFileMigrationTests`,
+  templates, the warning, `selectedTemplateAndOldClickUseCorrectBytesWhileUnknownAndMissingRefuse`,
+  `emptyStoredPathNeverCopiesTheWorkingDirectory`), `MultiTemplateMenuTests` (zero, one and several entries in both
+  layouts; tag routing; no Blank for Pages, Keynote, Numbers), `MultiTemplateMigrationTests.legacyTemplateDisablesBlankAndPersistsOnce`,
+  `LegacyStoredTemplateTests`, `NewFileDefaultsTests`, `NewFileLegacyStoreTests`, `NewFileMigrationTests`,
   `ActionServiceTests.newFilePreservesRawPercentTarget`, `ActionServiceTests.fileTemplateSurvivesSaveAndReload`,
-  `SettingsBackupTests.missingTemplateFallsBackToTheBuiltInTemplate`; metrics `new-file` › Test cases. No test
-  creates a file from a menu click.
-- **Issues, PRs:** #24, #25, #49 (several templates per type, open), #51, #53; PR #29, PR #34, PR #50.
+  `SettingsBackupTests.missingLegacyTemplateIsRetainedRatherThanSilentlyFallingBack`; metrics `new-file` › Test
+  cases. No test creates a file from a menu click, and no test runs the extension's `makeNewFileItem` (finding 19).
+- **Issues, PRs:** #24, #25, #49 (several templates per type), #51, #53; PR #29, PR #34, PR #50.
 - **Device:** at `38d356a` (issue #12 comment; run `i-device-20261120`, private record): PASS DOCX, PPTX, XLSX
   (archives test clean, bytes equal the bundled templates); PASS Quick Look for DOCX and XLSX, NOT VERIFIED for PPTX;
   PASS TXT and Markdown (empty files); PASS no Pages, Keynote or Numbers on a fresh store, the upgraded-store case
   not reproduced; FAIL a custom type whose extension has no dot (#51); NOT VERIFIED opening in Word or Pages. PASS
   TXT into a folder with a literal percent name (PR #29 › Device at `971b658`; run `i5-device-20261117d`).
-- **Gaps:** findings 6, 7, 11.
+  Several templates per type (#49): NOT VERIFIED, no device run covers it: Finder's delivery of the chosen entry
+  from a type submenu, in particular the folded three-level menu (New File › type › template); the upgrade of a
+  real installed store with a file or a package template.
+- **Gaps:** findings 6, 7, 11, 15, 16, 19.
 
 ### `new-file-office-templates`
 - **What:** the bundled `RClick/Resources/template.docx`, `template.pptx` and `template.xlsx` that New File copies for
-  those types (PR #50, CHANGELOG [Unreleased] › Fixed: "New File uses valid DOCX/PPTX templates and refuses missing
-  templates").
+  the Blank entry of those types (PR #50, CHANGELOG [Unreleased] › Fixed: "New File uses valid DOCX/PPTX templates and
+  refuses missing templates"; `RClick/Runtime/ActionService.swift:1056-1087`). A template entry the user added is
+  copied instead when it is the one chosen (see `new-file`).
 - **Status:** `shipped-on`.
 - **Default:** on (DOCX, PPTX and XLSX are enabled built-in types).
 - **Tests:** `OfficeTemplateTests.bundledPackagesContainMainPartsAndNeutralMetadata`, and the Office and
@@ -414,14 +443,18 @@ delete its line in the same change.
 ### `finder-menu`
 - **What:** one RClick section in Finder's context menu for items, the window background and sidebar entries, built
   from the `MenuConfigPayload` the app sends (`FinderSyncExt.buildMenu`, `RClick/Runtime/MenuService.swift`). Before
-  the first config arrives it shows "RClick (loading...)".
+  the first config arrives it shows "RClick (loading...)". A New File type with several entries is a submenu whose
+  leaves are routed by tag (see `new-file`, `ipc`).
 - **Status:** `shipped-on`.
 - **Default:** on once the extension is enabled in System Settings (`CLAUDE.md` › Common Issues).
-- **Tests:** `MenuCompatibilityTests` (payload compatibility). Nothing tests menu construction itself.
+- **Tests:** `MenuCompatibilityTests` (payload compatibility),
+  `MultiTemplateMenuTests.finderPreservedTagsResolveEveryDirectAndSubmenuLeafAfterPayloadRoundTrip` (New File leaf
+  tags are distinct and resolve back to their type and entry; it builds the menu items itself, finding 19). Nothing
+  tests menu construction itself.
 - **Device:** PASS the menu appears once with one RClick group (PR #23 › Device, PR #27 › Device; runs
   `i22-device-20261116e`, `i13-device-20261117c`, private records). File and folder menus, inline and folded, and the
   window background were driven for Cut in the issue #12 run (see `cut`). Sidebar menus (`EXT-05`): never run as a
-  separate row. Finding 14 (tooling).
+  separate row. New File type submenus (#49): NOT VERIFIED (see `new-file`). Findings 14 (tooling), 19.
 
 ### `finder-toolbar-button`
 - **What:** the RClick button in Finder's toolbar opens the same menu; apps hidden for the toolbar are absent there
@@ -437,13 +470,17 @@ delete its line in the same change.
 - **What:** per-section collapse switches (Settings > Apps / Actions / New File / Common Dir) and the app icon style
   in Open With (Settings > General > Icon Style: none, simple, original), with icon caches in both processes
   (`Shared/IconCache.swift`, `Shared/FileTypeIconProvider.swift`). Collapsed actions, including Cut and Paste, sit
-  under an "Actions" submenu (`FinderSyncExt/FinderSyncExt.swift:393-404`).
+  under an "Actions" submenu (`FinderSyncExt/FinderSyncExt.swift:393-404`). A New File type with several entries is a
+  submenu in both layouts; with New File collapsed that is a third level (`FinderSyncExt/FinderSyncExt.swift:439-458`,
+  `:576-582`).
 - **Status:** `shipped-on`.
 - **Default:** apps and actions flat, new file and common dirs collapsed, simple icons (`RClick/AppState.swift`).
 - **Tests:** `AppStateDefaultsMigrationTests` (the switches moved to the App Group store),
-  `AppPresetsTests.symbolsReuseImagesWithinEachAppearance`.
+  `AppPresetsTests.symbolsReuseImagesWithinEachAppearance`,
+  `MultiTemplateMenuTests.zeroOneAndManyEntriesProduceDirectOrSubmenuInBothLayouts` (the payload in both New File
+  layouts, not the rendered menu).
 - **Device:** the folded and inline actions layouts PASS for Cut (issue #12 comment); otherwise never run as its own
-  row.
+  row. New File type submenus in either layout (#49): NOT VERIFIED.
 - **Gaps:** finding 8 (import skips `foldActionsMenu`, issue #52).
 
 ### `connection-state`
@@ -517,17 +554,42 @@ delete its line in the same change.
   UNVERIFIED (the comment does not say).
 
 ### `new-file-settings`
-- **What:** Settings > New File: Enabled per type, Add File Type, Edit (name, extension, template file, SF Symbol
-  icon, default open app), Delete, drag to reorder, Restore Defaults (TXT, Markdown, JSON, DOCX, PPTX, XLSX:
-  `NewFile.all`), Collapse new file menu (`RClick/Settings/NewFileSettingsTabView.swift`,
+- **What:** Settings > New File: Enabled per type, Add File Type, Edit (name, extension, templates, SF Symbol icon,
+  default open app), Delete (with a confirmation), drag to reorder, Restore Defaults (TXT, Markdown, JSON, DOCX,
+  PPTX, XLSX: `NewFile.all`), Collapse new file menu (`RClick/Settings/NewFileSettingsTabView.swift`,
   `RClick/Settings/EditFileTypeSheetView.swift`). The extension field is stored as typed; its hint reads "For
-  example: txt, md, json".
+  example: txt, md, json". The Templates section of the edit sheet (`EditFileTypeSheetView.swift:78-145`):
+  - a Blank switch, disabled with the reason "Blank is unavailable because this format requires a template." when
+    `NewFile.supportsBlank` refuses the extension being edited (`:79-86`; see `new-file`);
+  - a list of the type's templates: enable switch, name field, Replace File, remove, drag to reorder, and "Missing
+    Template" under an entry whose stored file is gone (`:88-120`); Add Template opens a file picker for any item
+    (`:122-142`). The picked file is read once under the picker's own access, with no bookmark kept (`:128-131`).
+  - Edits are staged in a `TemplateDraft` in memory until Save; Cancel discards them and leaves no copy
+    (`RClick/Runtime/TemplateStore.swift:99-152`, `TemplateStoreTests.cancellingDraftLeavesNoCopies`). Save writes the
+    new and replacement snapshots, then persists (`EditFileTypeSheetView.swift:238-257`); a replacement keeps the
+    entry's id, name and position (`TemplateStoreTests.savedDraftKeepsSnapshotsAndReplacementMetadataThenRemovesOnlyOwnedFiles`).
+    A snapshot that no saved entry references any more is deleted only after the save has persisted
+    (`RClick/Runtime/ConfigService.swift:190-197`; see `persistence`). A file that cannot be read when picked, or a
+    snapshot that cannot be written on Save, shows "Template Import Failed" with the error and keeps the sheet open
+    (`EditFileTypeSheetView.swift:132-135`, `:221-223`, `:231-235`); a failed database save is not shown there: it
+    lands in `AppState.lastSaveError` for the settings window (`RClick/AppState.swift` `persist`).
+  Restore Defaults and Delete File Type persist through the same path, so they delete the snapshots RClick owns for
+  the rows they drop; a file the user picked is never deleted (CHANGELOG [Unreleased] › Changed;
+  `TemplateStoreTests.restoreDefaultsDeletesSnapshotsAndRestoresBlankWithoutTouchingSource`). Restore Defaults asks
+  for no confirmation (finding 20).
 - **Status:** `shipped-on`, `partial` (finding 7: an extension typed without a dot; finding 10: the default open
   app is never used).
-- **Tests:** `ActionServiceTests.fileTemplateSurvivesSaveAndReload`,
-  `SettingsBackupTests.missingTemplateFallsBackToTheBuiltInTemplate`, `NewFileDefaultsTests`.
-- **Issues, PRs:** #24, #49 (several templates per type, open), #51; PR #50.
+- **Tests:** `TemplateStoreTests` (no aliasing of same-named files, Cancel, replace, remove, Restore Defaults, a legacy
+  copy shared by two types), `TemplatePersistenceTests` (a failed save or load deletes no snapshot),
+  `MultiTemplateMigrationTests.sheetEditsPersistNamesOrderTogglesAndUserTemplatedBuiltinTypes`,
+  `MultiTemplateMenuTests.requiredFormatsWithoutBundledResourceNeverOfferBlank`,
+  `ActionServiceTests.fileTemplateSurvivesSaveAndReload`, `NewFileDefaultsTests`. No test drives the SwiftUI sheet
+  itself; the tests call `TemplateDraft` and `ConfigService`.
+- **Issues, PRs:** #24, #49 (several templates per type), #51; PR #50.
 - **Device:** Add File Type without a template: an empty file, but FAIL on the missing dot (issue #12 comment, #51).
+  The template list (#49): NOT VERIFIED, no device run covers it (Replace File, drag to reorder, the disabled Blank
+  switch, VoiceOver).
+- **Gaps:** findings 7, 10, 16, 20.
 
 ### `folder-permissions`
 - **What:** security-scoped bookmarks are the only folder authorization. The first action in an ungranted folder
@@ -561,13 +623,34 @@ delete its line in the same change.
   follow the backup's order and switches, and built-in actions the backup lacks (Cut in an older backup) are added
   with their defaults (`SettingsBackup.resolveActions`). An imported New File row with id `pages`, `key` or `numbers`,
   the matching extension and no user template is saved with the rest (`RClick/Settings/GeneralSettingsTabView.swift`
-  `applyImport`) and stays in Settings only until the next load deletes it (`RClick/Runtime/ConfigService.swift:69-78`,
+  `applyImport`) and stays in Settings only until the next load deletes it (`RClick/Runtime/ConfigService.swift:87-96`,
   see `new-file`); meanwhile it is left out of the menu (`RClick/Runtime/MenuService.swift:25`).
+- **Templates:** a backup carries each type's Blank switch and its templates' id, name and switch, never a template's
+  bytes or path (`SettingsBackup.FileTemplate.init`, `RClick/Runtime/SettingsBackup.swift:146-152`,
+  `SettingsBackupTests.exportOmitsSnapshotBytesAndPathsButImportKeepsEveryRowAndReportsCount`). After an export that
+  holds any template, an "Export Complete" alert says how many templates are not included
+  (`RClick/Settings/GeneralSettingsTabView.swift:273-277`). Import keeps every template row: an entry is re-attached
+  to the file the same entry id points at in the current settings if it still exists, else to the snapshot this Mac
+  holds under its id, and is otherwise kept as a missing entry, shown in Settings and left out of the menu (`toModel`,
+  `RClick/Runtime/SettingsBackup.swift:190-214`; `TemplateStore.snapshotPath`, `RClick/Runtime/TemplateStore.swift:17-28`;
+  `SettingsBackupTests.sameMacImportKeepsSnapshotsAndPersistedMenu`,
+  `LegacyTemplateBackupTests.migratedLegacyFileSurvivesSameMacExportImport`). A backup written before templates were
+  a list (one `templatePath` per type) still imports: that path becomes the type's one template with Blank off, kept
+  even when the file is missing (`:192-199`; `SettingsBackupTests.missingLegacyTemplateIsRetainedRatherThanSilentlyFallingBack`,
+  `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesOldBackupAndCreatesDirectory`). The "Import Complete" alert
+  joins the skipped-apps notice and "N templates not included" (`GeneralSettingsTabView.swift:347`, `:352-361`; the
+  count can be wrong, finding 17). Import deletes no snapshot (`store.sync(preserveTemplateSnapshots: true)`, `:350`;
+  finding 16).
 - **Status:** `shipped-on`, `partial` (finding 8).
-- **Tests:** `SettingsBackupTests` (round trip, missing app, missing template, action order).
-- **Issues:** #52.
+- **Tests:** `SettingsBackupTests` (round trip, missing app, a missing legacy template kept, action order, template
+  metadata only with the omitted count, same-Mac import), `LegacyTemplateBackupTests`,
+  `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesOldBackupAndCreatesDirectory`. No test presents the
+  export or import alert.
+- **Issues:** #49, #52.
 - **Device:** an import observed in the issue #52 report (actions, New File rows and the Cut toggle restored,
-  `foldActionsMenu` not); otherwise never run.
+  `foldActionsMenu` not); otherwise never run. Templates in a backup (#49): NOT VERIFIED, no device run covers the
+  export or import alert or a same-Mac round trip on a real installed store.
+- **Gaps:** findings 8, 16, 17, 18.
 
 ### `export-logs`
 - **What:** Export Logs… saves this process's `OSLogStore` entries to a text file
@@ -607,7 +690,11 @@ delete its line in the same change.
 - **What:** English (fallback), Simplified Chinese, Japanese, Spanish and French, chosen by the system language, from
   two catalogs: `RClick/Localizable.xcstrings` and `FinderSyncExt/Localizable.xcstrings`; `Shared/AppLocalization.swift`
   resolves against the current process's catalog (`CLAUDE.md` › Localization). The built-in New File names and the
-  Apple product names resolve in every supported language (CHANGELOG [Unreleased] › Fixed, PR #34).
+  Apple product names resolve in every supported language (CHANGELOG [Unreleased] › Fixed, PR #34). The New File
+  template strings (the Blank label, the edit sheet's template list, "%lld templates not included") are app catalog
+  keys only: the app localizes "Blank" before it sends the menu (`RClick/Runtime/MenuService.swift:28`) and template
+  names are the user's text, so the extension catalog has no template key. "%lld templates not included" has no
+  plural variants in `RClick/Localizable.xcstrings`, so a count of one reads "1 templates" in English.
 - **Status:** `shipped-on`.
 - **Tests:** `NewFileLocalizationTests` (built-in names in every app language, Simplified Chinese product names),
   `PasteLocalizationTests` (the extension's Paste title in every language); `scripts/check-localization.py` runs in the
@@ -622,6 +709,14 @@ delete its line in the same change.
 - **What:** `DistributedNotificationCenter` messages on the fork's own channels, `cn.anzchy.RClick.ExtensionToMain`
   and `cn.anzchy.RClick.MainToExtension` (`Shared/Messager.swift:194-195`): extension → app `click`, `heartbeat`,
   `request-config`; app → extension `menu-config` (with the pending cut's counts), `running`, `quit`, `action-ack`.
+  A `menu-config` New File item may carry its entries (id and name) and a `click` the chosen entry's `templateId`;
+  both fields are optional, so a message without them still decodes (`NewFileMenuItem.entries`,
+  `Shared/RCBase.swift:431`; `ClickEventPayload.templateId`, `Shared/Messager.swift:131`). The extension finds the
+  chosen leaf from its menu item tag, a hash of the length-prefixed type id and entry id, because Finder keeps the tag
+  and drops `representedObject` (code comment, `NewFileMenuItem.leafTag`, `Shared/RCBase.swift:415-420`; not observed
+  on a device); an unknown or ambiguous tag sends no click (`selection(forTag:in:)`, `:421-429`;
+  `FinderSyncExt/FinderSyncExt.swift:696-701`). The app hands `templateId` to `createFile`
+  (`RClick/RClickApp.swift:332`).
   Every message is an authenticated envelope (`Shared/MessageSecurity.swift`): an HMAC over every field with a
   per-install key that the app creates in the shared Keychain access group and the extension only reads
   (`Shared/IPCKeyProvider.swift`); the app's launch session, which every click must carry; a timestamp checked for freshness; a nonce
@@ -630,10 +725,14 @@ delete its line in the same change.
   After unverifiable messages are rejected the menu bar item shows a notice (`IPCRejectionNotice`,
   `RClick/MenuBarView.swift:52-54`).
 - **Status:** `infrastructure`.
+  The HMAC covers the payload's original bytes, so the optional fields are authenticated like every other field and
+  `MessageSecurity` has no field list to update (`Shared/MessageSecurity.swift:23-24`).
 - **Tests:** `IPCAuthenticationTests`, `IPCKeyProviderTests`, `MessagerIsolationTests` (fork vs legacy channels,
-  tampering), `PeerActivityTests`, `LaunchSideEffectsTests.terminationSendsQuitOnlyOutsideTheTestHost`; metrics `ipc` ›
-  Test cases.
-- **Issues, PRs:** #6, #43 (closed); #18 (PR #20), #22 (PR #23); #40, #41 (open); PR #35, PR #44.
+  tampering), `PeerActivityTests`, `LaunchSideEffectsTests.terminationSendsQuitOnlyOutsideTheTestHost`,
+  `MultiTemplateIPCTests` (a signed menu and click keep the entries and `templateId`, an old click and an old menu
+  item decode, a changed payload fails verification); metrics `ipc` › Test cases.
+- **Issues, PRs:** #6, #43 (closed); #18 (PR #20), #22 (PR #23); #40, #41 (open); #49 (the optional template
+  fields); PR #35, PR #44.
 - **Device:** PASS at `0f598ad` (PR #35 › Device): the app created the key at first launch with no prompt and the
   extension read it; a captured Delete Direct click replayed after an app restart was rejected (no dialog, file
   intact); recovery after relaunch without relaunching Finder; the notice shown once after a garbage message, not
@@ -647,14 +746,40 @@ delete its line in the same change.
   `ConfigService` load/save/reset, the UserDefaults-to-SwiftData migration (`RClick/Shared/DataMigrationManager.swift`),
   the layout-switch move into the App Group store (`AppState.layoutToggleKeys`), the Cut row added to older stores,
   and the load-time deletion of every New File row with id `pages`, `key` or `numbers`, the matching canonical
-  extension and no user template, whatever else was edited (`RClick/Runtime/ConfigService.swift:69-78`,
+  extension and no user template, whatever else was edited (`RClick/Runtime/ConfigService.swift:87-96`,
   `NewFile.isRetiredBuiltin`; see `new-file`).
+  New File templates (#49):
+  - Each template is a `NewFileTemplateEntity` row (id, name, switch, order, stored path) owned by its type with a
+    cascade delete; the type row gains `blankEnabled` and the template list, both optional so that SwiftData's
+    lightweight migration applies (code comment, `RClick/Model/NewFileTypeEntity.swift:21-23`;
+    `RClick/Model/NewFileTemplateEntity.swift`, registered in `RClick/Model/ModelContainer.swift`;
+    `MultiTemplateMigrationTests.sqliteStoreWithTheActualOldSchemaUpgradesWithoutLosingTemplate`).
+  - At load a row with no `blankEnabled` is migrated once: its old `templatePath`, if any, becomes the one template
+    and Blank is switched off, else Blank stays on; the old file is adopted where it is, never moved or copied
+    (`RClick/Runtime/ConfigService.swift:106-113`, saved at `:128-129`; `MultiTemplateMigrationTests`,
+    `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesLoadAndCreatesDirectory`). A stored path inside the
+    Templates folder that the entry does not own is read as missing (`:116-123`; `TemplateStore.owns`,
+    `RClick/Runtime/TemplateStore.swift:70-84`).
+  - Deletion: `ConfigService.save` deletes a prior snapshot that no saved entry still references, only after the
+    database save succeeded and only when the last load could read the New File rows; a failed save rolls back
+    (`RClick/Runtime/ConfigService.swift:160-197`; `TemplatePersistenceTests`). `TemplateStore.remove` deletes only
+    a path RClick owns: a regular file or folder directly in the Templates folder (the pre-#49 copies), or a child of
+    the folder named after that entry's id, never a symbolic link and never a file the user picked
+    (`RClick/Runtime/TemplateStore.swift:70-97`; `TemplateStoreTests.legacyDirectoryPathCannotAdoptOrRemoveAnotherEntriesSnapshots`,
+    `removingAnEntryKeepsLegacyCopyUsedByAnotherType`). Import saves without this cleanup (see `settings-backup`;
+    finding 16).
+  - Under the unit-test host the store's root is a per-process temporary folder, never Application Support
+    (`TemplateStore.standard`, `:9-13`; `TemplateStoreTests.hostedStandardStoreNeverUsesApplicationSupport`).
   The Paste journal is a separate file in the same App Group container (see `paste-move`).
 - **Status:** `infrastructure`.
 - **Tests:** `SharedModelContainerTests`, `ConfigServiceSaveTests`, `AppStateDefaultsMigrationTests`,
-  `ActionBackfillTests`, `AppGroupEntitlementsTests`, `NewFileLegacyStoreTests`, `NewFileMigrationTests`.
-- **Issues, PRs:** #14 (PR #19), #22 (PR #23: new App Group `group.cn.anzchy.RClick`, nothing migrated).
-- **Device:** never run as its own row; the upgraded-store New File menu was not reproduced (issue #12 comment).
+  `ActionBackfillTests`, `AppGroupEntitlementsTests`, `NewFileLegacyStoreTests`, `NewFileMigrationTests`,
+  `MultiTemplateMigrationTests`, `TemplatePersistenceTests`,
+  `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesLoadAndCreatesDirectory`.
+- **Issues, PRs:** #14 (PR #19), #22 (PR #23: new App Group `group.cn.anzchy.RClick`, nothing migrated), #49.
+- **Device:** never run as its own row; the upgraded-store New File menu was not reproduced (issue #12 comment). The
+  template migration on a real installed store (#49): NOT VERIFIED, no device run covers it.
+- **Gaps:** finding 16.
 
 ### `app-lifecycle`
 - **What:** one running copy per bundle id, the older one quits (`RClick/Shared/SingleInstanceGuard.swift`); a startup
@@ -693,11 +818,12 @@ delete its line in the same change.
   - Paste: a move already running (`:350`); the cut has ended (`:359`, `:383`); no single folder destination
     (`:364`); a journal recovery notice (`:404`); the journal unavailable (`:411`); the items that could not be moved,
     which include every refusal reason of `:642-665` (`:568`); the journal needing recovery after a move (`:570`);
-  - New File: a required template missing, unreadable or empty, or a package template that could not be copied
-    (`:1045-1047`, called at `:1062` and `:1067`).
+  - New File: the chosen entry unknown, switched off or missing; a required template unreadable or empty; a package
+    template that could not be copied (`:1049-1052`, called at `:1061`, `:1078` and `:1083`); a click carrying an entry id for the extension-less
+    item (`:1018-1020`).
   Everything else is log-only: a dismissed or insufficient permission panel for Cut or Paste, a Cut whose source
   identity cannot be read or whose pasteboard write fails (`:713-719`, finding 4), a
-  Paste whose clipboard rewrite fails after a partial move, and a New File write that throws (`:1077-1078`). Delete
+  Paste whose clipboard rewrite fails after a partial move, and a New File write that throws (`:1092-1094`). Delete
   Direct and AirDrop use their own `NSAlert`s; Hide only logs.
 - **Status:** `infrastructure`.
 - **Tests:** none for the window (spine `tests: []`); the Cut, Paste and New File tests inject the warning closure

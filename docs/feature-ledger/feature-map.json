@@ -166,7 +166,7 @@
       "name": "New File: bundled DOCX, PPTX and XLSX templates",
       "area": "Finder menu: New File",
       "process": ["app"],
-      "reachedBy": ["Finder context menu > New File > DOCX, PPTX or XLSX: the created file is a copy of the bundled template unless the type has a user template"],
+      "reachedBy": ["Finder context menu > New File > DOCX, PPTX or XLSX: the Blank entry creates a copy of the bundled template; a user template entry creates a copy of that template"],
       "default": "on (DOCX, PPTX and XLSX are enabled built-in types; RClick/Resources/template.docx, template.pptx, template.xlsx)",
       "paths": ["RClick/Resources/template.docx", "RClick/Resources/template.pptx", "RClick/Resources/template.xlsx", "RClick/Runtime/ActionService.swift"],
       "tests": ["RClickTests/OfficeTemplateTests.swift", "RClickTests/NewFileCreationTests.swift::office", "RClickTests/NewFileCreationTests.swift::missingRequiredTemplate", "RClickTests/NewFileCreationTests.swift::unavailableOfficeTemplates"],
