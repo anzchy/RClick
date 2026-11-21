@@ -8,7 +8,6 @@ emulate -R zsh
 # Don't grep an agent's screen for words like "permission": that produced a false "question" once.
 a=$1; f=$2; max=${3:-120}; marker=${4:-}
 pane=${5:?agent_pane required}; terminal=${6:?agent_terminal required}
-rclick_herdr=${RCLICK_HERDR:-herdr}
 rclick_sleep=${RCLICK_SLEEP:-sleep}
 rclick_python=${RCLICK_PYTHON:-}
 if [[ -z $rclick_python ]]; then

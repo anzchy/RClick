@@ -1245,6 +1245,14 @@ class OwnerGatesTests(unittest.TestCase):
     def summary(self):
         return (self.out / "t99-r1-summary.txt").read_text()
 
+    def test_fixture_preserves_scenario_exit_after_a_failing_command(self):
+        import json
+        (self.repo / ".gates-fixture.json").write_text(json.dumps({"body": "false", "exit_code": 7}))
+        result = subprocess.run([str(FIXTURE_BIN / "gates")], cwd=self.repo,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_refuses_to_start_below_the_free_space_minimum(self):
         result = self.run_gates("999999")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
