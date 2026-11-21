@@ -1,4 +1,4 @@
-"""Offline CLI dispatch contract: fake terminal transport, real reset and marker writer."""
+"""Offline CLI dispatch contract: fake terminal transport, real reset, injected marker writer, and no elapsed-time budgets."""
 import json
 import os
 import re
@@ -25,7 +25,17 @@ class DispatchTests(unittest.TestCase):
                 shutil.copy2(SCRIPTS / name, self.scripts / name)
         marker = self.repo / '.agents/skills/rclick-verify/scripts'
         marker.mkdir(parents=True)
-        shutil.copy2(SCRIPTS.parent.parent / 'rclick-verify/scripts/mark-target.mjs', marker)
+        # The real marker writer's git timeout is covered by its own verify suite.
+        # Dispatch tests inject its filesystem/argv contract without timed git probes.
+        self.marker = self.root / 'marker.mjs'
+        self.marker.write_text('''import fs from 'node:fs';
+import path from 'node:path';
+const [home, worktree, issue, task, handoff, branch] = process.argv.slice(2);
+const out = path.join(home, '.build/rclick-verify/target-worktree');
+fs.mkdirSync(path.dirname(out), {recursive:true});
+fs.writeFileSync(out, JSON.stringify({worktree, branch, issue:Number(issue), task, handoff}));
+fs.writeFileSync(path.join(home, 'marker-used'), 'yes');
+''')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.log = self.root / 'calls'
@@ -36,7 +46,7 @@ class DispatchTests(unittest.TestCase):
         self.report = self.root / 'report.md'
         self.report.touch()
         self.env = {**os.environ, 'HOME': str(self.home), 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
-                    'RCLICK_PYTHON': sys.executable, 'CALLS': str(self.log), 'TEST_REPO': str(self.repo),
+                    'RCLICK_PYTHON': sys.executable, 'RCLICK_MARK_TARGET': str(self.marker), 'CALLS': str(self.log), 'TEST_REPO': str(self.repo),
                     'TEST_KIND': 'claude', 'TEST_ROLE': 'implementer', 'ENTERS_NEEDED': '1'}
         subprocess.run(['git', 'init', '-q', '-b', 'topic'], cwd=self.repo, check=True)
         self.write_exec(self.bin / 'sleep', '#!/bin/sh\nexit 0\n')
@@ -364,6 +374,12 @@ elif args[:2] == ['pane', 'read']:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('one line', result.stderr)
                 self.assertEqual(self.calls(), [])
+
+
+    def test_marker_writer_is_injected_without_timed_git_probes(self):
+        result = self.run_dispatch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.repo / 'marker-used').exists())
 
 
 
