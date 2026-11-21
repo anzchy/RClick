@@ -1,4 +1,5 @@
 #!/bin/zsh -f
+if [[ ${1:-} == --help ]]; then print -- "Usage: poll-idle.sh (see script header)"; exit 0; fi
 # -f: skip ~/.zshenv and other startup files (#27); emulate: default zsh options, whatever the caller set.
 emulate -R zsh
 # poll-idle.sh <agent> <interval> <max_minutes> <agent_pane> <agent_terminal>

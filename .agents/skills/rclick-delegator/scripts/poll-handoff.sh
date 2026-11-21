@@ -1,4 +1,5 @@
 #!/bin/zsh -f
+if [[ ${1:-} == --help ]]; then print -- "Usage: poll-handoff.sh (see script header)"; exit 0; fi
 # -f: skip ~/.zshenv and other startup files (#27); emulate: default zsh options, whatever the caller set.
 emulate -R zsh
 # poll-handoff.sh <agent> <handoff-file> <max_minutes> <grep-marker-or-empty> <agent_pane> <agent_terminal>

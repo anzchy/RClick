@@ -1,4 +1,5 @@
 #!/bin/sh
+[ "${RCLICK_FIXTURE_WARMUP:-}" != 1 ] || exit 0
 case "$1 $2" in
   'agent get')
     echo "$3" >> "$RESET_STATE/agent-gets"

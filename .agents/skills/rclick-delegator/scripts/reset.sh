@@ -1,4 +1,5 @@
 #!/bin/zsh -f
+if [[ ${1:-} == --help ]]; then print -- "Usage: reset.sh (see script header)"; exit 0; fi
 # -f: skip ~/.zshenv and other startup files (#27); emulate: default zsh options, whatever the caller set.
 emulate -R zsh
 # Python runtime: RCLICK_PYTHON, else Homebrew python3, else python3 on PATH.
