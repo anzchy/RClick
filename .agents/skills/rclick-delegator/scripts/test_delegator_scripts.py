@@ -13,6 +13,31 @@ def git(cwd, *args, env=None):
 
 
 class PanePollTests(unittest.TestCase):
+    def test_poll_defaults_resolve_path_commands(self):
+        for mode in ("idle", "handoff", "report"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                report = root / "report.md"
+                report.write_text("Report-Task: default\n")
+                config = root / "config.json"
+                config.write_text('{"created_at": 0}')
+                env = {**os.environ, "PATH": str(FIXTURE_BIN / "poll-default") + os.pathsep + os.environ["PATH"],
+                       "POLL_CALLS": str(root / "calls"), "FIXTURE_SLEEP_CALLS": str(root / "sleeps")}
+                env.pop("RCLICK_HERDR", None)
+                env.pop("RCLICK_SLEEP", None)
+                scripts = Path(__file__).resolve().parent
+                args = {"idle": ["worker", "0", "1"],
+                        "handoff": ["worker", str(report), "1", ""],
+                        "report": ["worker", str(report), str(config), "default", "0", "1", "1"]}[mode]
+                executable = ([sys.executable, str(scripts / "poll-report.py")] if mode == "report"
+                              else [str(scripts / f"poll-{mode}.sh")])
+                result = subprocess.run([*executable, *args, "w1:p3", "term_abc123"],
+                                        env=env, capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("agent get w1:p3", (root / "calls").read_text())
+                if mode == "idle":
+                    self.assertTrue((root / "sleeps").read_text().strip())
+
     def test_no_report_guide_uses_pinned_listener(self):
         guide = (Path(__file__).resolve().parent.parent / "references" / "guide.md").read_text()
         fallback = guide.split("### 3.2 Status is unreliable for Codex", 1)[1].split("### 3.3", 1)[0]
@@ -28,19 +53,6 @@ class PanePollTests(unittest.TestCase):
                 with self.subTest(mode=mode, failures=failures), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
                     count = root / "count"
-                    herdr = root / "herdr"
-                    herdr.write_text("#!/usr/bin/env python3\nimport json, sys\nfrom pathlib import Path\n"
-                        "if sys.argv[2] == 'read': print('Worked for 1m'); sys.exit(0)\n"
-                        f"count = Path({str(count)!r})\n"
-                        "n = int(count.read_text()) + 1 if count.exists() else 1\n"
-                        "count.write_text(str(n))\n"
-                        f"if n <= {failures}: sys.stderr.write('temporary lookup failure'); sys.exit(1)\n"
-                        "print(json.dumps({'result': {'type': 'agent_info', 'agent': "
-                        "{'terminal_id': 'term_abc123', 'agent_status': 'done'}}}))\n")
-                    herdr.chmod(0o755)
-                    sleep = root / "sleep"
-                    sleep.write_text("#!/bin/sh\nexit 0\n")
-                    sleep.chmod(0o755)
                     report = root / "report.md"
                     report.write_text("Report-Task: retry\n")
                     config = root / "config.json"
@@ -52,7 +64,9 @@ class PanePollTests(unittest.TestCase):
                                   else [str(scripts / f"poll-{mode}.sh")])
                     result = subprocess.run([*executable, *args, "w1:p3", "term_abc123"],
                         capture_output=True, text=True, timeout=5,
-                        env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"]})
+                        env={**os.environ, "RCLICK_HERDR": str(FIXTURE_BIN / "herdr-poll"),
+                             "RCLICK_SLEEP": str(FIXTURE_BIN / "sleep"),
+                             "POLL_COUNT": str(count), "POLL_FAILURES": str(failures)})
                     if failures == 1:
                         self.assertEqual(result.returncode, 0, result.stderr)
                         self.assertIn("worker " + ("idle" if mode == "idle" else "done"), result.stdout)
@@ -68,29 +82,15 @@ class PanePollTests(unittest.TestCase):
                 with self.subTest(mode=mode, mismatch=mismatch), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
                     calls = root / "calls"
-                    herdr = root / "herdr"
-                    herdr.write_text("#!/usr/bin/env python3\n"
-                        "import json, sys\n"
-                        f"with open({str(calls)!r}, 'a') as f: f.write(' '.join(sys.argv[1:]) + '\\n')\n"
-                        "if sys.argv[2:4] == ['read', 'w1:p3']:\n"
-                        "    print('Worked for 1m'); sys.exit(0)\n"
-                        "if sys.argv[2:4] != ['get', 'w1:p3']:\n"
-                        "    sys.stderr.write('agent_not_found'); sys.exit(1)\n"
-                        f"terminal = 'term_replaced' if {mismatch!r} else 'term_abc123'\n"
-                        "print(json.dumps({'result': {'type': 'agent_info', 'agent': "
-                        "{'name': '', 'pane_id': 'w1:p3', 'terminal_id': terminal, "
-                        "'agent_status': 'done'}}}))\n")
-                    herdr.chmod(0o755)
-                    sleep = root / "sleep"
-                    sleep.write_text("#!/bin/sh\nexit 0\n")
-                    sleep.chmod(0o755)
                     report = root / "report.md"
                     report.write_text("DONE\n")
                     args = (["worker", "1", "1"] if mode == "idle" else
                             ["worker", str(report), "1", "DONE"])
                     result = subprocess.run([str(scripts / f"poll-{mode}.sh"), *args,
                                              "w1:p3", "term_abc123"], capture_output=True, text=True,
-                        env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"]}, timeout=5)
+                        env={**os.environ, "RCLICK_HERDR": str(FIXTURE_BIN / "herdr-poll"),
+                             "RCLICK_SLEEP": str(FIXTURE_BIN / "sleep"),
+                             "POLL_CALLS": str(calls), "POLL_MISMATCH": str(int(mismatch))}, timeout=5)
                     if mismatch:
                         self.assertNotEqual(result.returncode, 0, result.stdout)
                         self.assertIn("terminal mismatch", result.stdout + result.stderr)
@@ -1153,7 +1153,8 @@ class OwnerGatesTests(unittest.TestCase):
         self.repo.mkdir()
         self.env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
                     "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
-                    "RCLICK_GATES_OUT": str(self.out), "TMPDIR": str(root)}
+                    "RCLICK_GATES_OUT": str(self.out), "TMPDIR": str(root),
+                    "GATES_FIXTURE_MARKER": str(root / "gates-ran")}
         git(self.repo, "init", "-q", "-b", "main", env=self.env)
         (self.repo / "scripts").mkdir()
         self.root = root
@@ -1163,10 +1164,12 @@ class OwnerGatesTests(unittest.TestCase):
 
     def commit_gates(self, body, exit_code=0):
         gates = self.repo / "scripts/gates.sh"
-        # The marker proves whether the gates lane ran at all.
-        gates.write_text(f"#!/bin/sh\ntouch '{self.root}/gates-ran'\n{body}exit {exit_code}\n")
-        gates.chmod(0o755)
-        git(self.repo, "add", "scripts/gates.sh", env=self.env)
+        # Archive a link to the committed runner, plus scenario data; never a fresh executable.
+        if not gates.is_symlink():
+            gates.symlink_to(FIXTURE_BIN / "gates")
+        import json
+        (self.repo / ".gates-fixture.json").write_text(json.dumps({"body": body, "exit_code": exit_code}))
+        git(self.repo, "add", "scripts/gates.sh", ".gates-fixture.json", env=self.env)
         git(self.repo, "commit", "-qm", "gates", env=self.env)
         self.sha = git(self.repo, "rev-parse", "HEAD").strip()
 
@@ -1261,12 +1264,7 @@ class OwnerGatesTests(unittest.TestCase):
 
     def test_the_load_header_trims_linux_uptime_and_survives_a_missing_sysctl(self):
         # Linux uptime starts with a space; Linux has no vm.loadavg / hw.ncpu sysctl (seen on the Linux preflight).
-        bin_dir = self.root / "bin"
-        bin_dir.mkdir()
-        for name, body in (("uptime", "echo ' 06:23:55 up 264 days,  load average: 0.03, 0.04, 0.01'"),
-                           ("sysctl", "echo 'sysctl: unknown oid' >&2; exit 1")):
-            (bin_dir / name).write_text(f"#!/bin/sh\n{body}\n")
-            (bin_dir / name).chmod(0o755)
+        bin_dir = FIXTURE_BIN / "owner-tools"
         self.env["PATH"] = f"{bin_dir}:{self.env['PATH']}"
         self.commit_gates(self.write_lane_log("skill-tooling", self.TRACEBACK)
                           + "echo 'GATE skill-tooling FAIL (1 of 3 test files)'\necho 'GATES FAIL'\n", exit_code=1)

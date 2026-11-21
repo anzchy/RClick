@@ -2,6 +2,7 @@
 """Observe a task-specific report and agent status without reading pane scrollback."""
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -18,7 +19,7 @@ class AgentLookupError(RuntimeError):
 def agent_info(agent, terminal):
     try:
         result = subprocess.run(
-            ["herdr", "agent", "get", agent], capture_output=True, text=True, timeout=20,
+            [os.environ.get("RCLICK_HERDR") or "herdr", "agent", "get", agent], capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise AgentLookupError("herdr agent get failed: " + str(error)) from error

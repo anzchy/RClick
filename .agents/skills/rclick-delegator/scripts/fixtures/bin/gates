@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""A committed gate runner; the scratch repository contains only its input data."""
+import json
+import os
+import subprocess
+from pathlib import Path
+
+config = json.loads(Path('.gates-fixture.json').read_text())
+Path(os.environ['GATES_FIXTURE_MARKER']).touch()
+subprocess.run(['/bin/sh', '-c', config['body']], check=True)
+raise SystemExit(config['exit_code'])
