@@ -1147,7 +1147,7 @@ def archive_listener(state_root, event):
     if event_dir.is_symlink() or not (event_dir / "config.json").is_file():
         raise ValueError("unknown event or symlink: " + event)
     # Serialize against a start/restart and against a send already under way.
-    with _locked(event_dir / "launch.lock"), _locked(event_dir / "delivery.lock"):
+    with _locked(root.parent / (root.name + ".start.lock")), _locked(event_dir / "launch.lock"), _locked(event_dir / "delivery.lock"):
         if _worker_state(event_dir / "pid") == "running":
             raise ValueError("event worker is still running: " + event)
         try:
@@ -1180,6 +1180,7 @@ def _build_parser():
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     start = subparsers.add_parser("start", help="register and detach a listener")
+    start.add_argument("--new", action="store_true", help="refuse any existing event; omit only for recovery of the same dispatch")
     start.add_argument("--event", required=True, help="unique ID for this dispatch or fix/audit round")
     start.add_argument("--task", required=True, help="task or round identity shown in the notification")
     start.add_argument("--route", choices=("codex-thread", "claude-pane"),
@@ -1378,9 +1379,18 @@ def main(argv=None):
     if args.command == "stop":
         return _stop_command(args)
     try:
-        config = _config_from_args(args)
-        event_dir = args.state_root.expanduser().resolve() / args.event
-        result = start_listener(event_dir, config)
+        root = args.state_root.expanduser().resolve()
+        if not EVENT_PATTERN.fullmatch(args.event):
+            raise ValueError("invalid event ID: " + args.event)
+        root.parent.mkdir(parents=True, exist_ok=True)
+        # New dispatches claim the name atomically with respect to other CLI starts.
+        # Identical legacy starts remain available for recovery of a deferred notice.
+        with _locked(root.parent / (root.name + ".start.lock")):
+            event_dir = root / args.event
+            if args.new and event_dir.exists():
+                raise EventIdentityError("event already exists: " + args.event)
+            config = _config_from_args(args)
+            result = start_listener(event_dir, config)
     except (DeliveryUncertain, EventIdentityError, ValueError) as error:
         print(type(error).__name__ + ": " + str(error), file=sys.stderr)
         return 2

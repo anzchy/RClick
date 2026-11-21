@@ -83,6 +83,7 @@ if event_dir.exists():
     refuse('event already exists; use a NEW task and event: ' + event)
 
 started = False
+listener_attempted = False
 try:
     envelope = json.loads(run(['herdr', 'pane', 'list']))
     if envelope.get('id') != 'cli:pane:list' or envelope['result']['type'] != 'pane_list' or 'error' in envelope:
@@ -109,7 +110,8 @@ try:
         run(['node', scripts.parent.parent / 'rclick-verify/scripts/mark-target.mjs',
              worktree, worktree, args.issue, args.task, output, args.branch])
     listener = [sys.executable, scripts / 'listen-notify.py']
-    response = run([*listener, 'start', '--event', event, '--task', args.task,
+    listener_attempted = True
+    response = run([*listener, 'start', '--new', '--event', event, '--task', args.task,
                     '--route', 'claude-pane', '--pane', owner['pane_id'], '--terminal-id', owner['terminal_id'],
                     '--cwd', cwd, '--agent', args.agent, '--agent-pane', args.pane,
                     '--handoff', output, '--handoff-marker', args.task,
@@ -145,7 +147,7 @@ try:
     raise RuntimeError('pane never showed Working after 3 Enter attempts; pane tail:\n' + screen[-4000:])
 except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
     print('FAIL dispatch: ' + str(error), file=sys.stderr)
-    if started:
+    if started or (listener_attempted and event_dir.exists() and 'event already exists' not in str(error)):
         try:
             print(run([*listener, 'stop', '--event', event]), end='', file=sys.stderr)
         except (RuntimeError, OSError) as stop_error:

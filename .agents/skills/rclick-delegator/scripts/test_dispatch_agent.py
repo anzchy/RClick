@@ -44,6 +44,9 @@ class DispatchTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 with open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(['listener', *sys.argv[1:]]) + '\\n')
+if sys.argv[1] == 'start' and os.environ.get('CREATE_EVENT') == '1':
+    event = sys.argv[sys.argv.index('--event')+1]
+    (Path.home() / '.rclick-roster/herdr/delegator/listeners' / event).mkdir(parents=True)
 print(os.environ.get('LISTENER_RESULT', 'started') + ' event=test')
 sys.exit(int(os.environ.get('LISTENER_EXIT', '0')))
 ''')
@@ -110,7 +113,7 @@ elif args[:2] == ['pane', 'read']:
                           'task': 'i61-test', 'handoff': str(self.report)})
         self.assertEqual(self.calls(), [
             ['pane', 'list'], ['agent', 'get', 'w1:p2'],
-            ['listener', 'start', '--event', 'i61-test-r1-1120', '--task', 'i61-test',
+            ['listener', 'start', '--new', '--event', 'i61-test-r1-1120', '--task', 'i61-test',
              '--route', 'claude-pane', '--pane', 'w1:p9', '--terminal-id', 'term_fresh',
              '--cwd', str(self.repo), '--agent', 'worker', '--agent-pane', 'w1:p2',
              '--handoff', str(self.report), '--handoff-marker', 'i61-test', '--poll', 'handoff',
@@ -132,7 +135,7 @@ elif args[:2] == ['pane', 'read']:
                 self.assertIn('DISPATCHED i61-test-r1-1120', result.stdout)
                 calls = self.calls()
                 listener = next(c for c in calls if c[:2] == ['listener', 'start'])
-                expected = ['listener', 'start', '--event', 'i61-test-r1-1120', '--task', 'i61-test',
+                expected = ['listener', 'start', '--new', '--event', 'i61-test-r1-1120', '--task', 'i61-test',
                     '--route', 'claude-pane', '--pane', 'w1:p9', '--terminal-id', 'term_fresh',
                     '--cwd', str(self.repo), '--agent', 'worker', '--agent-pane', 'w1:p2',
                     '--handoff', str(self.report), '--handoff-marker', 'i61-test', '--poll',
@@ -148,7 +151,21 @@ elif args[:2] == ['pane', 'read']:
                     *([['pane', 'send-keys', 'w1:p2', 'enter']] if kind == 'codex' else []),
                     ['pane', 'send-text', 'w1:p2', self.prompt.read_text()],
                     ['pane', 'send-keys', 'w1:p2', 'Enter']])
-                self.assertNotIn(['listener', 'stop', '--event', 'i61-test-r1-1120'], calls)
+                prefix = [['pane', 'list'], ['agent', 'get', 'w1:p2'], expected]
+                if kind == 'codex':
+                    reset = [['agent', 'get', 'w1:p2'], ['pane', 'get', 'w1:p2'],
+                        ['pane', 'send-text', 'w1:p2', '/new'], ['pane', 'send-keys', 'w1:p2', 'enter'],
+                        ['pane', 'read', 'w1:p2'], ['pane', 'read', 'w1:p2'],
+                        ['pane', 'send-keys', 'w1:p2', 'enter'], ['pane', 'get', 'w1:p2'],
+                        ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '2000']]
+                else:
+                    reset = [['pane', 'send-text', 'w1:p2', '/clear'],
+                        ['pane', 'send-keys', 'w1:p2', 'Enter'],
+                        ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100']]
+                self.assertEqual(calls, prefix + reset + [
+                    ['pane', 'send-text', 'w1:p2', self.prompt.read_text()],
+                    ['pane', 'send-keys', 'w1:p2', 'Enter'],
+                    ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100']])
 
     def test_unsubmitted_prompt_retries_enter(self):
         result = self.run_dispatch(ENTERS_NEEDED='2')
@@ -189,11 +206,11 @@ elif args[:2] == ['pane', 'read']:
                     self.assertEqual(self.calls(), [])
             invalid = {'--agent': '', '--pane': 'p2', '--role': 'owner', '--kind': 'shell',
                        '--issue': '0', '--task': '../task', '--round': 'a/b',
-                       '--prompt-file': 'relative.txt'}
+                       '--prompt-file': '../prompt.txt'}
             if role == 'implementer':
-                invalid.update({'--worktree': 'repo', '--branch': '-bad', '--handoff': 'handoff.md'})
+                invalid.update({'--worktree': '.', '--branch': '-bad', '--handoff': '../report.md'})
             else:
-                invalid['--report'] = 'report.md'
+                invalid['--report'] = '../report.md'
             for flag, value in invalid.items():
                 with self.subTest(role=role, invalid=flag):
                     args = full.copy()
@@ -218,6 +235,19 @@ elif args[:2] == ['pane', 'read']:
                 result = self.run_dispatch(LISTENER_RESULT=response, LISTENER_EXIT=code)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn('DISPATCHED', result.stdout)
+                self.assertFalse(any(c[:2] == ['pane', 'send-text'] for c in self.calls()))
+
+    def test_missing_start_ack_stops_a_worker_that_created_state(self):
+        for code in ('0', '1'):
+            with self.subTest(code=code):
+                self.log.unlink(missing_ok=True)
+                event = self.home / '.rclick-roster/herdr/delegator/listeners/i61-test-r1-1120'
+                if event.exists():
+                    event.rmdir()
+                result = self.run_dispatch(LISTENER_RESULT='launch lost acknowledgement',
+                                           LISTENER_EXIT=code, CREATE_EVENT='1')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
                 self.assertFalse(any(c[:2] == ['pane', 'send-text'] for c in self.calls()))
 
 
