@@ -2,6 +2,7 @@
 
 import io
 import json
+import locale
 import os
 import re
 import subprocess
@@ -205,7 +206,13 @@ def main(args):
         # Match the former shell pipe: merge read errors, discard metadata errors,
         # and let the classifier see original characters rather than universal-newline conversion.
         result = subprocess.run([herdr, "pane", *command], stdout=subprocess.PIPE, stderr=stderr)
-        return result.stdout.decode(sys.stdin.encoding, errors=sys.stdin.errors)
+        encoding = getattr(sys.stdin, "encoding", None) or locale.getpreferredencoding(False)
+        errors = getattr(sys.stdin, "errors", None) or "surrogateescape"
+        try:
+            return result.stdout.decode(encoding, errors=errors)
+        except UnicodeDecodeError:
+            # Unavailable metadata is not identity evidence; visible text must still prove reset.
+            return ""
 
     kind, context = wait_for_context(
         lambda: get("read", pane, "--source", "recent-unwrapped", "--lines", "2000"),
