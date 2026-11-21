@@ -20,6 +20,8 @@ fi
 # herdr may retain the old id until the first turn; an unchanged id is not a veto.
 set -eu
 name=$1 pane=$2
+rclick_herdr=${RCLICK_HERDR:-herdr}
+rclick_sleep=${RCLICK_SLEEP:-sleep}
 context_secs=${RCLICK_RESET_CONTEXT_SECS-30}
 poll_secs=${RCLICK_RESET_POLL_SECS-0.25}
 # Validate literal decimal text before any pane input or shell arithmetic.
@@ -188,7 +190,7 @@ print(f"{int(seen or bool(ctx))}:{ctx}")
 # Decode the documented nested field; unrelated JSON "value" fields are not identities.
 # Missing/malformed/unavailable pane metadata falls back to visible screen evidence.
 pane_session() {
-  herdr pane get "$pane" 2>/dev/null | "$rclick_python" -c '
+  "$rclick_herdr" pane get "$pane" 2>/dev/null | "$rclick_python" -c '
 import json, sys
 try:
     value = json.load(sys.stdin)["result"]["pane"]["agent_session"]["value"]
@@ -200,7 +202,7 @@ except (ValueError, KeyError, TypeError):
 }
 # Read the agent through its pane, as the pollers do since #99: a reset plus a dispatched prompt
 # loses the herdr name, so <name> is only a label in messages (#107).
-agent_out=$(herdr agent get "$pane" 2>&1) && agent_rc=0 || agent_rc=$?
+agent_out=$("$rclick_herdr" agent get "$pane" 2>&1) && agent_rc=0 || agent_rc=$?
 st=$(print -r -- "$agent_out" | grep -oE '"agent_status":"[a-z]+"' | head -1 | cut -d'"' -f4)
 if [[ $agent_rc -ne 0 || -z $st ]]; then
   # Name the real cause: herdr's error message, else its first output line.
@@ -214,14 +216,14 @@ case $st in idle|done) ;; *) echo "FAIL reset $name: pane $pane status $st, not 
 old=$(print -r -- "$agent_out" | grep -oE '"value":"[^"]+"' | head -1 | cut -d'"' -f4 || true)
 old_pane_session=$(pane_session)
 [[ -z $old_pane_session ]] || old=$old_pane_session
-herdr pane send-text $pane '/new' >/dev/null
+"$rclick_herdr" pane send-text $pane '/new' >/dev/null
 # The first Enter can be swallowed by the slash-command popup; press until the chooser shows.
 for i in 1 2 3; do
-  herdr pane send-keys $pane enter >/dev/null; sleep 3
-  herdr pane read $pane 2>&1 | grep -q 'Where should the new conversation run' && break
+  "$rclick_herdr" pane send-keys $pane enter >/dev/null; "$rclick_sleep" 3
+  "$rclick_herdr" pane read $pane 2>&1 | grep -q 'Where should the new conversation run' && break
 done
-herdr pane read $pane 2>&1 | grep -q 'Where should the new conversation run' || { echo "FAIL reset $name: chooser never appeared"; exit 1; }
-herdr pane send-keys $pane enter >/dev/null
+"$rclick_herdr" pane read $pane 2>&1 | grep -q 'Where should the new conversation run' || { echo "FAIL reset $name: chooser never appeared"; exit 1; }
+"$rclick_herdr" pane send-keys $pane enter >/dev/null
 # MCP startup can delay the context footer; wait for it before judging the reset.
 typeset -F SECONDS
 deadline=$((SECONDS + context_secs))
@@ -232,7 +234,7 @@ while true; do
   if [[ -n $old_pane_session && -n $current_session && $current_session != "$old_pane_session" ]]; then
     session_proof=1
   fi
-  parsed=$(herdr pane read $pane --source recent-unwrapped --lines 2000 2>&1 | footer $session_proof)
+  parsed=$("$rclick_herdr" pane read $pane --source recent-unwrapped --lines 2000 2>&1 | footer $session_proof)
   [[ ${parsed%%:*} == 1 ]] && boundary_seen=1
   ctx=${parsed#*:}
   [[ -n $ctx ]] && break
@@ -244,7 +246,7 @@ while true; do
     fi
     exit 1
   fi
-  sleep $poll_secs
+  "$rclick_sleep" $poll_secs
 done
 case $ctx in "Context 0% used") ;; *) echo "FAIL reset $name: $ctx after /new"; exit 1;; esac
 echo "reset $name old_session=$old $ctx (verify the session id changes after the next turn)"
