@@ -184,7 +184,7 @@ try:
     if agent.get('agent_status') not in ('idle', 'done'):
         raise RuntimeError('target pane is not idle/done')
     if args.role == 'implementer':
-        run(['node', scripts.parent.parent / 'rclick-verify/scripts/mark-target.mjs',
+        run(['node', os.environ.get('RCLICK_MARK_TARGET', scripts.parent.parent / 'rclick-verify/scripts/mark-target.mjs'),
              worktree, worktree, args.issue, args.task, output, args.branch])
     listener_attempted = True
     response = run([*listener, 'start', '--new', '--event', event, '--task', args.task,
