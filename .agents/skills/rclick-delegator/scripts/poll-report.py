@@ -102,6 +102,9 @@ def watch(pane, report, created_at, marker, interval, max_minutes, idle_grace_se
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--help"]:
+        print("Usage: poll-report.py agent report config marker seconds minutes grace pane terminal")
+        sys.exit(0)
     if sys.argv[1] == "--get-failure-limit":
         print(GET_FAILURE_LIMIT)
         sys.exit(0)

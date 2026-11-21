@@ -1,3 +1,4 @@
 #!/bin/sh
+[ "${RCLICK_FIXTURE_WARMUP:-}" != 1 ] || exit 0
 if [ -n "${FIXTURE_SLEEP_CALLS:-}" ]; then printf '%s\n' "$*" >> "$FIXTURE_SLEEP_CALLS"; fi
 exit 0

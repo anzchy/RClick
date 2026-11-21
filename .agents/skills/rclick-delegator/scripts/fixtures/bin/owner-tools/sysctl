@@ -1,3 +1,4 @@
 #!/bin/sh
+[ "${RCLICK_FIXTURE_WARMUP:-}" != 1 ] || exit 0
 echo 'sysctl: unknown oid' >&2
 exit 1

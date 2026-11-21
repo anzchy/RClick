@@ -1,3 +1,10 @@
+from fixture_warmup import warm_up
+
+
+def setUpModule():
+    warm_up()
+
+
 import os
 import subprocess
 import sys
@@ -10,6 +17,23 @@ FIXTURE_BIN = Path(__file__).resolve().parent / "fixtures" / "bin"
 
 def git(cwd, *args, env=None):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=env).stdout
+
+
+class FixtureWarmupTests(unittest.TestCase):
+    def test_module_warms_every_static_executable_before_timed_tests(self):
+        import test_delegator_scripts as suite
+        self.assertTrue(callable(getattr(suite, "setUpModule", None)),
+                        "fresh exports must warm fixtures outside timed tests")
+        import fixture_warmup
+        expected = {p for p in FIXTURE_BIN.parent.rglob("*")
+                    if p.is_file() and os.access(p, os.X_OK)}
+        self.assertTrue(expected <= set(fixture_warmup.fixture_paths()))
+        from unittest.mock import patch
+        with patch.object(fixture_warmup.subprocess, "run") as run:
+            fixture_warmup.warm_up()
+        executed = {Path(call.args[0][0]) for call in run.call_args_list}
+        self.assertTrue(expected <= executed)
+        self.assertTrue(all("timeout" not in call.kwargs for call in run.call_args_list))
 
 
 class PanePollTests(unittest.TestCase):

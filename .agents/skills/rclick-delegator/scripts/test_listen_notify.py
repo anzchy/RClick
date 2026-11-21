@@ -1,3 +1,10 @@
+from fixture_warmup import warm_up
+
+
+def setUpModule():
+    warm_up()
+
+
 import importlib.util
 import json
 import os
