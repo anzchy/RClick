@@ -57,7 +57,7 @@ roster's private record; no claim depends on reading it. A result that only a pr
 | [PR #34](https://github.com/anzchy/RClick/pull/34) › Device | `78a1fc6` (a PR #34 head) | `d94db82` (final head `066c542`; `git diff 78a1fc6 066c542` touches only `specs/`) | `i28-i32-device-20261118` | Copy Path and Copy File Name on literal percent names; the file-URL FAIL that issue #25 tracked; its NOT VERIFIED list |
 | [PR #35](https://github.com/anzchy/RClick/pull/35) › Device | `0f598ad` (PR #35 head) | `723b6c5`, same tree | none named | the per-install Keychain key, a replayed click rejected, recovery after relaunch, the rejection notice; its NOT VERIFIED list and the release gate (issue #40) |
 | [Issue #12 comment](https://github.com/anzchy/RClick/issues/12#issuecomment-7041176305) | `38d356a` (main) | `38d356a` | `i-device-20261120` | Copy Path, Cut, Paste and New File rows on a Debug build, the offline menu as observed; its NOT VERIFIED rows; defects filed as #51 to #54 |
-| [Issue #49 comment](https://github.com/anzchy/RClick/issues/49#issuecomment-7058423784) | `e729e01` (issue #49's code on main `453241c`) | | `i-device-20261121` | New File from the real Finder menu in both layouts, several templates per type (flat and folded, after a relaunch), the edit sheet's template rows, same-Mac export and import, Restore Defaults, the offline menu as observed; its NOT VERIFIED rows; no product FAIL |
+| [Issue #49 comment](https://github.com/anzchy/RClick/issues/49#issuecomment-7058423784) | `e729e01` (issue #49's code on main `453241c`) | | `i-device-20261121` | New File from the real Finder menu in both layouts, several templates per type (flat and folded, folded also after a relaunch), the edit sheet's template rows, same-Mac export and import, Restore Defaults, the offline menu as observed; its NOT VERIFIED rows; no product FAIL |
 
 PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
 menu was read through an Accessibility helper. The issue #12 and issue #49 comments name a Debug build; the issue #49 comment
@@ -458,9 +458,10 @@ delete its line in the same change.
   - PASS a New File click from Finder, folded and flat, for TXT, Markdown, DOCX, PPTX and XLSX: `Untitled.<ext>`
     created and selected, empty for TXT and Markdown, bytes equal to the bundled template for DOCX, PPTX and XLSX, no
     "RClick did not respond" alert;
-  - PASS several templates per type: DOCX › Blank / Letter / Invoice, flat and folded (New File › DOCX › entry, so
-    the third-level tag reached the app), also after an app relaunch; each click made `Untitled.docx` with the chosen
-    source's bytes;
+  - PASS several templates, flat (DOCX › Blank / Letter / Invoice): each click made `Untitled.docx` with bytes equal
+    to the chosen source;
+  - PASS several templates, folded (New File › DOCX › Blank / Letter / Invoice): Finder delivered all three
+    third-level clicks, so the third-level tag reached the app; also after an app relaunch;
   - PASS Blank off with one template gives a direct item, a disabled template leaves the menu, a type with every
     entry off disappears; PASS a Pages-format custom type offers only its templates;
   - PASS a stale entry (stored file deleted, then clicked): one alert, no file;
@@ -827,10 +828,11 @@ delete its line in the same change.
   intact); recovery after relaunch without relaunching Finder; the notice shown once after a garbage message, not
   after old-session replays; a replay across a backward clock step rejected. NOT VERIFIED: the rows PR #35 › Device
   lists, and first key creation on a fresh account (finding 3). Exercised by every PASS row above that goes through
-  the app. At `e729e01` (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record): PASS the chosen New File entry reached the app from direct items and from second- and
-  third-level submenu leaves, also after a relaunch (see `new-file`); observed: the app logged "Rejected IPC messages"
-  three times, around the first folder grant, the first New File clicks and the first import, with no visible
-  effect; the cause is **UNVERIFIED**.
+  the app. At `e729e01` (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record): PASS the
+  chosen New File entry reached the app from direct items and from second- and third-level submenu leaves, the
+  third-level ones also after a relaunch (see `new-file`); observed: the app logged "Rejected IPC messages" three
+  times, around the first folder grant, the first New File clicks and the first import, with no visible effect; the
+  cause is **UNVERIFIED**.
 - **Gaps:** finding 3.
 
 ### `persistence`
