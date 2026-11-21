@@ -1,5 +1,6 @@
 """Classify one Codex screen and wait for reset evidence with an injectable clock."""
 
+import io
 import json
 import os
 import re
@@ -28,7 +29,7 @@ def footer(screen, proved=False):
     def is_permissions(line):
         return bool(re.fullmatch(r"permissions: [\w -]+", line))
 
-    lines = screen.splitlines(keepends=True)
+    lines = list(io.StringIO(screen))
     last_title = None
     unfenced = set()
     for index, raw in enumerate(lines):
@@ -200,13 +201,15 @@ def main(args):
     name, pane, old_session, old, seconds, interval = args
     herdr = os.environ.get("RCLICK_HERDR") or "herdr"
 
-    def get(*command):
-        result = subprocess.run([herdr, "pane", *command], capture_output=True, text=True)
-        return result.stdout + result.stderr
+    def get(*command, stderr=subprocess.STDOUT):
+        # Match the former shell pipe: merge read errors, discard metadata errors,
+        # and let the classifier see original characters rather than universal-newline conversion.
+        result = subprocess.run([herdr, "pane", *command], stdout=subprocess.PIPE, stderr=stderr)
+        return result.stdout.decode(sys.stdin.encoding, errors=sys.stdin.errors)
 
     kind, context = wait_for_context(
         lambda: get("read", pane, "--source", "recent-unwrapped", "--lines", "2000"),
-        lambda: pane_session(get("get", pane)), old_session, float(seconds), float(interval))
+        lambda: pane_session(get("get", pane, stderr=subprocess.DEVNULL)), old_session, float(seconds), float(interval))
     code, message = outcome(name, old, seconds, kind, context)
     print(message, end="")
     return code
