@@ -723,8 +723,8 @@ delete its line in the same change.
   cleared, so that entry is missing too, and a type whose only entry is missing is left out of the menu
   (`RClick/Runtime/SettingsBackup.swift:192-199`, `RClick/Runtime/MenuService.swift:28-30`; `SettingsBackupTests.missingLegacyTemplateIsRetainedRatherThanSilentlyFallingBack`,
   `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesOldBackupAndCreatesDirectory`). The "Import Complete" alert
-  joins the skipped-apps notice and "N templates not included" (`GeneralSettingsTabView.swift:347`, `:352-361`; the
-  count can be wrong, finding 17). Import deletes no snapshot (`store.sync(preserveTemplateSnapshots: true)`, `:350`;
+  is shown only when an app was skipped or the count is above zero, and joins the skipped-apps notice and "N
+  templates not included" (`GeneralSettingsTabView.swift:347`, `:352-361`; the count can be wrong, finding 17). Import deletes no snapshot (`store.sync(preserveTemplateSnapshots: true)`, `:350`;
   finding 16).
 - **Status:** `shipped-on`, `partial` (finding 8).
 - **Tests:** `SettingsBackupTests` (round trip, missing app, a missing legacy template kept, action order, template
