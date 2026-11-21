@@ -111,7 +111,7 @@ delete its line in the same change.
    `NSWorkspace.OpenConfiguration`, so they have no effect. No issue filed yet.
 10. `new-file-settings`: Edit File Type stores a Default Open App (`RClick/Settings/EditFileTypeSheetView.swift`,
     `NewFile.openApp` in `Shared/RCBase.swift`); `ActionService.createFile` never reads it. No issue filed yet.
-11. `new-file`: `NewFileMenuItem.customFileId` (`Shared/RCBase.swift:378`) has a branch in `ActionService.createFile`
+11. `new-file`: `NewFileMenuItem.customFileId` (`Shared/RCBase.swift:404`) has a branch in `ActionService.createFile`
     (`RClick/Runtime/ActionService.swift:1017-1032`) that creates an extension-less file, but
     `MenuService.buildConfig` (`RClick/Runtime/MenuService.swift`) never emits that item; only
     `ActionServiceTests.newFilePreservesRawPercentTarget` reaches it. No issue filed yet.
@@ -123,9 +123,9 @@ delete its line in the same change.
       (`ctx-items`) it hides each selected item. On the window background (`ctx-container`) it hides every item
       directly inside the **first target**, not the target itself. On the toolbar or sidebar it does nothing.
     - The target list of every action click except Paste is `selectedItemURLs()` only, with no `targetedURL()`
-      fallback (`FinderSyncExt/FinderSyncExt.swift:625`, `:644`; the app click falls back at `:674`). So on the window
-      background Hide's first target is the first *selected* item, if there is one, not the folder clicked in. What
-      Finder returns there is **UNVERIFIED** pending a device run.
+      fallback (`FinderSyncExt.handleActionClick`, `FinderSyncExt/FinderSyncExt.swift:632`, `:651`; `handleAppClick`
+      falls back at `:681-683`). So on the window background Hide's first target is the first *selected* item, if
+      there is one, not the folder clicked in. What Finder returns there is **UNVERIFIED** pending a device run.
     - Unhide (`ActionService.swift:791-834`, `unhideFilesAndDirs`) ignores the trigger and every target but the
       first. It clears the hidden flag on each item directly inside the first target (for a file the listing throws
       and is only logged, `:819-820`), then on the first target itself (`:823-831`).
@@ -184,7 +184,7 @@ delete its line in the same change.
 - **Default:** on (`Shared/RCBase.swift` `RCAction.copyPath`, `enabled: true`).
 - **Reached:** Finder menu, action id `copy-path`, on items, container, sidebar and the toolbar button.
 - **Runs in:** the extension only. `FinderSyncExt.handleActionClick` copies locally and sends no IPC
-  (`FinderSyncExt/FinderSyncExt.swift:629-632`), and the item stays enabled while RClick is offline (`:548`).
+  (`FinderSyncExt/FinderSyncExt.swift:636-639`), and the item stays enabled while RClick is offline (`:548`).
   `ActionService.copyPath` exists but no click reaches it.
 - **Tests:** `ClipboardTests` (one text-only item, single and multiple paths, literal bytes, empty selection) and
   `ActionServiceTests.copyPathAndFileNameWriteToTheInjectedPasteboard`; metrics `copy-path` › Test cases.
@@ -336,7 +336,7 @@ delete its line in the same change.
   background, where the destination is the folder shown, or on exactly one selected item, which becomes the
   destination (`PendingCut.targetsForPaste`; on a file this then refuses, finding 6).
 - **Runs in:** extension and app. The extension adds the item and its target (`FinderSyncExt/FinderSyncExt.swift:387-390`,
-  `:639-644`) and disables it offline; the app asks for folder access to the destination and each source parent
+  `:646-651`) and disables it offline; the app asks for folder access to the destination and each source parent
   (`RClick/Runtime/ActionService.swift:368-375`) and runs the moves on `ActionExecutor`.
 - **Tests:** `PasteActionServiceTests`, `PasteFixRoundTests`, `PasteNoOpAndLoggingTests`,
   `PasteNoOpJournalFailureTests`, `CloudTrashDestinationTests`, `MoveNameTests`, `PasteLocalizationTests`,
@@ -638,8 +638,8 @@ delete its line in the same change.
     RClick owns it, only after the save has persisted (`RClick/Runtime/ConfigService.swift:160-197`; the rule in
     `persistence`). A file that cannot be read when picked, or a
     snapshot that cannot be written on Save, shows "Template Import Failed" with the error and keeps the sheet open
-    (`EditFileTypeSheetView.swift:132-135`, `:221-223`, `:231-235`); a failed database save is not shown there: it
-    lands in `AppState.lastSaveError` for the settings window (`RClick/AppState.swift` `persist`).
+    (the picker's `catch`, `EditFileTypeSheetView.swift:137-139`; Save's, `:221-223`; the alert, `:231-235`); a
+    failed database save is not shown there: it lands in `AppState.lastSaveError` for the settings window (`RClick/AppState.swift` `persist`).
   Delete File Type (`AppState.deleteNewFile`) and Restore Defaults (`AppState.resetFiletypeItems`, which sets
   `NewFile.all`, six types with no template, `RClick/AppState.swift:201-204`) save through `AppState.persist`, so
   they follow the deletion rule in `persistence`: after the save persisted, each snapshot a stored entry of a dropped
@@ -794,13 +794,14 @@ delete its line in the same change.
 
 ### `ipc`
 - **What:** `DistributedNotificationCenter` messages on the fork's own channels, `cn.anzchy.RClick.ExtensionToMain`
-  and `cn.anzchy.RClick.MainToExtension` (`Shared/Messager.swift:194-195`): extension → app `click`, `heartbeat`,
-  `request-config`; app → extension `menu-config` (with the pending cut's counts), `running`, `quit`, `action-ack`.
+  and `cn.anzchy.RClick.MainToExtension` (`Messager.extensionToMainNotification`, `mainToExtensionNotification`,
+  `Shared/Messager.swift:197-198`): extension → app `click`, `heartbeat`, `request-config`; app → extension
+  `menu-config` (with the pending cut's counts), `running`, `quit`, `action-ack`.
   A `menu-config` New File item may carry its entries (id and name) and a `click` the chosen entry's `templateId`;
   both fields are optional, so a message without them still decodes (`NewFileMenuItem.entries`,
   `Shared/RCBase.swift:431`; `ClickEventPayload.templateId`, `Shared/Messager.swift:131`). The extension finds the
   chosen leaf from its menu item tag, a hash of the length-prefixed type id and entry id, because Finder keeps the tag
-  and drops `representedObject` (code comment, `NewFileMenuItem.leafTag`, `Shared/RCBase.swift:415-420`; not observed
+  and drops `representedObject` (code comment, `NewFileMenuItem.leafTag`, `Shared/RCBase.swift:415-419`; not observed
   on a device); an unknown or ambiguous tag sends no click (`selection(forTag:in:)`, `:421-429`;
   `FinderSyncExt/FinderSyncExt.swift:696-701`). The app hands `templateId` to `createFile`
   (`RClick/RClickApp.swift:332`).
