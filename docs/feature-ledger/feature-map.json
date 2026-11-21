@@ -420,10 +420,10 @@
       "process": ["app"],
       "reachedBy": ["Settings > General > Settings Management: Reset All Settings…"],
       "default": "on",
-      "paths": ["RClick/Settings/GeneralSettingsTabView.swift", "RClick/AppState.swift", "RClick/Runtime/ConfigService.swift"],
+      "paths": ["RClick/Settings/GeneralSettingsTabView.swift", "RClick/AppState.swift", "RClick/Runtime/ConfigService.swift", "RClick/Runtime/TemplateStore.swift"],
       "tests": [],
       "specs": [],
-      "issues": [],
+      "issues": [49],
       "prs": [],
       "changelog": ["Reset All Settings"]
     },
