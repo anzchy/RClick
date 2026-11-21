@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 
@@ -29,7 +30,7 @@ def refuse(message):
 
 
 def existing_path(value, label, directory=False):
-    if not value or not Path(value).is_absolute() or '\n' in value or '\r' in value:
+    if not isinstance(value, str) or not value or not Path(value).is_absolute() or '\n' in value or '\r' in value:
         refuse(label + ' must be an absolute existing path')
     path = Path(value)
     if not (path.is_dir() if directory else path.is_file()):
@@ -111,13 +112,39 @@ event_dir = Path.home() / '.rclick-roster/herdr/delegator/listeners' / event
 if event_dir.exists():
     refuse('event already exists; use a NEW task and event: ' + event)
 
+def object_value(value, label):
+    if not isinstance(value, dict):
+        raise RuntimeError('invalid ' + label + ': expected an object')
+    return value
+
+
+def agent_info():
+    envelope = object_value(json.loads(run(['herdr', 'agent', 'get', args.pane])), 'agent envelope')
+    info = object_value(envelope.get('result'), 'agent result')
+    record = object_value(info.get('agent'), 'agent record')
+    if info.get('type') != 'agent_info':
+        raise RuntimeError('invalid agent result type')
+    return record
+
+
+def terminate(signum, frame):
+    raise SystemExit('terminated by signal ' + str(signum))
+
+
+signal.signal(signal.SIGTERM, terminate)
 started = False
+succeeded = False
 listener_attempted = False
+failure = ''
+listener = [sys.executable, scripts / 'listen-notify.py']
 try:
-    envelope = json.loads(run(['herdr', 'pane', 'list']))
-    if envelope.get('id') != 'cli:pane:list' or envelope['result']['type'] != 'pane_list' or 'error' in envelope:
+    envelope = object_value(json.loads(run(['herdr', 'pane', 'list'])), 'pane envelope')
+    result = object_value(envelope.get('result'), 'pane result')
+    if envelope.get('id') != 'cli:pane:list' or result.get('type') != 'pane_list' or 'error' in envelope:
         raise RuntimeError('invalid pane list envelope')
-    panes = envelope['result']['panes']
+    panes = result.get('panes')
+    if not isinstance(panes, list) or any(not isinstance(p, dict) for p in panes):
+        raise RuntimeError('invalid pane records')
     owners = [p for p in panes if p.get('agent') == 'claude' and
               p.get('terminal_title_stripped') == 'rclick-delegator']
     targets = [p for p in panes if p.get('pane_id') == args.pane]
@@ -126,19 +153,18 @@ try:
     owner, target = owners[0], targets[0]
     cwd = existing_path(owner.get('cwd'), 'delegator cwd', directory=True)
     target_cwd = existing_path(target.get('cwd'), 'target cwd', directory=True)
-    if owner.get('foreground_cwd') != str(cwd) or not re.fullmatch(r'term_[A-Za-z0-9_-]+', owner.get('terminal_id', '')):
+    if owner.get('foreground_cwd') != str(cwd) or not isinstance(owner.get('terminal_id'), str) or not re.fullmatch(r'term_[A-Za-z0-9_-]+', owner['terminal_id']):
         raise RuntimeError('delegator terminal/cwd identity is invalid')
     if target.get('agent') != args.kind or target.get('foreground_cwd') != str(target_cwd):
         raise RuntimeError('target kind/cwd does not match the pane')
     if args.role == 'implementer' and target_cwd != worktree:
         raise RuntimeError('--worktree must be the agent pane home')
-    agent = json.loads(run(['herdr', 'agent', 'get', args.pane]))['result']['agent']
+    agent = agent_info()
     if agent.get('agent_status') not in ('idle', 'done'):
         raise RuntimeError('target pane is not idle/done')
     if args.role == 'implementer':
         run(['node', scripts.parent.parent / 'rclick-verify/scripts/mark-target.mjs',
              worktree, worktree, args.issue, args.task, output, args.branch])
-    listener = [sys.executable, scripts / 'listen-notify.py']
     listener_attempted = True
     response = run([*listener, 'start', '--new', '--event', event, '--task', args.task,
                     '--route', 'claude-pane', '--pane', owner['pane_id'], '--terminal-id', owner['terminal_id'],
@@ -174,22 +200,30 @@ try:
             if working and args.kind == 'claude':
                 # Claude's reliable status covers spinner verbs such as Thinking.
                 # Codex metadata can be stale: it must show visible Working instead.
-                info = json.loads(run(['herdr', 'agent', 'get', args.pane]))['result']
-                record = info['agent']
-                if (info.get('type') != 'agent_info' or record.get('pane_id') != args.pane
+                record = agent_info()
+                if (record.get('pane_id') != args.pane
                         or record.get('terminal_id') != target.get('terminal_id')):
                     raise RuntimeError('Claude working status has a changed pane/terminal identity')
                 working = record.get('agent_status') == 'working'
             if working:
                 print('DISPATCHED ' + event)
+                succeeded = True
                 sys.exit(0)
     raise RuntimeError('pane never showed Working after 3 Enter attempts; pane tail:\n' + screen[-4000:])
-except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
-    print('FAIL dispatch: ' + str(error), file=sys.stderr)
-    if started or (listener_attempted and event_dir.exists() and 'event already exists' not in str(error)):
+except BaseException as error:
+    if succeeded:
+        raise
+    failure = str(error)
+    print('FAIL dispatch: ' + (failure or type(error).__name__), file=sys.stderr)
+    sys.exit(1)
+finally:
+    if not succeeded and (started or (listener_attempted and event_dir.exists()
+                                     and 'event already exists' not in failure)):
+        # Do not let a second catchable termination interrupt the owned cleanup.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
             print(run([*listener, 'stop', '--event', event]), end='', file=sys.stderr)
-        except (RuntimeError, OSError) as stop_error:
+        except BaseException as stop_error:
             print('FAIL listener cleanup: ' + str(stop_error), file=sys.stderr)
-    sys.exit(1)
 PY
