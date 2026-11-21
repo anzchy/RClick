@@ -1,7 +1,9 @@
 # RClick feature ledger
 
-The hand-inspected inventory of every feature RClick ships today. **Verified against `38d356a`** (main on 2026-11-20)
-by reading the code, the specs, and the issues and PRs on `anzchy/RClick`. Nothing here was checked by running the
+The hand-inspected inventory of every feature RClick ships today. **Verified against `e729e01`** (issue #49's code on main
+`453241c`, 2026-11-20) by reading the code, the specs, and the issues and PRs on `anzchy/RClick`: at `e729e01` the
+files #49 changed and the blocks that cite them were re-read; every other block carries the full read at `38d356a`,
+whose code `453241c` keeps (`git diff 38d356a 453241c` touches only `docs/` and one delegator brief template). Nothing here was checked by running the
 app for this ledger. Device results are cited from public evidence on `anzchy/RClick` (see Device runs cited); a run
 id in parentheses only points at the roster's private record, which a reader never needs.
 
@@ -97,7 +99,7 @@ delete its line in the same change.
    (`RClick/Runtime/ActionService.swift:1100-1114`) appends the extension with no dot. Issue #51 (device FAIL in the
    issue #12 comment).
 8. `settings-backup`, `menu-layout`: importing a backup does not restore `foldActionsMenu` (issue #52, observed on
-   the device). `SettingsBackup.Preferences.apply` (`RClick/Runtime/SettingsBackup.swift:223-229`) writes that key, so
+   the device). `SettingsBackup.Preferences.apply` (`RClick/Runtime/SettingsBackup.swift:260-262`) writes that key, so
    the cause is **UNVERIFIED**; which other preferences import skips is unchecked (issue #52).
 9. `apps-settings`: Settings > Apps > Edit stores Run Arguments and Environment Variables
    (`RClick/Settings/EditAppSheetView.swift`, persisted by `RClick/Runtime/ConfigService.swift` and
@@ -107,7 +109,7 @@ delete its line in the same change.
 10. `new-file-settings`: Edit File Type stores a Default Open App (`RClick/Settings/EditFileTypeSheetView.swift`,
     `NewFile.openApp` in `Shared/RCBase.swift`); `ActionService.createFile` never reads it. No issue filed yet.
 11. `new-file`: `NewFileMenuItem.customFileId` (`Shared/RCBase.swift:378`) has a branch in `ActionService.createFile`
-    (`RClick/Runtime/ActionService.swift:1017-1028`) that creates an extension-less file, but
+    (`RClick/Runtime/ActionService.swift:1017-1032`) that creates an extension-less file, but
     `MenuService.buildConfig` (`RClick/Runtime/MenuService.swift`) never emits that item; only
     `ActionServiceTests.newFilePreservesRawPercentTarget` reaches it. No issue filed yet.
 12. `update`, `about`: the update checker and star count read `wflixu/RClick` (`RClick/RClickApp.swift:40`), the
@@ -129,6 +131,40 @@ delete its line in the same change.
     this macOS and `panel-choose.sh` needs the ABC input source (issue #26); `ui.sh grant` fails on the open panel
     (issue #38); the problems collected by the issue #12 run, including no Cut or Paste recipe in `features/`
     (issue #54).
+15. `new-file`: a click without an entry id (an extension older than the template list, whose menu items carry no
+    entries) picks Blank when it is on, else the first enabled template, and refuses with the warning when that
+    template's file is missing even if a later enabled template exists (`RClick/Runtime/ActionService.swift:1053-1062`).
+    The menu the current app sends lists only templates whose file exists (`RClick/Runtime/MenuService.swift:29`).
+    No issue filed yet.
+16. `new-file`, `new-file-settings`, `settings-backup`, `persistence`: template snapshots that nothing removes.
+    - Import saves with `preserveTemplateSnapshots: true` (`RClick/Settings/GeneralSettingsTabView.swift:350`), so the
+      snapshots of the entries an import replaces stay in the Templates folder (`RClick/Runtime/ConfigService.swift:193`).
+    - Save writes new and replacement snapshots before the database save (`RClick/Settings/EditFileTypeSheetView.swift:247`,
+      `TemplateDraft.save`); when the database save fails it rolls back (`ConfigService.swift:190-191`) and the fresh
+      copy stays. Cleanup only looks at paths a stored entry referenced (`:161-164`), so neither is removed later.
+    - A snapshot deletion that throws after the database save succeeded (`ConfigService.swift:195-197`) is reported
+      through `AppState.lastSaveError` as a failed save, although the settings were saved.
+    No issue filed yet.
+17. `settings-backup`: the "N templates not included" count after an import does not match what the import kept.
+    `importOmittedTemplateCount` (`RClick/Runtime/SettingsBackup.swift:226-232`) calls `toModel` without the current
+    entries, while `applyImport` passes them (`RClick/Settings/GeneralSettingsTabView.swift:343-347`), so an entry
+    re-attached to its adopted pre-#49 path on the same Mac is counted as not included. A backup in the older
+    one-path format counts its template whether or not the file exists here (`SettingsBackup.swift:229`). No issue
+    filed yet.
+18. `settings-backup`: `TemplateStore.snapshotPath` (`RClick/Runtime/TemplateStore.swift:17-28`) takes the first
+    owned child of the entry's folder in name order and does not skip hidden files, so it can re-attach an entry to a
+    `.DS_Store` or to a leftover copy from finding 16. Whether a hand-edited backup whose template id differs from
+    the folder name only in letter case finds its snapshot is **UNVERIFIED** (it depends on the case
+    `resolvingSymlinksInPath` returns, `TemplateStore.owns`, `:70-84`). No issue filed yet.
+19. `new-file`, `finder-menu`: the tag-routing test builds the delivered `NSMenuItem` itself
+    (`RClickTests/MultiTemplateMenuTests.swift:59-66`); the extension's private `makeNewFileItem`
+    (`FinderSyncExt/FinderSyncExt.swift:567-590`) and its click handler (`:696-710`) run in no test. Only a device run
+    settles Finder's delivery of a type-submenu leaf, which no run has done (`new-file` › Device). No issue filed yet.
+20. `new-file-settings`: Restore Defaults on the New File tab replaces every type at once and deletes every template
+    snapshot RClick owns, with no confirmation (`RClick/Settings/NewFileSettingsTabView.swift:38-39`,
+    `AppState.resetFiletypeItems`, `RClick/AppState.swift:201-204`, cleanup at `RClick/Runtime/ConfigService.swift:193-197`);
+    CHANGELOG [Unreleased] › Changed states the deletion. Delete File Type and Reset All Settings ask first
+    (`NewFileSettingsTabView.swift:117-133`, `RClick/Settings/GeneralSettingsTabView.swift:410`). No issue filed yet.
 
 ## Finder menu: Actions
 
