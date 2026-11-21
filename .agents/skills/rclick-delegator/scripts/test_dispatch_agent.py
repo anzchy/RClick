@@ -79,7 +79,7 @@ elif args[:2] == ['pane', 'read']:
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
         if enters < 2: print('Where should the new conversation run?')
         else: print('>_ OpenAI Codex (v0.167.0)\\n' + repo + '\\n› Ask Codex to do anything\\nContext 0% used')
-    else: print('Context 0% used')
+    else: print(os.environ.get('CLAUDE_FOOTER', 'Context 0% used'))
 ''')
 
     def write_exec(self, path, text):
@@ -249,6 +249,17 @@ elif args[:2] == ['pane', 'read']:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
                 self.assertFalse(any(c[:2] == ['pane', 'send-text'] for c in self.calls()))
+
+    def test_claude_context_bar_proves_freshness_but_nonzero_context_does_not(self):
+        result = self.run_dispatch(CLAUDE_FOOTER='  Context ░░░░░░ 0%')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('DISPATCHED', result.stdout)
+        self.log.unlink()
+        result = self.run_dispatch(CLAUDE_FOOTER='  Context █░░░░░ 14%')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Claude reset did not confirm Context 0%', result.stderr)
+        self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
+        self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
 
 if __name__ == '__main__':
