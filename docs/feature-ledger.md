@@ -413,8 +413,20 @@ delete its line in the same change.
 - **Status:** `shipped-on`, `partial` (finding 7: an extension without a dot; finding 11: an unreachable branch).
 - **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:287` `NewFile.all`;
   `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`); every type starts with Blank on and no template.
-  A type stored before this change with one user template is migrated at load to that template with Blank off, so
-  its menu item is unchanged (`RClick/Runtime/ConfigService.swift:106-113`; see `persistence`). At every load a stored
+  A type stored before this change with one user template is migrated at load to one entry that points at that file,
+  with Blank off (`ConfigService.load`, `RClick/Runtime/ConfigService.swift:106-113`; see `persistence`). Its menu
+  item stays one direct item that creates from that file only while the file exists and lies outside the Templates
+  folder or directly inside it, where `TemplateStore.owns` accepts it (`RClick/Runtime/TemplateStore.swift:70-84`).
+  Otherwise the entry is missing: a path inside the Templates folder that the new entry does not own is cleared at
+  load (`ConfigService.swift:116-123`), and a cleared or absent file is `NewFile.Template.isMissing`. With Blank off
+  and no other entry the type then leaves the Finder menu (`RClick/Runtime/MenuService.swift:28-30`), and the edit
+  sheet marks the entry "Missing Template" (`RClick/Settings/EditFileTypeSheetView.swift:110-114`). Tests: a present
+  file outside and directly inside the Templates folder migrates with Blank off and stays in the menu
+  (`LegacyTemplateBackupTests.migratedLegacyFileSurvivesSameMacExportImport`,
+  `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesLoadAndCreatesDirectory`); a missing file loads as a missing
+  entry (`MultiTemplateMigrationTests.legacyTemplateDisablesBlankAndPersistsOnce`); the menu drops a type whose only
+  entries are off or missing (`MultiTemplateMenuTests.zeroOneAndManyEntriesProduceDirectOrSubmenuInBothLayouts`). No
+  test loads an unowned in-store path, and none builds the menu for a migrated missing entry. At every load a stored
   row is deleted when its id is `pages`, `key` or `numbers`, its extension is exactly the matching `.pages`, `.key` or
   `.numbers`, and it has no user template (`NewFile.isRetiredBuiltin`, `Shared/RCBase.swift:283-285`; called at
   `RClick/Runtime/ConfigService.swift:87-96`). Nothing else is checked: a row whose name, icon, order or enabled
@@ -691,7 +703,9 @@ delete its line in the same change.
   `SettingsBackupTests.sameMacImportKeepsSnapshotsAndPersistedMenu`,
   `LegacyTemplateBackupTests.migratedLegacyFileSurvivesSameMacExportImport`). A backup written before templates were
   a list (one `templatePath` per type) still imports: that path becomes the type's one template with Blank off, kept
-  even when the file is missing (`:192-199`; `SettingsBackupTests.missingLegacyTemplateIsRetainedRatherThanSilentlyFallingBack`,
+  as an entry even when the file is missing; a path inside the Templates folder that the entry does not own is
+  cleared, so that entry is missing too, and a type whose only entry is missing is left out of the menu
+  (`RClick/Runtime/SettingsBackup.swift:192-199`, `RClick/Runtime/MenuService.swift:28-30`; `SettingsBackupTests.missingLegacyTemplateIsRetainedRatherThanSilentlyFallingBack`,
   `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesOldBackupAndCreatesDirectory`). The "Import Complete" alert
   joins the skipped-apps notice and "N templates not included" (`GeneralSettingsTabView.swift:347`, `:352-361`; the
   count can be wrong, finding 17). Import deletes no snapshot (`store.sync(preserveTemplateSnapshots: true)`, `:350`;
@@ -820,7 +834,8 @@ delete its line in the same change.
     (`RClick/Runtime/ConfigService.swift:106-113`, saved at `:128-129`; `MultiTemplateMigrationTests`,
     `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesLoadAndCreatesDirectory`). A stored path inside the
     Templates folder that the entry does not own is read as missing (`:116-123`; `TemplateStore.owns`,
-    `RClick/Runtime/TemplateStore.swift:70-84`).
+    `RClick/Runtime/TemplateStore.swift:70-84`); a migrated type whose entry is missing leaves the Finder menu (see
+    `new-file` › Default).
   - Deletion: `ConfigService.save` deletes a prior snapshot that no saved entry still references, only after the
     database save succeeded and only when the last load could read the New File rows; a failed save rolls back
     (`RClick/Runtime/ConfigService.swift:160-197`; `TemplatePersistenceTests`). `TemplateStore.remove` deletes only
