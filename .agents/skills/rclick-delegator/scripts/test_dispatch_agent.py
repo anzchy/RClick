@@ -64,7 +64,7 @@ if args == ['pane', 'list']:
          'agent': kind}]}}))
 elif args[:2] == ['agent', 'get']:
     print(json.dumps({'result': {'type': 'agent_info', 'agent': {'pane_id': 'w1:p2',
-        'terminal_id': 'term_worker', 'agent_status': 'idle'}}}))
+        'terminal_id': 'term_worker', 'agent_status': 'idle'}}}, separators=(',', ':')))
 elif args[:2] == ['pane', 'get']:
     print(json.dumps({'result': {'pane': {'agent_session': {'value': 'session'}}}}))
 elif args[:2] == ['pane', 'read']:
@@ -120,6 +120,105 @@ elif args[:2] == ['pane', 'read']:
             ['pane', 'send-text', 'w1:p2', self.prompt.read_text()],
             ['pane', 'send-keys', 'w1:p2', 'Enter'],
             ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100']])
+
+    def test_all_other_role_kind_combinations(self):
+        for kind, role in (('codex', 'implementer'), ('claude', 'auditor'), ('codex', 'auditor')):
+            with self.subTest(kind=kind, role=role):
+                self.log.unlink(missing_ok=True)
+                marker = self.repo / '.build/rclick-verify/target-worktree'
+                marker.unlink(missing_ok=True)
+                result = self.run_dispatch(kind=kind, role=role)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('DISPATCHED i61-test-r1-1120', result.stdout)
+                calls = self.calls()
+                listener = next(c for c in calls if c[:2] == ['listener', 'start'])
+                expected = ['listener', 'start', '--event', 'i61-test-r1-1120', '--task', 'i61-test',
+                    '--route', 'claude-pane', '--pane', 'w1:p9', '--terminal-id', 'term_fresh',
+                    '--cwd', str(self.repo), '--agent', 'worker', '--agent-pane', 'w1:p2',
+                    '--handoff', str(self.report), '--handoff-marker', 'i61-test', '--poll',
+                    'report' if role == 'auditor' else 'handoff', '--interval', '60',
+                    '--idle-grace-seconds', '3600', '--max-minutes', '3000']
+                self.assertEqual(listener, expected)
+                self.assertEqual(marker.exists(), role == 'implementer')
+                reset_command = '/new' if kind == 'codex' else '/clear'
+                inputs = [c for c in calls if c[:2] in (['pane', 'send-text'], ['pane', 'send-keys'])]
+                self.assertEqual(inputs, [
+                    ['pane', 'send-text', 'w1:p2', reset_command],
+                    ['pane', 'send-keys', 'w1:p2', 'enter' if kind == 'codex' else 'Enter'],
+                    *([['pane', 'send-keys', 'w1:p2', 'enter']] if kind == 'codex' else []),
+                    ['pane', 'send-text', 'w1:p2', self.prompt.read_text()],
+                    ['pane', 'send-keys', 'w1:p2', 'Enter']])
+                self.assertNotIn(['listener', 'stop', '--event', 'i61-test-r1-1120'], calls)
+
+    def test_unsubmitted_prompt_retries_enter(self):
+        result = self.run_dispatch(ENTERS_NEEDED='2')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        index = calls.index(['pane', 'send-text', 'w1:p2', self.prompt.read_text()])
+        self.assertEqual(sum(c[:2] == ['pane', 'send-keys'] for c in calls[index:]), 2)
+        self.assertEqual(sum(c[:2] == ['pane', 'read'] for c in calls[index:]), 11)
+
+    def test_never_working_is_bounded_loud_and_stops_listener(self):
+        result = self.run_dispatch(ENTERS_NEEDED='999')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('pane never showed Working after 3 Enter attempts', result.stderr)
+        self.assertIn('idle: prompt waiting', result.stderr)
+        calls = self.calls()
+        index = calls.index(['pane', 'send-text', 'w1:p2', self.prompt.read_text()])
+        self.assertEqual(sum(c[:2] == ['pane', 'send-keys'] for c in calls[index:]), 3)
+        self.assertEqual(sum(c[:2] == ['pane', 'read'] for c in calls[index:]), 30)
+        self.assertEqual(calls[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+        self.assertNotIn('DISPATCHED', result.stdout)
+
+    def test_duplicate_directory_refused_before_any_transport(self):
+        event = self.home / '.rclick-roster/herdr/delegator/listeners/i61-test-r1-1120'
+        event.mkdir(parents=True)
+        result = self.run_dispatch()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('event already exists', result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_missing_and_invalid_arguments_have_usage_and_no_side_effects(self):
+        for role in ('implementer', 'auditor'):
+            full = self.args(role=role)
+            for i in range(0, len(full), 2):
+                with self.subTest(role=role, missing=full[i]):
+                    result = self.run_dispatch(full[:i] + full[i+2:], role=role)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('usage:', result.stderr)
+                    self.assertEqual(self.calls(), [])
+            invalid = {'--agent': '', '--pane': 'p2', '--role': 'owner', '--kind': 'shell',
+                       '--issue': '0', '--task': '../task', '--round': 'a/b',
+                       '--prompt-file': 'relative.txt'}
+            if role == 'implementer':
+                invalid.update({'--worktree': 'repo', '--branch': '-bad', '--handoff': 'handoff.md'})
+            else:
+                invalid['--report'] = 'report.md'
+            for flag, value in invalid.items():
+                with self.subTest(role=role, invalid=flag):
+                    args = full.copy()
+                    args[args.index(flag)+1] = value
+                    result = self.run_dispatch(args, role=role)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('usage:', result.stderr)
+                    self.assertEqual(self.calls(), [])
+            for flag in ('--prompt-file', '--worktree', '--handoff', '--report'):
+                if flag not in full:
+                    continue
+                args = full.copy()
+                args[args.index(flag)+1] = str(self.root / 'absent')
+                result = self.run_dispatch(args, role=role)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.calls(), [])
+
+    def test_start_without_started_sends_nothing(self):
+        for response, code in (('already-delivered', '0'), ('launch failed', '1')):
+            with self.subTest(response=response):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(LISTENER_RESULT=response, LISTENER_EXIT=code)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('DISPATCHED', result.stdout)
+                self.assertFalse(any(c[:2] == ['pane', 'send-text'] for c in self.calls()))
 
 
 if __name__ == '__main__':
