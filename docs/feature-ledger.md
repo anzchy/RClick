@@ -57,12 +57,15 @@ roster's private record; no claim depends on reading it. A result that only a pr
 | [PR #34](https://github.com/anzchy/RClick/pull/34) › Device | `78a1fc6` (a PR #34 head) | `d94db82` (final head `066c542`; `git diff 78a1fc6 066c542` touches only `specs/`) | `i28-i32-device-20261118` | Copy Path and Copy File Name on literal percent names; the file-URL FAIL that issue #25 tracked; its NOT VERIFIED list |
 | [PR #35](https://github.com/anzchy/RClick/pull/35) › Device | `0f598ad` (PR #35 head) | `723b6c5`, same tree | none named | the per-install Keychain key, a replayed click rejected, recovery after relaunch, the rejection notice; its NOT VERIFIED list and the release gate (issue #40) |
 | [Issue #12 comment](https://github.com/anzchy/RClick/issues/12#issuecomment-7041176305) | `38d356a` (main) | `38d356a` | `i-device-20261120` | Copy Path, Cut, Paste and New File rows on a Debug build, the offline menu as observed; its NOT VERIFIED rows; defects filed as #51 to #54 |
+| [Issue #49 comment](https://github.com/anzchy/RClick/issues/49#issuecomment-7058423784) | `e729e01` (issue #49's code on main `453241c`) | | `i-device-20261121` | New File from the real Finder menu in both layouts, several templates per type (flat and folded, after a relaunch), the edit sheet's template rows, same-Mac export and import, Restore Defaults, the offline menu as observed; its NOT VERIFIED rows; no product FAIL |
 
 PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
-menu was read through an Accessibility helper. The issue #12 comment names a Debug build. Public evidence on the
-Settings window covers two rows only: the import observed in issue #52 (`settings-backup`) and Add File Type without
-a template in the issue #12 comment and issue #51 (`new-file-settings`). No public evidence covers the rest of the
-Settings window, the menu bar item, updates, launch at login or localization.
+menu was read through an Accessibility helper. The issue #12 and issue #49 comments name a Debug build; the issue #49 comment
+describes an independent tester. Public evidence on the Settings window covers: the import observed in issue #52
+(`settings-backup`); Add File Type without a template in the issue #12 comment and issue #51 (`new-file-settings`);
+the edit sheet's template rows, Restore Defaults on the New File tab and a same-Mac export and import in the issue
+#49 comment (`new-file-settings`, `settings-backup`). No public evidence covers the rest of the Settings window, the
+menu bar item, updates, launch at login or localization.
 
 ## Open findings
 
@@ -158,12 +161,14 @@ delete its line in the same change.
     `resolvingSymlinksInPath` returns, `TemplateStore.owns`, `:70-84`). No issue filed yet.
 19. `new-file`, `finder-menu`: the tag-routing test builds the delivered `NSMenuItem` itself
     (`RClickTests/MultiTemplateMenuTests.swift:59-66`); the extension's private `makeNewFileItem`
-    (`FinderSyncExt/FinderSyncExt.swift:567-590`) and its click handler (`:696-710`) run in no test. Only a device run
-    settles Finder's delivery of a type-submenu leaf, which no run has done (`new-file` › Device). No issue filed yet.
+    (`FinderSyncExt/FinderSyncExt.swift:567-590`) and its click handler (`:696-710`) run in no test. Finder's delivery
+    of direct and type-submenu leaves PASSed on the device at `e729e01` (issue #49 comment); no test would catch a
+    later change to that code. No issue filed yet.
 20. `new-file-settings`: Restore Defaults on the New File tab replaces every type at once and deletes every template
     snapshot RClick owns, with no confirmation (`RClick/Settings/NewFileSettingsTabView.swift:38-39`,
     `AppState.resetFiletypeItems`, `RClick/AppState.swift:201-204`, cleanup at `RClick/Runtime/ConfigService.swift:193-197`);
-    CHANGELOG [Unreleased] › Changed states the deletion. Delete File Type and Reset All Settings ask first
+    CHANGELOG [Unreleased] › Changed states the deletion; the issue #49 device comment observed it and calls the missing
+    confirmation accepted. Delete File Type and Reset All Settings ask first
     (`NewFileSettingsTabView.swift:117-133`, `RClick/Settings/GeneralSettingsTabView.swift:410`). No issue filed yet.
 
 ## Finder menu: Actions
@@ -435,9 +440,19 @@ delete its line in the same change.
   PASS TXT and Markdown (empty files); PASS no Pages, Keynote or Numbers on a fresh store, the upgraded-store case
   not reproduced; FAIL a custom type whose extension has no dot (#51); NOT VERIFIED opening in Word or Pages. PASS
   TXT into a folder with a literal percent name (PR #29 › Device at `971b658`; run `i5-device-20261117d`).
-  Several templates per type (#49): NOT VERIFIED, no device run covers it: Finder's delivery of the chosen entry
-  from a type submenu, in particular the folded three-level menu (New File › type › template); the upgrade of a
-  real installed store with a file or a package template.
+  At `e729e01` (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record):
+  - PASS a New File click from Finder, folded and flat, for TXT, Markdown, DOCX, PPTX and XLSX: `Untitled.<ext>`
+    created and selected, empty for TXT and Markdown, bytes equal to the bundled template for DOCX, PPTX and XLSX, no
+    "RClick did not respond" alert;
+  - PASS several templates per type: DOCX › Blank / Letter / Invoice, flat and folded (New File › DOCX › entry, so
+    the third-level tag reached the app), also after an app relaunch; each click made `Untitled.docx` with the chosen
+    source's bytes;
+  - PASS Blank off with one template gives a direct item, a disabled template leaves the menu, a type with every
+    entry off disappears; PASS a Pages-format custom type offers only its templates;
+  - PASS a stale entry (stored file deleted, then clicked): one alert, no file;
+  - observed offline: the top-level New File item stays enabled while every item under it is disabled (#53);
+  - NOT VERIFIED: rename mode after create (no Accessibility for RClick), the upgrade of an older store, PPTX Quick
+    Look, opening in Word or Pages.
 - **Gaps:** findings 6, 7, 11, 15, 16, 19.
 
 ### `new-file-office-templates`
@@ -490,7 +505,8 @@ delete its line in the same change.
 - **Device:** PASS the menu appears once with one RClick group (PR #23 › Device, PR #27 › Device; runs
   `i22-device-20261116e`, `i13-device-20261117c`, private records). File and folder menus, inline and folded, and the
   window background were driven for Cut in the issue #12 run (see `cut`). Sidebar menus (`EXT-05`): never run as a
-  separate row. New File type submenus (#49): NOT VERIFIED (see `new-file`). Findings 14 (tooling), 19.
+  separate row. New File type submenus: PASS flat and folded (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record; see `new-file`).
+  Findings 14 (tooling), 19.
 
 ### `finder-toolbar-button`
 - **What:** the RClick button in Finder's toolbar opens the same menu; apps hidden for the toolbar are absent there
@@ -516,7 +532,7 @@ delete its line in the same change.
   `MultiTemplateMenuTests.zeroOneAndManyEntriesProduceDirectOrSubmenuInBothLayouts` (the payload in both New File
   layouts, not the rendered menu).
 - **Device:** the folded and inline actions layouts PASS for Cut (issue #12 comment); otherwise never run as its own
-  row. New File type submenus in either layout (#49): NOT VERIFIED.
+  row. New File in the folded and flat layouts, with type submenus in both: PASS (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record).
 - **Gaps:** finding 8 (import skips `foldActionsMenu`, issue #52).
 
 ### `connection-state`
@@ -623,8 +639,11 @@ delete its line in the same change.
   itself; the tests call `TemplateDraft` and `ConfigService`.
 - **Issues, PRs:** #24, #49 (several templates per type), #51; PR #50.
 - **Device:** Add File Type without a template: an empty file, but FAIL on the missing dot (issue #12 comment, #51).
-  The template list (#49): NOT VERIFIED, no device run covers it (Replace File, drag to reorder, the disabled Blank
-  switch, VoiceOver).
+  At `e729e01` (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record): PASS the Blank switch disabled with its reason for a Pages-format custom type; PASS rename a
+  template (the label updates) and Replace File (the next click uses the new bytes); PASS remove a template (its
+  stored copy deleted, the original untouched), Cancel leaves no copy, two same-named imports stay distinct; PASS
+  Restore Defaults removes the custom type, its templates and their stored copies with no confirmation and brings back
+  the six defaults (finding 20). Drag to reorder and VoiceOver are not rows of that run.
 - **Gaps:** findings 7, 10, 16, 20.
 
 ### `folder-permissions`
@@ -684,8 +703,11 @@ delete its line in the same change.
   export or import alert.
 - **Issues:** #49, #52.
 - **Device:** an import observed in the issue #52 report (actions, New File rows and the Cut toggle restored,
-  `foldActionsMenu` not); otherwise never run. Templates in a backup (#49): NOT VERIFIED, no device run covers the
-  export or import alert or a same-Mac round trip on a real installed store.
+  `foldActionsMenu` not); otherwise never run. At `e729e01` (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record): PASS a same-Mac export and
+  import, templates kept and the menu unchanged; the export alert always shows "N templates not included" because a
+  backup never carries file bytes; the import showed the count only for entries whose stored file was missing. The
+  run's store had no template adopted from before #49 (an older store was not upgraded), so finding 17 is not
+  exercised by it.
 - **Gaps:** findings 8, 16, 17, 18.
 
 ### `export-logs`
@@ -774,7 +796,10 @@ delete its line in the same change.
   intact); recovery after relaunch without relaunching Finder; the notice shown once after a garbage message, not
   after old-session replays; a replay across a backward clock step rejected. NOT VERIFIED: the rows PR #35 › Device
   lists, and first key creation on a fresh account (finding 3). Exercised by every PASS row above that goes through
-  the app.
+  the app. At `e729e01` (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record): PASS the chosen New File entry reached the app from direct items and from second- and
+  third-level submenu leaves, also after a relaunch (see `new-file`); observed: the app logged "Rejected IPC messages"
+  three times, around the first folder grant, the first New File clicks and the first import, with no visible
+  effect; the cause is **UNVERIFIED**.
 - **Gaps:** finding 3.
 
 ### `persistence`
@@ -813,8 +838,9 @@ delete its line in the same change.
   `MultiTemplateMigrationTests`, `TemplatePersistenceTests`,
   `LegacyStoredTemplateTests.inStoreLegacyPackageSurvivesLoadAndCreatesDirectory`.
 - **Issues, PRs:** #14 (PR #19), #22 (PR #23: new App Group `group.cn.anzchy.RClick`, nothing migrated), #49.
-- **Device:** never run as its own row; the upgraded-store New File menu was not reproduced (issue #12 comment). The
-  template migration on a real installed store (#49): NOT VERIFIED, no device run covers it.
+- **Device:** never run as its own row; the upgraded-store New File menu was not reproduced (issue #12 comment).  The
+  template migration of an older installed store: NOT VERIFIED (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record: "covered by unit tests on a real
+  pre-migration store, not by this run").
 - **Gaps:** finding 16.
 
 ### `app-lifecycle`
