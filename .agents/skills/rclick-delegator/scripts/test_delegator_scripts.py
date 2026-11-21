@@ -31,6 +31,8 @@ class FixtureWarmupTests(unittest.TestCase):
         from unittest.mock import patch
         with patch.object(fixture_warmup.subprocess, "run") as run:
             fixture_warmup.warm_up()
+        self.assertIn([sys.executable, str(FIXTURE_BIN.parent.parent / "poll-report.py"), "--help"],
+                      [call.args[0] for call in run.call_args_list])
         executed = {Path(call.args[0][0]) for call in run.call_args_list}
         self.assertTrue(expected <= executed)
         self.assertTrue(all("timeout" not in call.kwargs for call in run.call_args_list))

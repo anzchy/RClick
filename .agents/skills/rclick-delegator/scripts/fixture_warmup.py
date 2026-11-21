@@ -21,5 +21,6 @@ def warm_up():
         subprocess.run(command, env=env, check=True, capture_output=True)
     for name in ("reset.sh", "poll-idle.sh", "poll-handoff.sh", "poll-report.py"):
         path = SCRIPTS / name
-        command = [str(path)] if os.access(path, os.X_OK) else [sys.executable, str(path)]
+        # The Python entry point has a Mac-only shebang; timed callers use their interpreter too.
+        command = [sys.executable, str(path)] if path.suffix == ".py" else [str(path)]
         subprocess.run([*command, "--help"], check=True, capture_output=True)
