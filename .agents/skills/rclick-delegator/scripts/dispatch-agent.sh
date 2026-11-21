@@ -106,7 +106,12 @@ if not re.fullmatch(r'w[0-9]+:p[0-9]+', args.pane):
 if not re.fullmatch(r'[1-9][0-9]*', args.issue):
     refuse('--issue must be a positive integer')
 prompt_file = existing_path(args.prompt_file, '--prompt-file')
-prompt = prompt_file.read_text()
+with prompt_file.open(newline='') as source:
+    prompt = source.read()
+if prompt.endswith('\n'):
+    prompt = prompt[:-1]
+if '\n' in prompt or '\r' in prompt:
+    refuse('--prompt-file must be one line; long instructions belong in the brief file the prompt points at')
 if not prompt.strip() or '\0' in prompt:
     refuse('--prompt-file must contain non-empty text without NUL')
 if args.role == 'implementer':

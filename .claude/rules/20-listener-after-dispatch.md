@@ -17,20 +17,22 @@ Use `.agents/skills/rclick-delegator/scripts/dispatch-agent.sh` from the delegat
 For auditors use `--role auditor --report <absolute-report-file>` instead of `--worktree`, `--branch`,
 and `--handoff`. Set `--kind claude|codex` for the actual agent. All named flags are required for their role.
 All path arguments must be absolute and exist: prepare a new empty output file before dispatch. Prompts are
-read literally from the file. The implementer's worktree must be its pane home.
+one line, read literally from the file after removing exactly one final newline. Any remaining newline is
+refused; put long instructions in the brief file the prompt points at. The implementer's worktree must be its pane home.
 
 The helper resolves the Claude `rclick-delegator` title, pane, terminal, and cwd from the current
 `herdr pane list`; it refuses a missing or ambiguous delegator, a non-idle target, and any existing event
 directory. It writes the implementer target marker, registers the listener, then resets and submits the prompt.
 Only `DISPATCHED <event>` completes dispatch. The listener is registered before submission so a fast task cannot
-finish before registration. Any manual dispatch must register its listener immediately after dispatch.
+finish before registration. Manual dispatches must also register before submitting, so a fast report cannot predate the listener.
 
-Claude reset uses `/clear` and requires `Context 0%`; Codex uses `reset.sh`, which handles `/new` and the
+Claude reset uses `/clear` and requires the bottom-most `Context 0%` footer plus a fresh welcome/idle composer; Codex uses `reset.sh`, which handles `/new` and the
 current-worktree chooser and proves a fresh session. A NEW Codex session must actually show `Working` after
-submission. The helper requires visible `Working` for Codex; for Claude it also accepts herdr's `working` status with the
-matching pane/terminal identity. It allows at most three Enter attempts (ten reads each),
-and fails with the pane tail if submission never starts. A failed dispatch requests listener stop if the start
-created state; inspect any cleanup failure before another dispatch.
+submission. The helper requires the live `• Working (<time> • esc to interrupt)` row next to an empty Codex composer;
+Claude requires its live spinner with elapsed time/token counters, an idle `❯`, and herdr's `working` status
+with matching pane/terminal identity. Composer content and transcript lines never prove activity. It allows at most three Enter attempts (ten reads each),
+and fails with the pane tail if submission never starts. Every unsuccessful exit, including catchable interruption/termination, requests stop for a listener this
+invocation started; a duplicate-owner refusal never stops a foreign listener; inspect any cleanup failure before another dispatch.
 
 ## Manual listener arguments and recovery
 
@@ -97,8 +99,7 @@ or accepts an audit. Blocked, idle-without-report, timeout, and poll-error event
 
 Long commands run in the harness with `run_in_background` and its completion notification, without `nohup` or
 `&`. If monitoring a gate summary instead, use an until-loop Monitor that waits for the summary's `DONE` line.
-Monitors expire after 30 minutes: renew the Monitor or inspect the summary then. These are harness operations,
-not features of `listen-notify.py`; a shell launcher exiting is not evidence that the gates finished.
+These are harness operations, not features of `listen-notify.py`; a shell launcher exiting is not evidence that the gates finished.
 
 End every batch with `listen-notify.py status`. It lists undelivered events; `attention` / exit 3 requires
 inspection, including a `polling` event with `worker=stopped` or a parked `deferred-user-typing` notice.

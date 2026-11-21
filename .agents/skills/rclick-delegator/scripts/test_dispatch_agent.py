@@ -32,7 +32,7 @@ class DispatchTests(unittest.TestCase):
         self.home = self.root / 'home'
         self.home.mkdir()
         self.prompt = self.root / 'prompt.txt'
-        self.prompt.write_text('Read the brief. Literal $(oops) `oops` and "quotes".\nTask: i61-test\n')
+        self.prompt.write_text('Read the brief. Literal $(oops) `oops` and "quotes". Task: i61-test')
         self.report = self.root / 'report.md'
         self.report.touch()
         self.env = {**os.environ, 'HOME': str(self.home), 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
@@ -349,6 +349,21 @@ elif args[:2] == ['pane', 'read']:
         screen = (SCRIPTS / 'fixtures/claude-screens/idle-fresh.ansi').read_text()
         result = self.run_dispatch(CLAUDE_RESET_SCREEN=screen)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+    def test_prompt_strips_one_final_newline_and_refuses_all_other_newlines(self):
+        self.prompt.write_text('Read the brief. Task i61-test\n')
+        result = self.run_dispatch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(['pane', 'send-text', 'w1:p2', 'Read the brief. Task i61-test'], self.calls())
+        for prompt in ('Read\nthe brief', 'Read the brief\n\n', 'Read\rthe brief'):
+            with self.subTest(prompt=prompt):
+                self.log.unlink(missing_ok=True)
+                self.prompt.write_text(prompt)
+                result = self.run_dispatch()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('one line', result.stderr)
+                self.assertEqual(self.calls(), [])
 
 
 
