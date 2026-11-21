@@ -9,6 +9,8 @@ emulate -R zsh
 # - Claude panes: herdr's agent_status is reliable.
 a=$1; iv=${2:-60}; max=${3:-600}; hits=0; start=$(date +%s)
 pane=${4:?agent_pane required}; terminal=${5:?agent_terminal required}
+rclick_herdr=${RCLICK_HERDR:-herdr}
+rclick_sleep=${RCLICK_SLEEP:-sleep}
 rclick_python=${RCLICK_PYTHON:-}
 if [[ -z $rclick_python ]]; then
   # Homebrew python3 on the Mac (/usr/bin/python3 is 3.9, too old); plain python3 elsewhere (Linux CI, preflight host).
@@ -17,7 +19,7 @@ fi
 script_dir=${0:A:h}
 get_failure_limit=$("$rclick_python" "$script_dir/poll-report.py" --get-failure-limit) || exit 1
 failures=0
-sleep $iv
+"$rclick_sleep" $iv
 while :; do
   info=$("$rclick_python" "$script_dir/poll-report.py" --agent-info "$pane" "$terminal" 2>&1)
   get_rc=$?
@@ -29,11 +31,11 @@ while :; do
     fi
     hits=0
     [ $(( $(date +%s) - start )) -gt $((max*60)) ] && { echo "$a timeout"; exit 1; }
-    sleep $iv
+    "$rclick_sleep" $iv
     continue
   fi
   failures=0
-  out=$(herdr agent read "$pane" --source visible 2>&1)
+  out=$("$rclick_herdr" agent read "$pane" --source visible 2>&1)
   if print -r -- "$out" | grep -q -e 'to answer' -e 'enter submit'; then echo "$a question $(date +%H:%M:%S)"; exit 0; fi
   if [[ -z ${out//[[:space:]]/} ]]; then
     # An empty visible screen (pane too small) tells nothing: fall back to herdr's status.
@@ -49,5 +51,5 @@ while :; do
   if (( busy )); then hits=0; else hits=$((hits+1)); fi
   [ $hits -ge 2 ] && { echo "$a idle $(date +%H:%M:%S)"; exit 0; }
   [ $(( $(date +%s) - start )) -gt $((max*60)) ] && { echo "$a timeout"; exit 1; }
-  sleep $iv
+  "$rclick_sleep" $iv
 done

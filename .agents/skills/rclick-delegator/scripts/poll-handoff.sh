@@ -7,6 +7,8 @@ emulate -R zsh
 # Don't grep an agent's screen for words like "permission": that produced a false "question" once.
 a=$1; f=$2; max=${3:-120}; marker=${4:-}
 pane=${5:?agent_pane required}; terminal=${6:?agent_terminal required}
+rclick_herdr=${RCLICK_HERDR:-herdr}
+rclick_sleep=${RCLICK_SLEEP:-sleep}
 rclick_python=${RCLICK_PYTHON:-}
 if [[ -z $rclick_python ]]; then
   # Homebrew python3 on the Mac (/usr/bin/python3 is 3.9, too old); plain python3 elsewhere (Linux CI, preflight host).
@@ -24,7 +26,7 @@ for i in $(seq 1 $max); do
     if (( failures >= get_failure_limit )); then
       print -ru2 -- "$failures consecutive lookup failures: $info"; exit 1
     fi
-    sleep 60
+    "$rclick_sleep" 60
     continue
   fi
   failures=0
@@ -32,6 +34,6 @@ for i in $(seq 1 $max); do
   if [[ -f $f ]] && { [[ -z $marker ]] || grep -q -- "$marker" "$f"; } && [[ $st == idle || $st == done ]]; then
     echo "$a done $(date +%H:%M:%S)"; exit 0; fi
   [[ $st == blocked ]] && { echo "$a blocked $(date +%H:%M:%S)"; exit 0; }
-  sleep 60
+  "$rclick_sleep" 60
 done
 echo "$a timeout status=$st"
