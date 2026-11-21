@@ -68,7 +68,7 @@ if args == ['pane', 'list']:
 elif args[:2] == ['agent', 'get']:
     prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
     working = False
-    if prompts and os.environ.get('CLAUDE_SPINNER') == '1':
+    if prompts:
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
         working = enters >= int(os.environ['ENTERS_NEEDED'])
     print(json.dumps({'result': {'type': 'agent_info', 'agent': {'pane_id': 'w1:p2',
@@ -78,8 +78,11 @@ elif args[:2] == ['pane', 'get']:
 elif args[:2] == ['pane', 'read']:
     prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
     if prompts:
+        if os.environ.get('SCREEN'):
+            print(os.environ['SCREEN'])
+            sys.exit(0)
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
-        print(('✻ Thinking…' if os.environ.get('CLAUDE_SPINNER') == '1' else 'Working (esc to interrupt)') if enters >= int(os.environ['ENTERS_NEEDED']) else 'idle: prompt waiting')
+        print(('✻ Thinking… (1s · ↓ 12 tokens)\\n────────────────────\\n❯\\n────────────────────\\nContext 1% used' if kind == 'claude' else '• Working (1s • esc to interrupt)\\n\\n› Ask Codex to do anything\\n\\nContext 1% used') if enters >= int(os.environ['ENTERS_NEEDED']) else 'idle: prompt waiting')
     elif kind == 'codex':
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
         if enters < 2: print('Where should the new conversation run?')
@@ -127,7 +130,8 @@ elif args[:2] == ['pane', 'read']:
             ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100'],
             ['pane', 'send-text', 'w1:p2', self.prompt.read_text()],
             ['pane', 'send-keys', 'w1:p2', 'Enter'],
-            ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100']])
+            ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100'],
+            ['agent', 'get', 'w1:p2']])
 
     def test_all_other_role_kind_combinations(self):
         for kind, role in (('codex', 'implementer'), ('claude', 'auditor'), ('codex', 'auditor')):
@@ -170,7 +174,8 @@ elif args[:2] == ['pane', 'read']:
                 self.assertEqual(calls, prefix + reset + [
                     ['pane', 'send-text', 'w1:p2', self.prompt.read_text()],
                     ['pane', 'send-keys', 'w1:p2', 'Enter'],
-                    ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100']])
+                    ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100'],
+                    *([['agent', 'get', 'w1:p2']] if kind == 'claude' else [])])
 
     def test_unsubmitted_prompt_retries_enter(self):
         result = self.run_dispatch(ENTERS_NEEDED='2')
@@ -278,10 +283,29 @@ elif args[:2] == ['pane', 'read']:
         self.assertIn('changed pane/terminal identity', result.stderr)
         self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
         self.log.unlink()
-        result = self.run_dispatch(kind='codex', CLAUDE_SPINNER='1')
+        result = self.run_dispatch(kind='codex', SCREEN='✻ Thinking… (1s · ↓ 12 tokens)\n❯\nContext 1% used')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('never showed Working', result.stderr)
         self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_waiting_composer_and_transcript_are_not_live_status(self):
+        screens = [
+            '────────────────────\n› Read the brief\n  Working directory: current worktree\n────────────────────\nContext 0% used',
+            '• Working (1s • esc to interrupt)\nOld transcript\n\n› Ask Codex to do anything\nContext 0% used',
+            '• Working (1s • esc to interrupt)\n────────────────────\n› Read the brief\n────────────────────\nContext 0% used',
+        ]
+        for screen in screens:
+            with self.subTest(screen=screen):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(kind='codex', SCREEN=screen, ENTERS_NEEDED='999')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertNotIn('DISPATCHED', result.stdout)
+                calls = self.calls()
+                index = calls.index(['pane', 'send-text', 'w1:p2', self.prompt.read_text()])
+                self.assertEqual(sum(c[:2] == ['pane', 'send-keys'] for c in calls[index:]), 3)
+                self.assertIn('pane tail:', result.stderr)
+                self.assertEqual(calls[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
 
 
 if __name__ == '__main__':

@@ -52,6 +52,35 @@ def send_keys():
     run(['herdr', 'pane', 'send-keys', args.pane, 'Enter'])
 
 
+def live_status(screen):
+    # Only the row immediately above the LAST composer belongs to current activity.
+    # A status-looking transcript line or anything inside the composer is not evidence.
+    lines = screen.splitlines()
+    glyph = '›' if args.kind == 'codex' else '❯'
+    composers = [i for i, line in enumerate(lines) if line.lstrip().startswith(glyph)]
+    if not composers:
+        return False
+    index = composers[-1]
+    empty = (glyph, glyph + ' Ask Codex to do anything') if args.kind == 'codex' else (glyph,)
+    if lines[index].strip() not in empty or len(lines) - index > 10:
+        return False
+    below = [line.strip() for line in lines[index + 1:] if line.strip()]
+    # Continuation text must never remain in the composer.
+    if below and not (re.fullmatch(r'[─━]+', below[0]) or
+                      (args.kind == 'codex' and 'Context' in below[0])):
+        return False
+    above = [line.strip() for line in lines[:index] if line.strip()]
+    if above and re.fullmatch(r'[─━]+', above[-1]):
+        above.pop()
+    if above and above[-1].startswith('✘ Auto-update failed'):
+        above.pop()
+    if not above:
+        return False
+    if args.kind == 'codex':
+        return bool(re.fullmatch(r'• Working \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])* • esc to interrupt\)', above[-1]))
+    return bool(re.fullmatch(r'[✻✽✶✳✢·] .+… \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])* · [↑↓↕] [0-9.,kK]+ tokens(?: · .+)?\)', above[-1]))
+
+
 for name in ('agent', 'task', 'round'):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', getattr(args, name)):
         refuse('--' + name + ' must be a non-empty ID (letters, numbers, dot, underscore, hyphen)')
@@ -141,8 +170,8 @@ try:
         for attempt in range(10):
             run(['sleep', '0.25'])
             screen = read_pane()
-            working = bool(re.search(r'^\s*(?:[•✻✽✶✳⏺]\s*)?Working\b', screen, re.IGNORECASE | re.MULTILINE))
-            if not working and args.kind == 'claude':
+            working = live_status(screen)
+            if working and args.kind == 'claude':
                 # Claude's reliable status covers spinner verbs such as Thinking.
                 # Codex metadata can be stale: it must show visible Working instead.
                 info = json.loads(run(['herdr', 'agent', 'get', args.pane]))['result']
