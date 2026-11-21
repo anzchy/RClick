@@ -71,8 +71,14 @@ elif args[:2] == ['agent', 'get']:
     if prompts:
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
         working = enters >= int(os.environ['ENTERS_NEEDED'])
+    if prompts and os.environ.get('MALFORMED_AGENT'):
+        print(json.dumps({'result': {'type': 'agent_info', 'agent': []}}))
+        sys.exit(0)
     print(json.dumps({'result': {'type': 'agent_info', 'agent': {'pane_id': 'w1:p2',
         'terminal_id': os.environ.get('WORKING_TERMINAL', 'term_worker') if working else 'term_worker', 'agent_status': 'working' if working else 'idle'}}}, separators=(',', ':')))
+elif args[:2] == ['pane', 'send-text'] and args[3] not in ('/new', '/clear') and os.environ.get('SEND_SIGNAL'):
+    import signal
+    os.kill(os.getppid(), getattr(signal, os.environ['SEND_SIGNAL']))
 elif args[:2] == ['pane', 'get']:
     print(json.dumps({'result': {'pane': {'agent_session': {'value': 'session'}}}}))
 elif args[:2] == ['pane', 'read']:
@@ -305,6 +311,30 @@ elif args[:2] == ['pane', 'read']:
                 self.assertEqual(sum(c[:2] == ['pane', 'send-keys'] for c in calls[index:]), 3)
                 self.assertIn('pane tail:', result.stderr)
                 self.assertEqual(calls[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_cancellation_after_start_stops_owned_listener(self):
+        for sig in ('SIGINT', 'SIGTERM'):
+            with self.subTest(signal=sig):
+                self.log.unlink(missing_ok=True)
+                event = self.home / '.rclick-roster/herdr/delegator/listeners/i61-test-r1-1120'
+                if event.exists():
+                    event.rmdir()
+                result = self.run_dispatch(SEND_SIGNAL=sig, CREATE_EVENT='1')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(['listener', 'stop', '--event', 'i61-test-r1-1120'], self.calls())
+                event = self.home / '.rclick-roster/herdr/delegator/listeners/i61-test-r1-1120'
+                event.rmdir()
+
+    def test_malformed_working_metadata_fails_and_stops_listener(self):
+        result = self.run_dispatch(MALFORMED_AGENT='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('invalid agent record', result.stderr)
+        self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_racing_duplicate_refusal_does_not_stop_foreign_listener(self):
+        result = self.run_dispatch(LISTENER_RESULT='event already exists', LISTENER_EXIT='2', CREATE_EVENT='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
 
 
 
