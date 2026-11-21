@@ -130,7 +130,7 @@ try:
         for attempt in range(20):
             run(['sleep', '0.25'])
             screen = read_pane()
-            if re.search(r'^\s*Context 0%\s*(?:used)?\s*$', screen, re.MULTILINE):
+            if re.search(r'^\s*Context\s+(?:[█░]+\s+)?0%\s*(?:used)?\s*$', screen, re.MULTILINE):
                 break
         else:
             raise RuntimeError('Claude reset did not confirm Context 0%\n' + screen[-4000:])
