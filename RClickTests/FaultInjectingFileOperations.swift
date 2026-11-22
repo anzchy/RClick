@@ -185,9 +185,9 @@ final class FaultInjectingFileOperations: FileOperations {
         let path = try base.directoryPath(descriptor)
         return FileIdentity(volume: adjustedVolume(identity.volume, for: path), fileNumber: identity.fileNumber)
     }
-    func exclusiveRename(from source: URL, to destination: URL, directory: Int32) throws {
+    func exclusiveRename(from source: URL, to destination: URL, sourceDirectory: Int32, directory: Int32) throws {
         try recordRename(from: source, to: destination)
-        try base.exclusiveRename(from: source, to: destination, directory: directory)
+        try base.exclusiveRename(from: source, to: destination, sourceDirectory: sourceDirectory, directory: directory)
     }
 
     func exclusiveRename(from source: URL, to destination: URL) throws {

@@ -8,6 +8,16 @@ nonisolated enum PasteMoveError: Error {
     case changed, destinationChanged, invalidDestination, crossVolume, insideSource, mountPoint, cloud, timeout
 }
 
+private extension URL {
+    /// Use Foundation's filesystem byte representation for each descriptor-relative name.
+    nonisolated func withMoveName<Result>(_ body: (UnsafePointer<CChar>) throws -> Result) throws -> Result {
+        try withUnsafeFileSystemRepresentation { path in
+            guard let path, let slash = strrchr(path, 47) else { throw PasteMoveError.invalidDestination }
+            return try body(UnsafePointer(slash.advanced(by: 1)))
+        }
+    }
+}
+
 extension SystemFileOperations {
     /// The kernel, not a preflight existence check, enforces no-overwrite.
     nonisolated func exclusiveRename(from source: URL, to destination: URL) throws {
@@ -35,7 +45,7 @@ extension FileOperations {
         guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else {
             throw PasteMoveError.destinationChanged
         }
-        return FileIdentity(volume: VolumeIdentity(rawValue: UInt64(UInt32(bitPattern: info.st_dev))), fileNumber: info.st_ino)
+        return FileIdentity(volume: VolumeIdentity(rawValue: NSNumber(value: info.st_dev).uint64Value), fileNumber: info.st_ino)
     }
     nonisolated func directoryPath(_ descriptor: Int32) throws -> URL {
         var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
@@ -44,10 +54,19 @@ extension FileOperations {
         }
         return URL(fileURLWithPath: String(decoding: path.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)).standardizedFileURL
     }
-    nonisolated func exclusiveRename(from source: URL, to destination: URL, directory: Int32) throws {
-        let result = source.withUnsafeFileSystemRepresentation { from in
-            destination.lastPathComponent.withCString { name in
-                renameatx_np(AT_FDCWD, from, directory, name, UInt32(RENAME_EXCL))
+    nonisolated func fileIdentity(of source: URL, directory: Int32) throws -> FileIdentity {
+        var info = stat()
+        let result = try source.withMoveName { name in
+            fstatat(directory, name, &info, AT_SYMLINK_NOFOLLOW)
+        }
+        guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        // Match FileManager's NSNumber.uint64Value conversion, including signed st_dev.
+        return FileIdentity(volume: VolumeIdentity(rawValue: NSNumber(value: info.st_dev).uint64Value), fileNumber: info.st_ino)
+    }
+    nonisolated func exclusiveRename(from source: URL, to destination: URL, sourceDirectory: Int32, directory: Int32) throws {
+        let result = try source.withMoveName { from in
+            try destination.withMoveName { to in
+                renameatx_np(sourceDirectory, from, directory, to, UInt32(RENAME_EXCL))
             }
         }
         if result != 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
@@ -78,7 +97,17 @@ extension FileOperations {
                     try prepareCoordinatedMove(from)
                     let moved = try job.state.withLock { state in
                         guard !state.cancelled else { throw PasteMoveError.timeout }
-                        guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
+                        // Pin the source parent too: a lexical ancestor swapped after
+                        // the identity check must not substitute a different source.
+                        let sourceDirectory: Int32
+                        do { sourceDirectory = try openMoveDirectory(from.deletingLastPathComponent()) }
+                        catch let error as POSIXError where [.ENOENT, .ENOTDIR, .ELOOP].contains(error.code) {
+                            throw PasteMoveError.changed
+                        }
+                        defer { closeMoveDirectory(sourceDirectory) }
+                        guard try fileIdentity(of: from, directory: sourceDirectory) == expected else {
+                            throw PasteMoveError.changed
+                        }
                         notifyMove(.willMoveTo, using: job.coordinator, from: from, to: to)
                         // Pin the directory, classify the kernel's path for that open
                         // object, then rename relative to it. A replaced ancestor must
@@ -96,12 +125,12 @@ extension FileOperations {
                                   identity.volume == expected.volume,
                                   try volumeIdentity(of: folder) == expected.volume,
                                   try destinationRefusal(folder) == nil,
-                                  try !sameItem(from.deletingLastPathComponent(), folder),
+                                  try directoryIdentity(sourceDirectory) != identity,
                                   try directoryPath(directory) == folder else {
                                 throw PasteMoveError.destinationChanged
                             }
                         } catch { throw PasteMoveError.destinationChanged }
-                        try exclusiveRename(from: from, to: to, directory: directory)
+                        try exclusiveRename(from: from, to: to, sourceDirectory: sourceDirectory, directory: directory)
                         state.moved = true
                         return true
                     }
