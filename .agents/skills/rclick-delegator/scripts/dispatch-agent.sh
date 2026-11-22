@@ -205,14 +205,18 @@ try:
         print(run([scripts / 'reset.sh', args.agent, args.pane]), end='', flush=True)
     else:
         run(['herdr', 'pane', 'send-text', args.pane, '/clear'])
-        send_keys()
-        for attempt in range(20):
-            run(['sleep', '0.25'])
-            screen = read_pane()
-            if fresh_claude(screen):
-                break
+        for submission in range(3):
+            send_keys()
+            for attempt in range(10):
+                run(['sleep', '0.25'])
+                screen = read_pane()
+                if fresh_claude(screen):
+                    break
+            else:
+                continue
+            break
         else:
-            raise RuntimeError('Claude reset did not confirm Context 0%\n' + screen[-4000:])
+            raise RuntimeError('Claude reset did not confirm Context 0% after 3 Enter attempts; pane tail:\n' + screen[-4000:])
     run(['herdr', 'pane', 'send-text', args.pane, prompt])
     # Each Enter gets ten reads to become Working; at most three submissions.
     for submission in range(3):

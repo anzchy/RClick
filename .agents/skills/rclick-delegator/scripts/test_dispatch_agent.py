@@ -149,6 +149,23 @@ class DispatchTests(unittest.TestCase):
                     ['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100'],
                     *([['agent', 'get', 'w1:p2']] if kind == 'claude' else [])])
 
+    def test_unsubmitted_clear_retries_and_failure_is_bounded(self):
+        for needed, expected in (('2', 0), ('999', 1)):
+            with self.subTest(needed=needed):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(RESET_ENTERS_NEEDED=needed)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                calls = self.calls()
+                prompt = ['pane', 'send-text', 'w1:p2', self.prompt.read_text()]
+                reset = calls[:calls.index(prompt)] if prompt in calls else calls
+                self.assertEqual(sum(c[:2] == ['pane', 'send-keys'] for c in reset), 2 if expected == 0 else 3)
+                self.assertEqual(sum(c[:2] == ['pane', 'read'] for c in reset), 11 if expected == 0 else 30)
+                self.assertEqual(reset.count(['pane', 'send-text', 'w1:p2', '/clear']), 1)
+                if expected:
+                    self.assertIn('Claude reset did not confirm Context 0%', result.stderr)
+                    self.assertIn('❯ /clear', result.stderr)
+                    self.assertEqual(calls[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_unsubmitted_prompt_retries_enter(self):
         result = self.run_dispatch(ENTERS_NEEDED='2')
         self.assertEqual(result.returncode, 0, result.stderr)
