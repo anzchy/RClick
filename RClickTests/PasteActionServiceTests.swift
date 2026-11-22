@@ -101,12 +101,14 @@ struct PasteActionServiceTests {
         let clock = Clock()
         let journal = JournalStore()
         lazy var cutBoard = FailingCutBoard(board)
+        let state = State()
+        var expiryWait: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
         let permission = Permission()
         let leaser = Leaser()
         let operations = FaultInjectingFileOperations()
         var warnings: [String] = []
-        lazy var service = ActionService(state: State(), permission: permission, confirmation: Confirmation(),
-            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: storeOverride ?? journal, cutPasteboard: cutBoard, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
+        lazy var service = ActionService(state: state, permission: permission, confirmation: Confirmation(),
+            fileOperations: operations, pasteboard: board, now: { [clock] in clock.now() }, accessLeaser: leaser, journalStore: storeOverride ?? journal, undoExpiryWait: expiryWait, cutPasteboard: cutBoard, terminationBoundary: termination, coordinationTimeout: coordinationTimeout,
             cutWarning: { [weak self] in self?.warnings.append($0) })
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-paste-\(UUID())").resolvingSymlinksInPath()
@@ -795,5 +797,239 @@ extension PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: file.path))
         #expect(f.warnings.last?.contains("no move to undo") == true)
         #expect(signals.value.withLock { $0 } > afterPaste)
+    }
+}
+
+extension PasteActionServiceTests {
+    @Test func undoExpiringDuringPermissionPanelDoesNotMoveAnything() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        f.permission.allowed = false
+        var operation: Task<Void, Never>?
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            f.permission.onPrompt = { ready.resume() }
+            operation = Task { await f.service.actionHandler(rid: "undo-move", target: [], trigger: "ctx-container") }
+        }
+        f.clock.date.withLock { $0.addTimeInterval(86400) }
+        f.permission.allowed = true
+        f.permission.hold?.resume(returning: f.source)
+        await operation?.value
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent(file.lastPathComponent).path))
+        #expect(f.warnings.last?.contains("no move to undo") == true)
+    }
+}
+
+extension PasteActionServiceTests {
+    private func undo(_ service: ActionService) async {
+        await service.actionHandler(rid: "undo-move", target: [], trigger: "ctx-container")
+    }
+
+    @Test func undoClashUsesOriginalNameAndNeverOverwritesRacingOwner() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        try Data("second owner".utf8).write(to: f.source.appendingPathComponent("notes 2.txt"))
+        f.operations.createClashAtRename(file)
+        await undo(f.service)
+        #expect(try Data(contentsOf: file) == Data("racing owner".utf8))
+        #expect(try Data(contentsOf: f.source.appendingPathComponent("notes 2.txt")) == Data("second owner".utf8))
+        #expect(try Data(contentsOf: f.source.appendingPathComponent("notes 3.txt")) == Data("original".utf8))
+        #expect(f.warnings.isEmpty)
+        #expect(!f.service.undoMoveAvailable)
+    }
+
+    @Test(arguments: ["replacement", "missing", "uuid", "birth", "ambiguous"])
+    func undoSkipsUnprovenIdentityAndStillRestoresTheOtherItem(_ kind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let bad = try f.file("bad.txt"), good = try f.file("good.txt")
+        await f.cut([bad, good]); await f.paste()
+        let moved = f.destination.appendingPathComponent("bad.txt")
+        if kind == "replacement" {
+            try FileManager.default.moveItem(at: moved, to: moved.appendingPathExtension("old"))
+            try Data("replacement".utf8).write(to: moved)
+        } else if kind == "missing" {
+            try FileManager.default.removeItem(at: moved)
+        } else {
+            var journal = try #require(f.journal.load())
+            let index = try #require(journal.entries.firstIndex { $0.originalPath == bad.path })
+            let entry = journal.entries[index]
+            if kind == "ambiguous" { journal.entries.append(entry) }
+            else {
+                let identity = StableMoveIdentity(volumeUUID: kind == "uuid" ? "different-volume" : entry.identity.volumeUUID,
+                    inode: entry.identity.inode, creationDate: kind == "birth" ? entry.identity.creationDate.addingTimeInterval(1) : entry.identity.creationDate)
+                journal.entries[index] = MoveJournalEntry(originalPath: entry.originalPath, movedToPath: entry.movedToPath,
+                    identity: identity, timestamp: entry.timestamp, outcome: .moved)
+            }
+            try f.journal.save(journal)
+        }
+        await undo(f.service)
+        #expect(!FileManager.default.fileExists(atPath: bad.path))
+        #expect(try Data(contentsOf: good) == Data("original".utf8))
+        if kind == "replacement" { #expect(try Data(contentsOf: moved) == Data("replacement".utf8)) }
+        #expect(f.warnings.count == 1)
+        #expect(f.warnings.first?.contains("bad.txt") == true)
+        #expect(f.warnings.first?.contains("good.txt") == false)
+        #expect(f.journal.load()?.entries.isEmpty == true)
+        #expect(!f.service.undoMoveAvailable)
+    }
+
+    @Test(arguments: ["deleted", "trash", "package", "unwritable"])
+    func undoNeverRecreatesOrWritesIntoAnUnavailableOriginalFolder(_ kind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        if kind == "deleted" { try FileManager.default.removeItem(at: f.source) }
+        if kind == "trash" { f.operations.setTrashDirectories([f.source]) }
+        if kind == "package" { f.operations.setMoveFacts(MoveFacts(directory: true, package: true), for: f.source) }
+        if kind == "unwritable" { f.operations.reportUnwritable(f.source) }
+        await undo(f.service)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent(file.lastPathComponent).path))
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        if kind == "deleted" { #expect(!FileManager.default.fileExists(atPath: f.source.path)) }
+        #expect(f.warnings.count == 1)
+        #expect(f.journal.load()?.entries.isEmpty == true)
+        #expect(f.leaser.balance == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func undoRequiresBothFolderGrantsBeforeTouchingAnyItem(_ deniedOriginal: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        f.permission.allowedPaths = [deniedOriginal ? f.destination.path : f.source.path]
+        let priorRenames = f.operations.renameCalls.count
+        await undo(f.service)
+        #expect(f.permission.prompts == [deniedOriginal ? f.source.path : f.destination.path])
+        #expect(f.operations.renameCalls.count == priorRenames)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(f.journal.load()?.entries.count == 1)
+        #expect(f.service.undoMoveAvailable)
+        #expect(f.warnings.count == 1)
+        #expect(f.leaser.balance == 0)
+    }
+
+    @Test func undoReloadsAtomicStorageAndOnlyRestoresTheLastPaste() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let journalURL = f.root.appendingPathComponent("journal.json")
+        f.storeOverride = AtomicUndoJournalStore(url: journalURL)
+        let old = try f.file("old.txt"), last = try f.file("last.txt")
+        await f.cut([old]); await f.paste()
+        await f.cut([last]); await f.paste()
+        var warnings: [String] = []
+        let relaunched = ActionService(state: State(), permission: f.permission, confirmation: Confirmation(),
+            fileOperations: f.operations, pasteboard: f.board, now: { [clock = f.clock] in clock.now() },
+            accessLeaser: f.leaser, journalStore: AtomicUndoJournalStore(url: journalURL), cutWarning: { warnings.append($0) })
+        await relaunched.actionHandler(rid: "not-an-action", target: [], trigger: "ctx-container") // Wait for launch recovery.
+        #expect(relaunched.undoMoveAvailable)
+        await undo(relaunched)
+        #expect(try Data(contentsOf: last) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("old.txt")) == Data("original".utf8))
+        #expect(try AtomicUndoJournalStore(url: journalURL).load()?.entries.isEmpty == true)
+        #expect(!relaunched.undoMoveAvailable)
+        #expect(warnings.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func pasteAndUndoRefuseEachOtherWhileOneMoveIsReserved(_ firstIsUndo: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file])
+        if firstIsUndo { await f.paste() }
+        let gate = DispatchSemaphore(value: 0)
+        var operation: Task<Void, Never>?
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            f.operations.onNextCoordination { _ in ready.resume(); _ = gate.wait(timeout: .now() + 5) }
+            operation = Task {
+                if firstIsUndo { await undo(f.service) } else { await f.paste() }
+            }
+        }
+        await undo(f.service)
+        await f.paste()
+        #expect(f.warnings.count == 2)
+        #expect(f.warnings.allSatisfy { $0.contains("in progress") })
+        gate.signal(); await operation?.value
+        #expect(f.leaser.balance == 0)
+        #expect(f.termination.balance == 0)
+    }
+
+    @Test func undoPinsOriginalParentAgainstAnAncestorSymlinkSwap() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        await f.cut([item]); await f.paste()
+        let source = f.source, parked = f.root.appendingPathComponent("parked")
+        let elsewhere = f.root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        f.operations.onNextRename {
+            try FileManager.default.moveItem(at: source, to: parked)
+            try FileManager.default.createSymbolicLink(at: source, withDestinationURL: elsewhere)
+        }
+        await undo(f.service)
+        #expect(!FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent(item.lastPathComponent).path))
+        #expect(try Data(contentsOf: parked.appendingPathComponent(item.lastPathComponent)) == Data("original".utf8))
+        #expect(f.warnings.isEmpty)
+    }
+
+    @Test func undoRechecksIdentityInsideCoordination() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        await f.cut([item]); await f.paste()
+        f.operations.onNextCoordination { moved in
+            try FileManager.default.moveItem(at: moved, to: moved.appendingPathExtension("old"))
+            try Data("impostor".utf8).write(to: moved)
+        }
+        await undo(f.service)
+        #expect(!FileManager.default.fileExists(atPath: item.path))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent(item.lastPathComponent)) == Data("impostor".utf8))
+        #expect(f.warnings.count == 1)
+    }
+}
+
+private actor UndoExpirySleeper {
+    nonisolated let scheduled: AsyncStream<TimeInterval>
+    private let signal: AsyncStream<TimeInterval>.Continuation
+    private var waiting: CheckedContinuation<Void, Never>?
+    init() {
+        let pair = AsyncStream<TimeInterval>.makeStream()
+        scheduled = pair.stream; signal = pair.continuation
+    }
+    func wait(_ interval: TimeInterval) async {
+        await withCheckedContinuation { waiting = $0; signal.yield(interval) }
+    }
+    func wake() { waiting?.resume(); waiting = nil }
+}
+
+extension PasteActionServiceTests {
+    @Test func undoExpiryPublishesWithoutAnotherUserAction() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let sleeper = UndoExpirySleeper()
+        f.expiryWait = { await sleeper.wait($0) }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        var scheduled = sleeper.scheduled.makeAsyncIterator()
+        #expect(await scheduled.next() == 86400)
+        let updates = AsyncStream<Void>.makeStream()
+        let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: f.service, queue: nil) { _ in
+            updates.continuation.yield(())
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        f.clock.date.withLock { $0.addTimeInterval(86400) }
+        await sleeper.wake()
+        var events = updates.stream.makeAsyncIterator()
+        await events.next()
+        #expect(!f.service.undoMoveAvailable)
+    }
+
+    @Test func disablingCutAlsoRefusesUndoAndKeepsItsRecord() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        f.state.actions[0].enabled = false
+        await f.service.actionHandler(rid: "undo-move", target: [], trigger: "ctx-container")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(f.journal.load()?.entries.count == 1)
+        #expect(f.warnings.isEmpty)
     }
 }

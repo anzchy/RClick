@@ -27,6 +27,7 @@ final class ActionService {
     private var terminationPending = false
     private var terminationReply: (@MainActor () -> Void)?
     private let journalStore: (any UndoJournalStore)?
+    private let undoExpiryWait: @Sendable (TimeInterval) async throws -> Void
     private let cutPasteboard: any CutPasteboard
     private let pasteboard: NSPasteboard
     private let moveLogSink: (@Sendable (MoveLogEvent, String) -> Void)?
@@ -51,6 +52,7 @@ final class ActionService {
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
         revealNewFile: ((URL) -> Void)? = nil,
         journalStore: (any UndoJournalStore)? = nil,
+        undoExpiryWait: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
         cutPasteboard: (any CutPasteboard)? = nil,
         terminationBoundary: any MoveTerminationBoundary = SystemMoveTerminationBoundary(),
         quitWait: TimeInterval = 35,
@@ -69,6 +71,7 @@ final class ActionService {
         self.quitWait = quitWait
         self.coordinationTimeout = coordinationTimeout
         self.journalStore = journalStore
+        self.undoExpiryWait = undoExpiryWait
         self.cutPasteboard = cutPasteboard ?? pasteboard
         self.pasteboard = pasteboard
         self.now = now
@@ -94,7 +97,24 @@ final class ActionService {
         let changeCount: Int
     }
 
-    private var undoJournal: MoveJournal?
+    private var undoExpiryTask: Task<Void, Never>?
+    deinit { undoExpiryTask?.cancel() }
+
+    private var undoJournal: MoveJournal? {
+        didSet { scheduleUndoExpiry() }
+    }
+    private func scheduleUndoExpiry() {
+        undoExpiryTask?.cancel()
+        let timestamp = now()
+        guard let expiry = undoJournal?.undoEntries(at: timestamp).map({ $0.timestamp.addingTimeInterval(86400) }).max() else { return }
+        let wait = undoExpiryWait
+        let delay = expiry.timeIntervalSince(timestamp)
+        undoExpiryTask = Task { [weak self] in
+            do { try await wait(delay) } catch { return }
+            guard !Task.isCancelled, let self else { return }
+            NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self)
+        }
+    }
     var undoMoveAvailable: Bool { !(undoJournal?.undoEntries(at: now()).isEmpty ?? true) }
 
     private var journalNotice: String?
@@ -396,6 +416,12 @@ final class ActionService {
             cutWarning(AppLocalization.localized("Undo requires access to both folders"))
             return
         }
+        // Authorization can suspend for hours. Expiry is checked again after
+        // every panel before consuming the journal or moving anything.
+        guard entries.allSatisfy({ $0.timestamp <= now() && now().timeIntervalSince($0.timestamp) < 86400 }) else {
+            cutWarning(AppLocalization.localized("There is no move to undo"))
+            return
+        }
         let lease = accessLeaser.beginAccess(covering: directories)
         defer { lease.end() }
         let operations = fileOperations
@@ -407,7 +433,7 @@ final class ActionService {
             // Consume durably before mutation: a crash must never replay an Undo.
             // Recovery-only previous/deferred entries are not Undo history.
             do {
-                guard var journal = try store.load() else { throw JournalFailure.unreadable }
+                guard var journal = try store.load(), !journal.inProgress else { throw JournalFailure.unreadable }
                 journal.entries = []
                 journal.previous = []
                 journal.inProgress = false
@@ -426,7 +452,9 @@ final class ActionService {
                           try operations.stableMoveIdentity(of: source) == entry.identity else {
                         throw UndoMoveError.changed
                     }
-                    let destination = try original.deletingLastPathComponent().canonicalMoveDirectory()
+                    let destination: URL
+                    do { destination = try original.deletingLastPathComponent().canonicalMoveDirectory().standardizedFileURL }
+                    catch { throw UndoMoveError.originalFolder }
                     if let refusal = try operations.destinationRefusal(destination) { throw refusal }
                     guard operations.isWritable(destination), operations.isWritable(source.deletingLastPathComponent()) else {
                         throw POSIXError(.EACCES)
@@ -437,6 +465,11 @@ final class ActionService {
                     let facts = try operations.moveFacts(of: source)
                     if facts.mountPoint { throw PasteMoveError.mountPoint }
                     if facts.directory, try operations.contains(source, destination) { throw PasteMoveError.insideSource }
+                    if let container = facts.providerContainer {
+                        guard try operations.contains(container, destination) else { throw PasteMoveError.cloud }
+                    } else if facts.ubiquitous {
+                        guard try operations.moveFacts(of: destination).ubiquitous else { throw PasteMoveError.cloud }
+                    }
                     var number = 1
                     while true {
                         let name = try MoveName.candidate(original.lastPathComponent, number: number,
@@ -812,6 +845,7 @@ final class ActionService {
         case PasteMoveError.insideSource: key = "A folder cannot be moved into itself"
         case PasteMoveError.mountPoint: key = "A volume root cannot be moved"
         case PasteMoveError.cloud: key = "Moving items outside their cloud container is not supported yet"
+        case UndoMoveError.originalFolder: key = "The original folder is missing or unavailable"
         case UndoMoveError.changed: key = "The moved item is missing or has changed"
         case PasteMoveError.changed: key = "Changed since cut"
         case PasteMoveError.destinationChanged: key = "The destination changed"
