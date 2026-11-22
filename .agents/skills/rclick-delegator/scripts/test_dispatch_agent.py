@@ -412,6 +412,28 @@ class DispatchTests(unittest.TestCase):
                 self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
+    def test_read_only_freshness_check_reads_once_without_dispatch(self):
+        fresh = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-agent-pane-after-clear.txt').read_text()
+        cases = [(fresh, 0, 'FRESH'),
+                 (fresh.replace('0%', '3%'), 1, 'NOT-FRESH: Context footer is not zero'),
+                 ('❯ /clear', 1, 'NOT-FRESH: missing Claude Code welcome banner'),
+                 (fresh + '\n⏺ New output', 1, 'NOT-FRESH: unexpected content after Context footer'),
+                 (fresh.replace('❯\n', '❯ text\n'), 1, 'NOT-FRESH: missing empty composer'),
+                 (fresh.replace('❯\n', '❯ Try "a task"\n').replace('░░░░ 0%', '▓░░░░░░░ 0% used'), 0, 'FRESH'),
+                 (fresh.replace('────────────────────── rclick-opus-auditor ─\n', ''), 1,
+                  'NOT-FRESH: empty composer is not between separators')]
+        for screen, code, output in cases:
+            with self.subTest(output=output):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(args=['--check-fresh', '--pane', 'w1:p2', '--kind', 'claude'],
+                                           CLAUDE_RESET_SCREEN=screen, RESET_ENTERS_NEEDED='0')
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual(result.stdout, output + '\n')
+                self.assertEqual(result.stderr, '')
+                self.assertEqual(self.calls(), [['pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '100']])
+                self.assertFalse((self.repo / 'marker-used').exists())
+                self.assertFalse((self.home / '.rclick-roster').exists())
+
     def test_reset_failure_explains_classifier_rejection(self):
         screen = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-after-clear.txt').read_text()
         for bad, reason in ((screen.replace('0%', '3%'), 'Context footer is not zero'),
