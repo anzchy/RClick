@@ -21,6 +21,34 @@ extension SystemFileOperations {
 }
 
 extension FileOperations {
+    nonisolated func openMoveDirectory(_ url: URL) throws -> Int32 {
+        let descriptor = url.withUnsafeFileSystemRepresentation { open($0!, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW) }
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        return descriptor
+    }
+    nonisolated func closeMoveDirectory(_ descriptor: Int32) { _ = close(descriptor) }
+    nonisolated func directoryIdentity(_ descriptor: Int32) throws -> FileIdentity {
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else {
+            throw PasteMoveError.destinationChanged
+        }
+        return FileIdentity(volume: VolumeIdentity(rawValue: UInt64(UInt32(bitPattern: info.st_dev))), fileNumber: info.st_ino)
+    }
+    nonisolated func directoryPath(_ descriptor: Int32) throws -> URL {
+        var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(descriptor, F_GETPATH, &path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return URL(fileURLWithPath: String(decoding: path.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)).standardizedFileURL
+    }
+    nonisolated func exclusiveRename(from source: URL, to destination: URL, directory: Int32) throws {
+        let result = source.withUnsafeFileSystemRepresentation { from in
+            destination.lastPathComponent.withCString { name in
+                renameatx_np(AT_FDCWD, from, directory, name, UInt32(RENAME_EXCL))
+            }
+        }
+        if result != 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
     nonisolated func notifyMove(_ notification: MoveNotification, using coordinator: NSFileCoordinator, from source: URL, to destination: URL) {
         switch notification {
         case .willMoveTo: coordinator.item(at: source, willMoveTo: destination)
@@ -49,23 +77,26 @@ extension FileOperations {
                         guard !state.cancelled else { throw PasteMoveError.timeout }
                         guard try fileIdentity(of: from) == expected else { throw PasteMoveError.changed }
                         notifyMove(.willMoveTo, using: job.coordinator, from: from, to: to)
-                        // Classification may predate an fsync and a presenter wait.
-                        // Revalidate the destination folder itself (identity, volume and
-                        // policy by its lexical path) under the cancellation gate
-                        // immediately before renaming. This does not detect a swapped
-                        // symlink in an ancestor of the folder: known limitation, M11.
+                        // Pin the directory, classify the kernel's path for that open
+                        // object, then rename relative to it. A replaced ancestor must
+                        // never redirect the write through the lexical destination.
+                        let directory: Int32
+                        do { directory = try openMoveDirectory(to.deletingLastPathComponent()) }
+                        catch { throw PasteMoveError.destinationChanged }
+                        defer { closeMoveDirectory(directory) }
                         do {
-                            // Rebuild the coordinator's bridged NSURL as a canonical
-                            // file URL before walking its ancestors.
-                            let folder = URL(fileURLWithPath: to.deletingLastPathComponent().path).standardizedFileURL
-                            guard try fileIdentity(of: folder) == expectedDestination,
-                                  expectedDestination.volume == expected.volume,
+                            let identity = try directoryIdentity(directory)
+                            let folder = try directoryPath(directory)
+                            guard identity == expectedDestination,
+                                  identity.volume == expected.volume,
                                   try volumeIdentity(of: folder) == expected.volume,
-                                  try destinationRefusal(folder) == nil else {
+                                  try destinationRefusal(folder) == nil,
+                                  try !sameItem(from.deletingLastPathComponent(), folder),
+                                  try directoryPath(directory) == folder else {
                                 throw PasteMoveError.destinationChanged
                             }
                         } catch { throw PasteMoveError.destinationChanged }
-                        try exclusiveRename(from: from, to: to)
+                        try exclusiveRename(from: from, to: to, directory: directory)
                         state.moved = true
                         return true
                     }

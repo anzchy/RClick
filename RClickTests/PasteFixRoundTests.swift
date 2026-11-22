@@ -218,3 +218,70 @@ extension PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 }
+
+extension PasteActionServiceTests {
+    @Test(arguments: [".Trash", "Disguised.app"])
+    func ancestorSymlinkSwapCannotMoveIntoUnsafeDestination(_ unsafeName: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let parent = f.root.appendingPathComponent("ordinary")
+        let folder = parent.appendingPathComponent("destination")
+        let parked = f.root.appendingPathComponent(unsafeName)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        f.operations.onNextCoordination { _ in
+            try FileManager.default.moveItem(at: parent, to: parked)
+            try FileManager.default.createSymbolicLink(at: parent, withDestinationURL: parked)
+        }
+        await f.cut([item]); await f.paste(folder)
+        #expect(FileManager.default.fileExists(atPath: item.path))
+        #expect(!FileManager.default.fileExists(atPath: parked.appendingPathComponent("destination/notes.txt").path))
+        #expect(f.operations.renameCalls.isEmpty)
+        #expect(f.warnings.first?.contains("The destination changed") == true)
+        #expect(f.service.pendingCut?.paths == [item.path])
+        #expect(f.leaser.balance == 0)
+    }
+}
+
+
+extension PasteActionServiceTests {
+    @Test(arguments: [DestinationRefusal.trash, .package, .systemRoot])
+    func descriptorReportedUnsafePathRefusesEvenWhenLexicalPathLooksSafe(_ refusal: DestinationRefusal) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let real = f.root.appendingPathComponent("descriptor-destination")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let operations = f.operations
+        operations.refuseDestination(real, reason: refusal)
+        operations.onNextCoordination { _ in operations.reportDescriptorPath(real) }
+        await f.cut([item]); await f.paste()
+        #expect(FileManager.default.fileExists(atPath: item.path))
+        #expect(!FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
+        #expect(f.warnings.first?.contains("The destination changed") == true)
+        #expect(operations.renameCalls.isEmpty)
+    }
+
+    @Test func ancestorReplacedAfterValidationCannotRedirectDescriptorRename() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let parent = f.root.appendingPathComponent("ordinary")
+        let folder = parent.appendingPathComponent("destination")
+        let parked = f.root.appendingPathComponent("parked")
+        let replacement = f.root.appendingPathComponent("replacement")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: replacement.appendingPathComponent("destination"), withIntermediateDirectories: true)
+        let operations = f.operations
+        let expected = try operations.fileIdentity(of: item)
+        let expectedDestination = try operations.fileIdentity(of: folder)
+        operations.onNextRename {
+            try FileManager.default.moveItem(at: parent, to: parked)
+            try FileManager.default.createSymbolicLink(at: parent, withDestinationURL: replacement)
+        }
+        try await Task.detached {
+            try operations.coordinatedExclusiveMove(from: item, to: folder.appendingPathComponent("notes.txt"),
+                expected: expected, expectedDestination: expectedDestination, timeout: 30)
+        }.value
+        #expect(try Data(contentsOf: parked.appendingPathComponent("destination/notes.txt")) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(atPath: replacement.appendingPathComponent("destination/notes.txt").path))
+        #expect(!FileManager.default.fileExists(atPath: item.path))
+    }
+}
