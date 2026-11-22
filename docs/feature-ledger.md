@@ -89,14 +89,19 @@ delete its line in the same change.
    current config; a failure to read an item's identity or to write the pasteboard is only logged
    (`RClick/Runtime/ActionService.swift:713-719`); the production caller `FinderSyncExt.makeActionItem` has no test.
    Issue #42.
-5. `paste-move`: the destination is re-checked by its lexical path inside the coordinated block, so swapping an
-   ancestor of the destination for a symlink can land an item in a trashed folder or a package
-   (`RClick/Runtime/PasteMoveEngine.swift`). Issue #48 names it a release blocker for any build containing Paste,
-   together with #10, #11 and #12.
-6. `paste-move`, `connection-state`, `new-file`: from the issue #12 device run: Paste (move here) is offered on a
-   selected file's menu and then refuses; a cut item deleted before Paste is reported with the raw system message,
-   and the clipboard then keeps the marker but no file URL; with RClick offline the New File submenu stays enabled;
-   files created by New File carry a quarantine attribute. Issue #53.
+5. `paste-move`: **FIXED in code by #48, device check pending (#12).** The destination used to be re-checked by its
+   lexical path inside the coordinated block, so swapping an ancestor for a symlink could land an item in a trashed
+   folder or a package. Paste now opens the destination and the source parent as descriptors (no-follow, identity
+   compared with the cut-time identity), classifies the descriptor's real path and renames relative to the
+   descriptors with `renameatx_np` (`RClick/Runtime/PasteMoveEngine.swift`). Residual, accepted: an open destination
+   moved into a Trash after the last real-path read still receives the item (narrowed, not closed). NOT VERIFIED:
+   the descriptor calls inside the sandboxed app on a granted folder (#12). #10, #11 and #12 stay release blockers for
+   a build containing Paste.
+6. `paste-move`, `connection-state`, `new-file`: **FIXED in code by #53, device check pending (#12).** Paste (move
+   here) is now offered only for one selected folder (not a package) or the window background; a cut item deleted
+   before Paste is reported "Changed since cut" and a clipboard with no pending paths left is cleared; with RClick
+   offline the whole New File group is disabled. The quarantine attribute on New File outputs is the App Sandbox's
+   own quarantine on files a sandboxed process creates (flag `0082`, no RClick code involved): expected, no change.
 7. `new-file`, `new-file-settings`: a custom type whose extension was typed without a dot creates `Untitled<ext>`:
    the sheet stores the field verbatim and `ActionService.getUniqueFilePath`
    (`RClick/Runtime/ActionService.swift:1100-1114`) appends the extension with no dot. Issue #51 (device FAIL in the
