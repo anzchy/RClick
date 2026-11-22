@@ -14,8 +14,8 @@ import SwiftUI
 struct GitHubRelease: Codable, Identifiable {
     let id: Int
     let tagName: String
-    let name: String
-    let body: String
+    let name: String?
+    let body: String?
     let draft: Bool
     let prerelease: Bool
     let publishedAt: Date?
