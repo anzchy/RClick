@@ -16,9 +16,11 @@ import sys
 
 scripts = Path(sys.argv.pop(1)).resolve().parent
 parser = argparse.ArgumentParser(description='Register, reset and submit one fresh roster task.')
-for name in ('agent', 'pane', 'issue', 'task', 'round', 'prompt-file'):
-    parser.add_argument('--' + name, required=True)
-parser.add_argument('--role', required=True, choices=('implementer', 'auditor'))
+parser.add_argument('--check-fresh', action='store_true', help='Read a Claude pane once without dispatching.')
+for name in ('agent', 'issue', 'task', 'round', 'prompt-file'):
+    parser.add_argument('--' + name)
+parser.add_argument('--pane', required=True)
+parser.add_argument('--role', choices=('implementer', 'auditor'))
 parser.add_argument('--kind', required=True, choices=('claude', 'codex'))
 for name in ('worktree', 'branch', 'handoff', 'report'):
     parser.add_argument('--' + name)
@@ -148,11 +150,25 @@ def live_status(screen):
         r'(?: · [↑↓↕] [0-9.,kK]+ tokens(?: · .+)?)?\))?', above[-1]))
 
 
+if not re.fullmatch(r'w[0-9]+:p[0-9]+', args.pane):
+    refuse('--pane must be a herdr pane ID')
+if args.check_fresh:
+    if args.kind != 'claude':
+        refuse('--check-fresh supports --kind claude only')
+    try:
+        reason = claude_freshness_reason(read_pane())
+    except (RuntimeError, OSError) as error:
+        reason = str(error).replace('\n', ' ')
+    print('NOT-FRESH: ' + reason if reason else 'FRESH')
+    sys.exit(1 if reason else 0)
+for name in ('agent', 'issue', 'task', 'round', 'prompt_file', 'role'):
+    if getattr(args, name) is None:
+        refuse('--' + name.replace('_', '-') + ' is required for dispatch')
+
+
 for name in ('agent', 'task', 'round'):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', getattr(args, name)):
         refuse('--' + name + ' must be a non-empty ID (letters, numbers, dot, underscore, hyphen)')
-if not re.fullmatch(r'w[0-9]+:p[0-9]+', args.pane):
-    refuse('--pane must be a herdr pane ID')
 if not re.fullmatch(r'[1-9][0-9]*', args.issue):
     refuse('--issue must be a positive integer')
 prompt_file = existing_path(args.prompt_file, '--prompt-file')
