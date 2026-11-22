@@ -364,7 +364,12 @@ final class ActionService {
             cutWarning(AppLocalization.localized("Choose a folder as the destination"))
             return
         }
-        let destination = URL(fileURLWithPath: target[0]).resolvingSymlinksInPath()
+        let requestedDestination = URL(fileURLWithPath: target[0]).resolvingSymlinksInPath()
+        // Foundation can shorten /private/tmp back to the /tmp symlink. Record
+        // the real directory identity, matching the later no-follow open.
+        let destination = (try? FileManager.default.attributesOfItem(atPath: requestedDestination.path)[.type]) as? FileAttributeType == .typeSymbolicLink
+            ? ((try? requestedDestination.canonicalMoveDirectory()) ?? requestedDestination)
+            : requestedDestination
         let directories = [destination] + record.paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
         for directory in directories where !permission.hasAccess(to: directory) {
             guard await permission.promptForPermission(for: directory) != nil else {
@@ -388,7 +393,8 @@ final class ActionService {
         let operations = fileOperations
         let alreadyHere = await executor.run {
             record.paths.filter { path in
-                let parent = URL(fileURLWithPath: path).deletingLastPathComponent().resolvingSymlinksInPath()
+                let rawParent = URL(fileURLWithPath: path).deletingLastPathComponent()
+                let parent = (try? rawParent.canonicalMoveDirectory()) ?? rawParent
                 return (try? operations.sameItem(parent, destination)) == true
             }
         }

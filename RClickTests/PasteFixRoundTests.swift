@@ -441,3 +441,66 @@ extension PasteActionServiceTests {
         #expect(operations.renameCalls.isEmpty)
     }
 }
+
+extension PasteActionServiceTests {
+    @Test(arguments: [false, true])
+    func symlinkReachedDirectoryCanBePinnedAndMoved(_ destinationSide: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let link = f.root.appendingPathComponent("tmp-link")
+        let real = destinationSide ? f.destination : f.source
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        // Exercise the same directory-open seam used inside coordination. Unlike
+        // Foundation's normalisation, this keeps the symlink as the final component.
+        let descriptor = try f.operations.openMoveDirectory(link)
+        defer { f.operations.closeMoveDirectory(descriptor) }
+        #expect(try f.operations.directoryIdentity(descriptor) == f.operations.fileIdentity(of: real))
+        let item = try f.file()
+        let source = destinationSide ? item : link.appendingPathComponent(item.lastPathComponent)
+        await f.cut([source]); await f.paste(destinationSide ? link : f.destination)
+        #expect(f.warnings.isEmpty)
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent(item.lastPathComponent)) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(atPath: item.path))
+        #expect(f.leaser.balance == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func privateTmpRootCanBeSourceOrDestination(_ destinationSide: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        // Create only a unique file in the existing directory; never chmod or
+        // remove the system directory. Both possible file locations are cleaned.
+        let name = "RClick-private-tmp-\(UUID()).txt"
+        let tmpItem = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(name)
+        defer { try? FileManager.default.removeItem(at: tmpItem) }
+        let item = destinationSide ? try f.file(name) : tmpItem
+        if !destinationSide { try Data("original".utf8).write(to: item) }
+        await f.cut([item])
+        await f.paste(destinationSide ? tmpItem.deletingLastPathComponent() : f.destination)
+        let moved = destinationSide ? tmpItem : f.destination.appendingPathComponent(name)
+        #expect(f.warnings.isEmpty)
+        #expect(try Data(contentsOf: moved) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(atPath: item.path))
+        #expect(f.service.pendingCut == nil)
+        #expect(f.leaser.balance == 0)
+    }
+}
+
+
+extension PasteActionServiceTests {
+    @Test func privateTmpSameFolderPasteRemainsANoOp() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = URL(fileURLWithPath: "/private/tmp/RClick-noop-\(UUID()).txt")
+        try Data("original".utf8).write(to: item)
+        defer { try? FileManager.default.removeItem(at: item) }
+        await f.cut([item])
+        let pending = f.service.pendingCut
+        let generation = f.board.changeCount
+        await f.paste(item.deletingLastPathComponent())
+        #expect(f.warnings.isEmpty)
+        #expect(try Data(contentsOf: item) == Data("original".utf8))
+        #expect(f.service.pendingCut?.paths == pending?.paths)
+        #expect(f.service.pendingCut?.changeCount == pending?.changeCount)
+        #expect(f.board.changeCount == generation)
+        #expect(f.journal.load() == nil)
+    }
+}
+
