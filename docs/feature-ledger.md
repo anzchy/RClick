@@ -115,9 +115,10 @@ delete its line in the same change.
     (`RClick/Runtime/ActionService.swift:1017-1032`) that creates an extension-less file, but
     `MenuService.buildConfig` (`RClick/Runtime/MenuService.swift`) never emits that item; only
     `ActionServiceTests.newFilePreservesRawPercentTarget` reaches it. No issue filed yet.
-12. `update`, `about`: the update checker and star count read `wflixu/RClick` (`RClick/RClickApp.swift:40`), the
-    upstream repository, not the fork whose identifiers #22 changed. Whether that is intended for the fork is
-    **UNVERIFIED**. No issue filed yet.
+12. `update`, `about`: **RESOLVED by #57.** The update checker and star count used to read the upstream repository
+    `wflixu/RClick` (`RClick/RClickApp.swift:40`); the checker now reads `anzchy/RClick` (`UpdateSource` in
+    `RClick/Shared/Updater.swift`), the star count and its fetch are removed, and the About tab carries one
+    attribution sentence.
 13. `hide`, `unhide`: neither acts on "the selected items" as the device recipe `ACT-03` describes.
     - Hide (`RClick/Runtime/ActionService.swift:836-905`, `hideFilesAndDirs`) branches on the menu trigger. On items
       (`ctx-items`) it hides each selected item. On the window background (`ctx-container`) it hides every item
@@ -775,8 +776,9 @@ delete its line in the same change.
 - **Device:** never run.
 
 ### `about`
-- **What:** version and build, GitHub star count and links (Add a Star, Open Issues), and "More Apps"
-  (`RClick/Settings/AboutSettingsTabView.swift`). Links and star count point at `wflixu/RClick` (finding 12).
+- **What:** version and build, the fork's repository link and one attribution sentence naming the original RClick
+  (`RClick/Settings/AboutSettingsTabView.swift`). The star count, Add a Star and "More Apps" were removed by #57
+  (finding 12).
 - **Status:** `shipped-on`.
 - **Tests:** none.
 - **Device:** never run.
