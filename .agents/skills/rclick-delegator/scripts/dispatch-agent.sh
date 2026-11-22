@@ -56,6 +56,15 @@ def send_keys():
     run(['herdr', 'pane', 'send-keys', args.pane, 'Enter'])
 
 
+def claude_separator(line):
+    # Agent panes label the upper rule; its width is terminal-dependent.
+    return bool(re.fullmatch(r'[─━]+(?: [A-Za-z0-9._-]+ [─━]+)?', line))
+
+
+def claude_notice(line):
+    return line.startswith(('⚠ ', '✘ Auto-update failed'))
+
+
 def claude_freshness_reason(screen):
     """An empty composer and zero footer must bound a transcript-free welcome."""
     lines = [line.strip() for line in screen.splitlines() if line.strip()]
@@ -67,15 +76,8 @@ def claude_freshness_reason(screen):
         return 'missing empty composer'
     composer, welcome = composers[-1], welcomes[-1]
 
-    def separator(line):
-        # Agent panes label the upper rule; its width is terminal-dependent.
-        return bool(re.fullmatch(r'[─━]+(?: [A-Za-z0-9._-]+ [─━]+)?', line))
-
-    def notice(line):
-        return line.startswith(('⚠ ', '✘ Auto-update failed'))
-
     if composer == 0 or composer + 1 >= len(lines) or not all(
-            separator(lines[i]) for i in (composer - 1, composer + 1)):
+            claude_separator(lines[i]) for i in (composer - 1, composer + 1)):
         return 'empty composer is not between separators'
     if welcome >= composer:
         return 'welcome banner is not above composer'
@@ -98,7 +100,7 @@ def claude_freshness_reason(screen):
     before = region[:echoes[-1]] if echoes else region
     after = region[echoes[-1] + 1:] if echoes else []
     for line in before:
-        if separator(line) or notice(line):
+        if claude_separator(line) or claude_notice(line):
             continue
         metadata = re.sub(r'^[▐▛█▝▜▀▟▙▘▗▖ ]*', '', line)
         if re.match(r'(?:Opus|Sonnet|Haiku) [0-9].* · ', metadata):
@@ -106,7 +108,7 @@ def claude_freshness_reason(screen):
         if metadata.startswith(('~/', '/', '@rclick-')):
             continue
         return 'unexpected content between welcome and composer'
-    if any(not (separator(line) or notice(line)) for line in after):
+    if any(not (claude_separator(line) or claude_notice(line)) for line in after):
         return 'transcript content after /clear'
     return ''
 
@@ -133,9 +135,8 @@ def live_status(screen):
                       (args.kind == 'codex' and 'Context' in below[0])):
         return False
     above = [line.strip() for line in lines[:index] if line.strip()]
-    if above and re.fullmatch(r'[─━]+', above[-1]):
-        above.pop()
-    if above and above[-1].startswith('✘ Auto-update failed'):
+    if above and (claude_separator(above[-1]) if args.kind == 'claude'
+                  else re.fullmatch(r'[─━]+', above[-1])):
         above.pop()
     if not above:
         return False
@@ -143,7 +144,8 @@ def live_status(screen):
         return bool(re.fullmatch(r'• Working \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])* • esc to interrupt\)', above[-1]))
     # Claude can render a tool tip or todo below its spinner. Walk only these
     # continuation rows, never across user/tool history or a fresh welcome.
-    while above and re.match(r'^(?:⎿|[☐☑□✓])(?:\s|$)', above[-1]):
+    while above and (claude_notice(above[-1]) or
+                     re.match(r'^(?:⎿|[☐☑□✓])(?:\s|$)', above[-1])):
         above.pop()
     return bool(above and re.fullmatch(
         r'[✻✽✶✳✢·] .+…(?: \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])*'

@@ -412,6 +412,34 @@ class DispatchTests(unittest.TestCase):
                 self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
+    def test_real_working_notice_and_chrome_variants(self):
+        fixtures = SCRIPTS / 'fixtures/claude-screens'
+        raw = (fixtures / 'claude-fail-r5-working-with-notice.txt').read_text()
+        fresh_work = raw.split('pane tail:\n', 1)[1].rsplit('\nstopped event=', 1)[0]
+        spinner = '✢ Enchanting… (7s · ↓ 184 tokens)'
+        notice = '⚠ claude.ai connectors are disabled bec…'
+        variants = [fresh_work,
+                    fresh_work.replace(spinner, notice + '\n' + spinner).replace('  ' + notice + '\n', ''),
+                    fresh_work.replace('  ' + notice, '  ' + notice + '\n  ⎿ Tip: wait'),
+                    fresh_work.replace('  ' + notice, '  ' + notice + '\n⚠ Another notice')]
+        variants += [(fixtures / ('claude-working-' + n + '.txt')).read_text() for n in ('1', '2')]
+        for screen in variants:
+            with self.subTest(screen=screen):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(SCREEN=screen)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn('WARNING', result.stderr)
+                self.assertEqual(self.calls()[-1], ['agent', 'get', 'w1:p2'])
+                self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
+        for newer in ('⏺ Read a file', 'Here is the answer.'):
+            with self.subTest(newer=newer):
+                self.log.unlink(missing_ok=True)
+                screen = fresh_work.replace(spinner, spinner + '\n' + newer)
+                result = self.run_dispatch(SCREEN=screen)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertNotIn('DISPATCHED', result.stdout)
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_read_only_freshness_check_reads_once_without_dispatch(self):
         fresh = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-agent-pane-after-clear.txt').read_text()
         cases = [(fresh, 0, 'FRESH'),
