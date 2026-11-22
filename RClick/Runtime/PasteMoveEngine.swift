@@ -8,6 +8,21 @@ nonisolated enum PasteMoveError: Error {
     case changed, destinationChanged, invalidDestination, crossVolume, insideSource, mountPoint, cloud, timeout
 }
 
+extension URL {
+    /// Unlike Foundation normalisation, realpath preserves the actual /private
+    /// directory instead of returning a final-component /tmp or /var symlink.
+    nonisolated func canonicalMoveDirectory() throws -> URL {
+        try withUnsafeFileSystemRepresentation { path in
+            guard let path else { throw PasteMoveError.invalidDestination }
+            guard let resolved = realpath(path, nil) else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            defer { free(resolved) }
+            return URL(fileURLWithFileSystemRepresentation: resolved, isDirectory: true, relativeTo: nil)
+        }
+    }
+}
+
 private extension URL {
     /// Use Foundation's filesystem byte representation for each descriptor-relative name.
     nonisolated func withMoveName<Result>(_ body: (UnsafePointer<CChar>) throws -> Result) throws -> Result {
@@ -32,7 +47,10 @@ extension SystemFileOperations {
 
 extension FileOperations {
     nonisolated func openMoveDirectory(_ url: URL) throws -> Int32 {
-        let descriptor = try url.withUnsafeFileSystemRepresentation { path in
+        // Resolve pre-existing aliases before pinning. O_NOFOLLOW still refuses
+        // a final-component symlink installed between realpath and open.
+        let canonical = try url.canonicalMoveDirectory()
+        let descriptor = try canonical.withUnsafeFileSystemRepresentation { path in
             guard let path else { throw PasteMoveError.invalidDestination }
             return open(path, O_SEARCH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
         }
@@ -265,6 +283,11 @@ extension FileOperations {
     }
     nonisolated func destinationRefusal(_ url: URL) throws -> DestinationRefusal? { try readDestinationRefusal(url) }
     nonisolated func readDestinationRefusal(_ url: URL) throws -> DestinationRefusal? {
+        // Foundation may leave /tmp as a final symlink. Classify its real
+        // directory and ancestry, just as the coordinated descriptor check does.
+        if try FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType == .typeSymbolicLink {
+            return try readDestinationRefusal(url.canonicalMoveDirectory())
+        }
         guard try moveFacts(of: url).directory else { return .notFolder }
         for path in ["/", "/System", "/Library", "/usr", "/bin", "/sbin"] {
             if try sameItem(url, URL(fileURLWithPath: path)) { return .systemRoot }

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
 
 ### Fixed
+- Resolve Paste directory aliases with realpath before pinning, so files directly in /private/tmp and destinations there can be moved
 - Keep Paste hidden on selected packages, allow writable/searchable Drop Box destinations, and discard cut entries whose parent was replaced by a file
 - Pin Paste source parents as well as destinations so an ancestor swap cannot substitute another item at rename
 - Disable the entire New File submenu while the main app is offline
