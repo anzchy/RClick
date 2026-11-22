@@ -1235,7 +1235,10 @@ final class ActionService {
             return
         }
 
-        let ext = rcitem.ext
+        guard let ext = try? FileTypeEditDraft.normalizedExtension(rcitem.ext) else {
+            templateWarning(AppLocalization.localized("Enter a file extension without slashes, such as txt or .txt."))
+            return
+        }
         let fileURL = URL(fileURLWithPath: getUniqueFilePath(dir: dirPath, ext: ext))
         let resourceExtension = ext.trimmingCharacters(in: CharacterSet(charactersIn: "."))
         let bundledTemplate = templateResource(resourceExtension)
@@ -1297,6 +1300,9 @@ final class ActionService {
 
     /// 生成目录内唯一的文件名（避免重名冲突）
     func getUniqueFilePath(dir: String, ext: String) -> String {
+        // The editable-file action deliberately uses no extension. Legacy custom
+        // types are normalized at use time without rewriting persisted settings.
+        let ext = (try? FileTypeEditDraft.normalizedExtension(ext)) ?? ""
         let fileManager = FileManager.default
         let dirURL = URL(fileURLWithPath: dir.hasSuffix("/") ? String(dir.dropLast()) : dir)
         let baseFileName = AppLocalization.localized("Untitled")

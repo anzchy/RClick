@@ -231,3 +231,43 @@ struct NewFileCreationTests {
     }
 
 }
+
+
+extension NewFileCreationTests {
+    @Test(arguments: ["zzc", ".zzc", "  zzc "])
+    func legacyCustomExtensionsCreateDottedNamesWithoutChangingStoredType(_ ext: String) async throws {
+        let dir = try directory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let state = State()
+        state.newFiles = [NewFile(ext: ext, name: "Custom", idx: 0, id: "custom")]
+        var revealed: [URL] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
+            revealNewFile: { revealed.append($0) })
+        let first = dir.appendingPathComponent("Untitled.zzc")
+        #expect(service.getUniqueFilePath(dir: dir.path, ext: ext) == first.path)
+        await service.createFile(rid: "custom", target: [dir.path])
+        #expect(try Data(contentsOf: first).isEmpty)
+        await service.createFile(rid: "custom", target: [dir.path])
+        #expect(revealed.map(\.lastPathComponent) == ["Untitled.zzc", "Untitled1.zzc"])
+        #expect(try Data(contentsOf: first).isEmpty)
+        #expect(state.newFiles.first?.ext == ext)
+    }
+
+    @Test(arguments: [false, true])
+    func sheetSaveNormalizesExtensionsForBothAddAndEdit(_ editing: Bool) throws {
+        let original = editing ? NewFile(ext: ".old", name: "Before", idx: 7, id: "existing")
+            : NewFile(ext: "", name: "", idx: 0, id: "new")
+        let saved = try FileTypeEditDraft(name: "After", ext: "  zzc  ", icon: "doc", openApp: nil).applying(to: original)
+        #expect(saved.ext == ".zzc")
+        #expect(saved.name == "After")
+        #expect(saved.id == original.id)
+        #expect(saved.idx == original.idx)
+        #expect(try FileTypeEditDraft(name: "After", ext: " .zzc ", icon: "doc", openApp: nil).applying(to: original).ext == ".zzc")
+    }
+
+    @Test(arguments: ["", "  ", ".", "...", "foo/bar", "/txt"])
+    func sheetSaveRejectsInvalidExtensions(_ ext: String) {
+        #expect(throws: (any Error).self) {
+            try FileTypeEditDraft(name: "Type", ext: ext, icon: "doc", openApp: nil).applying(to: .txt)
+        }
+    }
+}
