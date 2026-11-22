@@ -189,10 +189,20 @@ extension PendingCutTests {
         ]
         for (kind, names, expected) in rows {
             let urls = names.map { root.appendingPathComponent($0) }
-            let values = urls.count == 1 ? try urls[0].resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]) : nil
+            let values = try urls.first?.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
             let result = PendingCut.renderMenuVisibility(config: config, menuKind: kind, selection: urls.map(\.path),
-                selectedItemIsDirectory: PendingCut.isPasteFolder(values), currentChangeCount: 42, hostOnline: true)
+                selectedItemIsDirectory: PendingCut.isPasteFolder(values, selectionCount: urls.count), currentChangeCount: 42, hostOnline: true)
             #expect(result.paste == expected, "target: \(names)")
+        }
+    }
+}
+
+
+extension PendingCutTests {
+    @Test func pasteFolderRequiresExactlyOneSelection() throws {
+        let values = try FileManager.default.temporaryDirectory.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        for (count, expected) in [(0, false), (1, true), (2, false)] {
+            #expect(PendingCut.isPasteFolder(values, selectionCount: count) == expected)
         }
     }
 }
