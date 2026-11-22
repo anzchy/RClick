@@ -290,6 +290,29 @@ class DispatchTests(unittest.TestCase):
         self.assertIn('DISPATCHED i61-test-r1-1120', result.stdout)
         self.assertEqual(self.calls()[-1], ['agent', 'get', 'w1:p2'])
 
+    def test_real_working_claude_and_tip_todo_spinner_rows(self):
+        captures = [(SCRIPTS / ('fixtures/claude-screens/claude-working-' + n + '.txt')).read_text()
+                    for n in ('1', '2')]
+        variants = captures + [captures[0].replace('· Forming… (5s · ↓ 14 tokens)', spinner)
+                               for spinner in ('· Forming… (5s · ↓ 14 tokens)\n  ⎿ Tip: wait',
+                                               '· Forming… (5s · ↓ 14 tokens)\n☐ Check results',
+                                               '· Forming… (5s)', '· Forming…')]
+        for screen in variants:
+            with self.subTest(screen=screen):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(SCREEN=screen)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.calls()[-1], ['agent', 'get', 'w1:p2'])
+        fresh = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-after-clear.txt').read_text()
+        for screen in ('· Forming… (5s · ↓ 14 tokens)\n' + fresh,
+                       '· Forming… (5s · ↓ 14 tokens)\nOld transcript\n────────\n❯\n────────\nContext 0% used',
+                       captures[0].replace('❯'+chr(160), '❯ pending')):
+            with self.subTest(stale=screen):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(SCREEN=screen)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_working_metadata_requires_claude_and_the_pinned_terminal(self):
         result = self.run_dispatch(CLAUDE_SPINNER='1', WORKING_TERMINAL='term_replaced')
         self.assertNotEqual(result.returncode, 0)
