@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 nonisolated struct StableMoveIdentity: Codable, Equatable, Sendable {
     let volumeUUID: String
@@ -14,6 +15,8 @@ nonisolated struct MoveJournalEntry: Codable, Sendable {
     let identity: StableMoveIdentity
     let timestamp: Date
     var outcome: Outcome
+    // Optional so version-1 journals written by older builds still decode.
+    var originalParentIdentity: StableMoveIdentity? = nil
 }
 
 nonisolated struct MoveJournal: Codable, Sendable {
@@ -173,11 +176,34 @@ extension FileOperations {
     }
 }
 
-nonisolated enum UndoMoveError: Error { case changed, originalFolder }
+nonisolated enum UndoMoveError: Error { case changed, originalFolder, originalFolderReplaced }
 
 extension MoveJournal {
     nonisolated func undoEntries(at now: Date) -> [MoveJournalEntry] {
         guard !inProgress else { return [] }
         return entries.filter { $0.outcome == .moved && $0.timestamp <= now && now.timeIntervalSince($0.timestamp) < 86400 }
+    }
+}
+
+
+extension FileOperations {
+    /// Check the lexical parent without following a final symlink, then pin the
+    /// resulting identity through the existing descriptor-based move engine.
+    nonisolated func originalUndoDirectory(_ url: URL, expected: StableMoveIdentity?) throws -> (URL, FileIdentity) {
+        var info = stat()
+        let status = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return Int32(-1) }
+            return lstat(path, &info)
+        }
+        guard status == 0, (info.st_mode & S_IFMT) == S_IFDIR else {
+            throw UndoMoveError.originalFolderReplaced
+        }
+        let identity = FileIdentity(volume: VolumeIdentity(rawValue: NSNumber(value: info.st_dev).uint64Value), fileNumber: info.st_ino)
+        let observed = try stableMoveIdentity(of: url)
+        guard expected == nil || observed == expected else { throw UndoMoveError.originalFolderReplaced }
+        let canonical = try url.canonicalMoveDirectory().standardizedFileURL
+        guard try fileIdentity(of: canonical) == identity,
+              try stableMoveIdentity(of: canonical) == observed else { throw UndoMoveError.originalFolderReplaced }
+        return (canonical, identity)
     }
 }
