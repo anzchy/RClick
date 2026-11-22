@@ -32,7 +32,7 @@ struct AppPresetsTests {
         #expect(AppPresets.resolveOpenTargets(appPath: nil, explicit: true, targetPaths: targets).map(\.url) == [root, root, missing])
         #expect(AppPresets.resolveOpenTargets(appPath: nil, explicit: nil, targetPaths: targets).map(\.url) == [file, root, missing])
         #expect(AppPresets.resolveOpenTargets(appPath: nil, explicit: true, targetPaths: []).isEmpty)
-        let encodedFile = file.path.replacingOccurrences(of: " ", with: "%20")
+        let encodedFile = file.absoluteString
         let resolved = AppPresets.resolveOpenTargets(appPath: nil, explicit: true, targetPaths: [encodedFile])
         #expect(resolved.first?.path == file.path)
         #expect(resolved.first?.url == root)
@@ -44,5 +44,23 @@ struct AppPresetsTests {
         let dark = try #require(MenuSymbolIcon.image(named: "terminal", pointSize: 16, isDark: true))
         #expect(light !== dark)
         #expect(dark === MenuSymbolIcon.image(named: "terminal", pointSize: 16, isDark: true))
+    }
+}
+
+
+extension AppPresetsTests {
+    @Test func openTargetsPreserveRawPercentNamesAndDecodeOnlyFileURLs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for name in ["100%41.txt", "50% off %20.txt", "only%42.txt"] {
+            let file = root.appendingPathComponent(name)
+            try Data("raw".utf8).write(to: file)
+            let resolved = AppPresets.resolveOpenTargets(appPath: nil, explicit: false, targetPaths: [file.path, file.absoluteString])
+            #expect(resolved.map(\.url) == [file, file])
+            #expect(resolved.map(\.path) == [file.path, file.path])
+            #expect(resolved.allSatisfy { FileManager.default.fileExists(atPath: $0.url.path) })
+            #expect(AppPresets.resolveOpenTargets(appPath: nil, explicit: true, targetPaths: [file.path]).first?.url == root)
+        }
     }
 }
