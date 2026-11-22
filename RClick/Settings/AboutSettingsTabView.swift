@@ -138,10 +138,8 @@ struct AboutSettingsTabView: View {
 
     private var communitySection: some View {
         Section {
-            LabeledContent {
-                Button(AppLocalization.localized("RClick on GitHub")) {
-                    updateManager.openRepositoryPage()
-                }
+            Button {
+                updateManager.openRepositoryPage()
             } label: {
                 HStack(spacing: 6) {
                     Image("github")
