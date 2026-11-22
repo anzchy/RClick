@@ -73,7 +73,7 @@ def fresh_claude(screen):
 
 
 def live_status(screen):
-    # Only the row immediately above the LAST composer belongs to current activity.
+    # Inspect the activity block immediately above the LAST composer.
     # A status-looking transcript line or anything inside the composer is not evidence.
     lines = screen.splitlines()
     glyph = '›' if args.kind == 'codex' else '❯'
@@ -98,7 +98,13 @@ def live_status(screen):
         return False
     if args.kind == 'codex':
         return bool(re.fullmatch(r'• Working \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])* • esc to interrupt\)', above[-1]))
-    return bool(re.fullmatch(r'[✻✽✶✳✢·] .+… \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])* · [↑↓↕] [0-9.,kK]+ tokens(?: · .+)?\)', above[-1]))
+    # Claude can render a tool tip or todo below its spinner. Walk only these
+    # continuation rows, never across user/tool history or a fresh welcome.
+    while above and re.match(r'^(?:⎿|[☐☑□✓])(?:\s|$)', above[-1]):
+        above.pop()
+    return bool(above and re.fullmatch(
+        r'[✻✽✶✳✢·] .+…(?: \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])*'
+        r'(?: · [↑↓↕] [0-9.,kK]+ tokens(?: · .+)?)?\))?', above[-1]))
 
 
 for name in ('agent', 'task', 'round'):
