@@ -516,7 +516,7 @@
       "name": "Action execution layer (serial executor, file operations, access lease)",
       "area": "Infrastructure",
       "process": ["app"],
-      "reachedBy": ["none (Delete Direct and Paste run on it, Cut uses the access lease; Undo, #11, is not built)"],
+      "reachedBy": ["none (Delete Direct and Paste run on it, Cut uses the access lease; Undo, #11, runs on it too)"],
       "default": "on",
       "paths": ["RClick/Runtime/ActionExecutor.swift", "RClick/Runtime/FileOperations.swift", "RClick/Runtime/AccessLease.swift", "RClick/Runtime/ActionStateProviding.swift"],
       "tests": ["RClickTests/ActionExecutorTests.swift", "RClickTests/FileOperationsTests.swift", "RClickTests/FaultInjectingFileOperationsTests.swift", "RClickTests/BookmarkAccessLeaserTests.swift"],
