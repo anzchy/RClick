@@ -151,3 +151,19 @@ extension PendingCutTests {
         }
     }
 }
+
+extension PendingCutTests {
+    @Test(arguments: [false, true])
+    func newFileGroupAndTemplateChildrenAreDisabledWithTheHost(_ online: Bool) throws {
+        let blank = NSMenuItem(title: "Blank", action: nil, keyEquivalent: "")
+        blank.isEnabled = online
+        let templates = NewFileMenuItem.makeGroupMenuItem(title: "Text", items: [blank], hostOnline: online)
+        let group = NewFileMenuItem.makeGroupMenuItem(title: "New File", items: [templates], hostOnline: online)
+        #expect(group.isEnabled == online)
+        #expect(templates.isEnabled == online)
+        let submenu = try #require(group.submenu)
+        #expect(!submenu.autoenablesItems)
+        #expect(submenu.items.count == 1)
+        #expect(submenu.items.first?.submenu?.items.first?.isEnabled == online)
+    }
+}
