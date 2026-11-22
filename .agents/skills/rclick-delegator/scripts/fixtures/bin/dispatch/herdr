@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+import json, os, sys
+if os.environ.get("RCLICK_FIXTURE_WARMUP") == "1": sys.exit(0)
+from pathlib import Path
+args = sys.argv[1:]
+log = Path(os.environ['CALLS'])
+previous = [json.loads(s) for s in log.read_text().splitlines()] if log.exists() else []
+with log.open('a') as f: f.write(json.dumps(args) + '\n')
+kind = os.environ['TEST_KIND']
+repo = os.environ['TEST_REPO']
+if args == ['pane', 'list']:
+    print(json.dumps({'id': 'cli:pane:list', 'result': {'type': 'pane_list', 'panes': [
+        {'pane_id': 'w1:p9', 'terminal_id': 'term_fresh', 'cwd': repo, 'foreground_cwd': repo,
+         'agent': 'claude', 'terminal_title_stripped': 'rclick-delegator'},
+        {'pane_id': 'w1:p2', 'terminal_id': 'term_worker', 'cwd': repo, 'foreground_cwd': repo,
+         'agent': kind}]}}))
+elif args[:2] == ['agent', 'get']:
+    prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
+    working = False
+    if prompts:
+        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
+        working = enters >= int(os.environ['ENTERS_NEEDED'])
+    if prompts and os.environ.get('MALFORMED_AGENT'):
+        print(json.dumps({'result': {'type': 'agent_info', 'agent': []}}))
+        sys.exit(0)
+    print(json.dumps({'result': {'type': 'agent_info', 'agent': {'pane_id': 'w1:p2',
+        'terminal_id': os.environ.get('WORKING_TERMINAL', 'term_worker') if working else 'term_worker', 'agent_status': 'working' if working else 'idle'}}}, separators=(',', ':')))
+elif args[:2] == ['pane', 'send-text'] and args[3] not in ('/new', '/clear') and os.environ.get('SEND_SIGNAL'):
+    import signal
+    os.kill(os.getppid(), getattr(signal, os.environ['SEND_SIGNAL']))
+elif args[:2] == ['pane', 'get']:
+    print(json.dumps({'result': {'pane': {'agent_session': {'value': 'session'}}}}))
+elif args[:2] == ['pane', 'read']:
+    prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
+    if prompts:
+        if os.environ.get('SCREEN'):
+            print(os.environ['SCREEN'])
+            sys.exit(0)
+        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
+        print(('✻ Thinking… (1s · ↓ 12 tokens)\n────────────────────\n❯\n────────────────────\nContext 1% used' if kind == 'claude' else '• Working (1s • esc to interrupt)\n\n› Ask Codex to do anything\n\nContext 1% used') if enters >= int(os.environ['ENTERS_NEEDED']) else 'idle: prompt waiting')
+    elif kind == 'codex':
+        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
+        if enters < 2: print('Where should the new conversation run?')
+        else: print('>_ OpenAI Codex (v0.167.0)\n' + repo + '\n› Ask Codex to do anything\nContext 0% used')
+    else: print(os.environ.get('CLAUDE_RESET_SCREEN', 'Claude Code v2.1.310\n\n────────────────────\n❯\n────────────────────\n' + os.environ.get('CLAUDE_FOOTER', 'Context 0% used')))
