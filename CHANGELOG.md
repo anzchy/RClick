@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
 
 ### Fixed
+- Keep Paste hidden on selected packages, allow writable/searchable Drop Box destinations, and discard cut entries whose parent was replaced by a file
+- Pin Paste source parents as well as destinations so an ancestor swap cannot substitute another item at rename
 - Disable the entire New File submenu while the main app is offline
 - Report vanished cut items as “Changed since cut” and remove their stale clipboard entries, clearing the cut marker when no retryable items remain
 - Show Paste (move here) on a single folder or the window background, and hide it on file and multiple-selection menus

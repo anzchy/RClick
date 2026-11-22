@@ -130,6 +130,11 @@ extension FileOperations {
                                 throw PasteMoveError.destinationChanged
                             }
                         } catch { throw PasteMoveError.destinationChanged }
+                        // F_GETPATH is a snapshot, not an ancestry lock. Redirects to
+                        // replacement directories are closed; relocation of this same
+                        // open destination after the last read (even into Trash) is not.
+                        // In that residual window the move succeeds and the lexical
+                        // journal destination is stale; #11 Undo must match by identity.
                         try exclusiveRename(from: from, to: to, sourceDirectory: sourceDirectory, directory: directory)
                         state.moved = true
                         return true
