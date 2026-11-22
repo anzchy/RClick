@@ -156,7 +156,7 @@ struct PasteActionServiceTests {
         let good = try f.file("good.txt"), missing = try f.file("missing.txt")
         await f.cut([good, missing])
         let old = f.board.changeCount
-        try FileManager.default.removeItem(at: missing)
+        f.operations.failRename(missing, with: .EACCES)
         await f.paste()
         #expect(try Data(contentsOf: f.destination.appendingPathComponent("good.txt")) == Data("original".utf8))
         #expect(f.service.pendingCut?.paths == [missing.path])
@@ -492,7 +492,7 @@ struct PasteActionServiceTests {
         let f = try Fixture(); defer { f.clean() }
         let good = try f.file("good.txt"), missing = try f.file("missing.txt")
         await f.cut([good, missing])
-        try FileManager.default.removeItem(at: missing)
+        f.operations.failRename(missing, with: .EACCES)
         let signals = Counter()
         let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: f.service, queue: nil) { _ in
             signals.value.withLock { $0 += 1 }
@@ -511,7 +511,7 @@ struct PasteActionServiceTests {
         let f = try Fixture(); defer { f.clean() }
         let first = try f.file(), second = try f.file("second.txt")
         await f.cut(exit == "partial" ? [first, second] : [first])
-        if exit == "partial" { try FileManager.default.removeItem(at: second) }
+        if exit == "partial" { f.operations.failRename(second, with: .EACCES) }
         if exit == "refusal" { f.operations.refuseDestination(f.destination, reason: .trash) }
         f.permission.allowed = false
         var operation: Task<Void, Never>?

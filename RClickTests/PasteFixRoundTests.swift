@@ -285,3 +285,32 @@ extension PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: item.path))
     }
 }
+
+extension PasteActionServiceTests {
+    @Test(arguments: [false, true])
+    func vanishedCutItemsReportChangedAndNeverLeaveAnOrphanMarker(_ mixed: Bool) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let gone = try f.file("gone.txt")
+        let retry = try f.file("retry.txt")
+        let good = try f.file("good.txt")
+        await f.cut(mixed ? [gone, retry, good] : [gone])
+        try FileManager.default.removeItem(at: gone)
+        if mixed { f.operations.failRename(retry, with: .EACCES) }
+        await f.paste()
+        #expect(f.warnings.first?.contains("gone.txt: Changed since cut") == true)
+        if mixed {
+            #expect(f.service.pendingCut?.paths == [retry.path])
+            #expect(f.board.pasteboardItems?.count == 1)
+            #expect(f.board.pasteboardItems?.first?.string(forType: .fileURL) == retry.absoluteString)
+            #expect(f.board.types?.contains(PendingCut.markerType) == true)
+            #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("good.txt").path))
+            #expect(f.journal.load()?.entries.count == 1)
+        } else {
+            #expect(f.service.pendingCut == nil)
+            #expect(f.board.pasteboardItems?.isEmpty != false)
+            #expect(f.board.types?.contains(PendingCut.markerType) != true)
+            #expect(f.board.types?.contains(PendingCut.sourceType) != true)
+        }
+        #expect(f.leaser.balance == 0)
+    }
+}
