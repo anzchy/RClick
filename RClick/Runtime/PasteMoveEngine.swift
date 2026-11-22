@@ -22,7 +22,10 @@ extension SystemFileOperations {
 
 extension FileOperations {
     nonisolated func openMoveDirectory(_ url: URL) throws -> Int32 {
-        let descriptor = url.withUnsafeFileSystemRepresentation { open($0!, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW) }
+        let descriptor = try url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { throw PasteMoveError.invalidDestination }
+            return open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        }
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         return descriptor
     }
