@@ -263,7 +263,8 @@ try:
                 continue
             break
         else:
-            raise RuntimeError('Claude reset did not confirm Context 0% after 3 Enter attempts; pane tail:\n' + screen[-4000:])
+            raise RuntimeError('Claude reset did not confirm Context 0% after 3 Enter attempts: '
+                               + claude_freshness_reason(screen) + '; pane tail:\n' + screen[-4000:])
     run(['herdr', 'pane', 'send-text', args.pane, prompt])
     # Each Enter gets ten reads to become Working; at most three submissions.
     for submission in range(3):

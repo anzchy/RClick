@@ -412,6 +412,18 @@ class DispatchTests(unittest.TestCase):
                 self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
+    def test_reset_failure_explains_classifier_rejection(self):
+        screen = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-after-clear.txt').read_text()
+        for bad, reason in ((screen.replace('0%', '3%'), 'Context footer is not zero'),
+                            (screen.replace('❯ /clear', '❯ /clear\n⏺ Read file'), 'transcript content after /clear'),
+                            ('❯ /clear', 'missing Claude Code welcome banner')):
+            with self.subTest(reason=reason):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(CLAUDE_RESET_SCREEN=bad)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('after 3 Enter attempts: ' + reason + '; pane tail:', result.stderr)
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_agent_pane_freshness_and_transcript_mutations(self):
         fixtures = SCRIPTS / 'fixtures/claude-screens'
         for name in ('claude-fresh-agent-pane-after-clear.txt', 'claude-fail-r4-raw.txt'):
