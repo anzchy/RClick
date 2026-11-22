@@ -37,7 +37,7 @@ struct RClickApp: App {
     @StateObject private var cutWarnings = CutWarningState.shared
 
     @StateObject private var updateManager = UpdateManager(
-        owner: "wflixu",
+        owner: "anzchy",
         repo: "RClick",
         currentVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
     )

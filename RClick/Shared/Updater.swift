@@ -121,7 +121,7 @@ class GitHubReleaseChecker {
     }
     
     // 获取最新release
-    func fetchLatestRelease() async throws -> GitHubRelease {
+    func fetchLatestRelease() async throws -> GitHubRelease? {
         let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases/latest")!
         print(url)
         var request = URLRequest(url: url)
@@ -129,9 +129,18 @@ class GitHubReleaseChecker {
         
         let (data, response) = try await client(request)
         
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
+        // GitHub returns 404 until the fork publishes its first stable release.
+        if httpResponse.statusCode == 404 || httpResponse.statusCode == 204 {
+            return nil
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let feed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if feed == "" || feed == "[]" { return nil }
         
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -145,7 +154,7 @@ class GitHubReleaseChecker {
     // 于是断网会被报成「已是最新」。三种情况分开，界面才可能说实话。
     func checkForUpdate(currentVersion: String, includePrereleases: Bool = false) async -> UpdateCheckResult {
         do {
-            let latestRelease = try await fetchLatestRelease()
+            guard let latestRelease = try await fetchLatestRelease() else { return .upToDate }
 
             // 草稿版和预发布版不算可更新版本，但这是一次成功的检查
             if latestRelease.draft || (!includePrereleases && latestRelease.prerelease) {
