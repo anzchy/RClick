@@ -511,8 +511,8 @@ extension OpenWithApp {
 
 extension PendingCut {
     /// Package directories are Finder files. Symlinks conservatively remain hidden.
-    nonisolated static func isPasteFolder(_ values: URLResourceValues?) -> Bool {
-        values?.isDirectory == true && values?.isPackage != true
+    nonisolated static func isPasteFolder(_ values: URLResourceValues?, selectionCount: Int) -> Bool {
+        selectionCount == 1 && values?.isDirectory == true && values?.isPackage != true
     }
 
     /// Finder supplies directory metadata; the render policy itself performs no I/O.
