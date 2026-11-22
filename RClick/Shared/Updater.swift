@@ -18,7 +18,7 @@ struct GitHubRelease: Codable, Identifiable {
     let body: String
     let draft: Bool
     let prerelease: Bool
-    let publishedAt: Date
+    let publishedAt: Date?
     let assets: [Asset]
     let htmlUrl: String
     
@@ -96,7 +96,7 @@ class UpdatePreferences: ObservableObject {
 /// 一次更新检查的结果。
 ///
 /// 以前 `checkForUpdate` 返回 `GitHubRelease?`，那一个 `nil` 同时背着三种含义：
-/// 网络失败、最新 release 是草稿/预发布、确实已是最新。而 `catch` 又把真实的网络
+/// 网络失败、没有已发布版本、确实已是最新。而 `catch` 又把真实的网络
 /// 错误吞成一句 `print`，上层拿到 `nil` 只能一律当成「已是最新」——所以断网会被
 /// 报成「已是最新」。三种情况不拆开，界面就没法说实话。
 enum UpdateCheckResult {
@@ -122,8 +122,7 @@ class GitHubReleaseChecker {
     
     // 获取最新release
     func fetchLatestRelease() async throws -> GitHubRelease? {
-        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases/latest")!
-        print(url)
+        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases?per_page=10")!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         
@@ -132,7 +131,7 @@ class GitHubReleaseChecker {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
-        // GitHub returns 404 until the fork publishes its first stable release.
+        // GitHub returns 404 until the fork publishes its first release.
         if httpResponse.statusCode == 404 || httpResponse.statusCode == 204 {
             return nil
         }
@@ -144,22 +143,21 @@ class GitHubReleaseChecker {
         
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(GitHubRelease.self, from: data)
+        // The fork publishes prereleases. Ignore drafts and choose by version,
+        // rather than relying on GitHub's publication order or stable-only latest API.
+        return try decoder.decode([GitHubRelease].self, from: data)
+            .filter { !$0.draft }
+            .max { Version.compare($0.version, $1.version) == .orderedAscending }
     }
 
     // 检查是否需要更新。
     // 返回枚举而不是 `GitHubRelease?`：那个 `nil` 原来同时背着「网络失败」
-    // 「最新 release 是草稿或预发布」「确实已是最新」三种含义，而 `catch` 又把
+    // 「没有已发布版本」「确实已是最新」三种含义，而 `catch` 又把
     // 真实的网络错误吞成一句 `print`，上层只能一律当成「已是最新」——
     // 于是断网会被报成「已是最新」。三种情况分开，界面才可能说实话。
-    func checkForUpdate(currentVersion: String, includePrereleases: Bool = false) async -> UpdateCheckResult {
+    func checkForUpdate(currentVersion: String) async -> UpdateCheckResult {
         do {
             guard let latestRelease = try await fetchLatestRelease() else { return .upToDate }
-
-            // 草稿版和预发布版不算可更新版本，但这是一次成功的检查
-            if latestRelease.draft || (!includePrereleases && latestRelease.prerelease) {
-                return .upToDate
-            }
 
             if Version.compare(currentVersion, latestRelease.version) == .orderedAscending {
                 return .updateAvailable(latestRelease)

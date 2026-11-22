@@ -10,14 +10,14 @@ struct UpdateCheckerTests {
         let checker = GitHubReleaseChecker(owner: "anzchy", repo: "RClick") { request in
             let url = request.url!
             paths.append(url.path)
-            guard url.path == "/repos/anzchy/RClick/releases/latest" else {
+            guard url.path == "/repos/anzchy/RClick/releases" else {
                 Issue.record("Unexpected repository/stars request")
                 throw URLError(.unsupportedURL)
             }
             return (Data(), HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil)!)
         }
         _ = await checker.checkForUpdate(currentVersion: "2.0.0")
-        #expect(paths == ["/repos/anzchy/RClick/releases/latest"])
+        #expect(paths == ["/repos/anzchy/RClick/releases"])
     }
     private func checker(status: Int = 200, body: String) -> GitHubReleaseChecker {
         GitHubReleaseChecker(owner: "anzchy", repo: "RClick") { request in
@@ -44,23 +44,46 @@ struct UpdateCheckerTests {
         }
     }
 
-    private func release(_ version: String) -> String {
+    private func release(_ version: String, draft: Bool = false, prerelease: Bool = false) -> String {
         """
         {"id":1,"tag_name":"v\(version)","name":"Release","body":"Notes",
-         "draft":false,"prerelease":false,"published_at":"2026-11-21T00:00:00Z",
+         "draft":\(draft),"prerelease":\(prerelease),"published_at":"2026-11-21T00:00:00Z",
          "assets":[],"html_url":"https://github.com/anzchy/RClick/releases/tag/v\(version)"}
         """
     }
 
     @Test func olderReleaseIsUpToDate() async {
-        let result = await checker(body: release("1.0.0")).checkForUpdate(currentVersion: "2.0.0")
+        let result = await checker(body: "[\(release("1.0.0"))]").checkForUpdate(currentVersion: "2.0.0")
         guard case .upToDate = result else { Issue.record("Older release offered as update"); return }
     }
 
     @Test func newerReleaseIsAvailable() async {
-        let result = await checker(body: release("3.0.0")).checkForUpdate(currentVersion: "2.0.0")
+        let result = await checker(body: "[\(release("3.0.0"))]").checkForUpdate(currentVersion: "2.0.0")
         guard case .updateAvailable(let release) = result else { Issue.record("Newer release missing"); return }
         #expect(release.version == "3.0.0")
+    }
+
+    @Test func prereleaseOnlyFeedOffersNewerRelease() async {
+        let result = await checker(body: "[\(release("3.0.0", prerelease: true))]")
+            .checkForUpdate(currentVersion: "2.0.0")
+        guard case .updateAvailable(let release) = result else {
+            Issue.record("Newer prerelease missing"); return
+        }
+        #expect(release.version == "3.0.0")
+        #expect(release.prerelease)
+    }
+
+    @Test func draftOnlyFeedIsUpToDate() async {
+        let result = await checker(body: "[\(release("9.0.0", draft: true))]")
+            .checkForUpdate(currentVersion: "2.0.0")
+        guard case .upToDate = result else { Issue.record("Draft offered as update"); return }
+    }
+
+    @Test func highestVersionWinsRegardlessOfFeedOrder() async {
+        let feed = "[\(release("3.0.0")),\(release("9.0.0", draft: true)),\(release("4.0.0", prerelease: true)),\(release("1.0.0"))]"
+        let result = await checker(body: feed).checkForUpdate(currentVersion: "2.0.0")
+        guard case .updateAvailable(let release) = result else { Issue.record("Highest release missing"); return }
+        #expect(release.version == "4.0.0")
     }
 
     @Test func malformedFeedFails() async {
