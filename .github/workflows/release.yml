@@ -18,10 +18,10 @@ jobs:
     runs-on: macos-latest
     env:
       APP_NAME: RClick
-      APP_BUNDLE_ID: cn.wflixu.RClick
+      APP_BUNDLE_ID: cn.anzchy.RClick
       EXTENSION_NAME: FinderSyncExt
-      EXTENSION_BUNDLE_ID: cn.wflixu.RClick.FinderSyncExt
-      APP_GROUP_ID: group.cn.wflixu.RClick
+      EXTENSION_BUNDLE_ID: cn.anzchy.RClick.FinderSyncExt
+      APP_GROUP_ID: group.cn.anzchy.RClick
       SCHEME: RClick
       PROJECT: RClick.xcodeproj
     steps:
