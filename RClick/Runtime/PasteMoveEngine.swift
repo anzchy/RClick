@@ -134,8 +134,10 @@ extension FileOperations {
                         if let expectedStable {
                             var info = stat()
                             let status = try from.withMoveName { fstatat(sourceDirectory, $0, &info, AT_SYMLINK_NOFOLLOW) }
-                            let birth = Date(timeIntervalSince1970: Double(info.st_birthtimespec.tv_sec)
-                                + Double(info.st_birthtimespec.tv_nsec) / 1_000_000_000)
+                            // Match Foundation’s reference-date conversion without losing
+                            // precision by first rounding the larger Unix timestamp.
+                            let birth = Date(timeIntervalSinceReferenceDate: Double(info.st_birthtimespec.tv_sec)
+                                - Date.timeIntervalBetween1970AndReferenceDate + Double(info.st_birthtimespec.tv_nsec) / 1_000_000_000)
                             guard status == 0, info.st_ino == expectedStable.inode,
                                   birth == expectedStable.creationDate,
                                   try volumeUUID(of: directoryPath(sourceDirectory).appendingPathComponent(from.lastPathComponent)) == expectedStable.volumeUUID else {

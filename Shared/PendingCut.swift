@@ -53,7 +53,10 @@ struct PendingCut {
         let cut: Bool
         let cutEnabled: Bool
         let paste: Bool
-        let undo = false
+        let undo: Bool
+        nonisolated init(cut: Bool, cutEnabled: Bool, paste: Bool, undo: Bool = false) {
+            self.cut = cut; self.cutEnabled = cutEnabled; self.paste = paste; self.undo = undo
+        }
     }
 
     /// Finder context boundary: a container click must never borrow a selection.
@@ -75,7 +78,9 @@ struct PendingCut {
         let paste = config.actions.contains { $0.id == "cut" }
             && config.cutChangeCount == currentChangeCount && config.cutItemCount > 0
             && (menuKind == .contextualContainer || (menuKind == .contextualItems && selection.count == 1))
-        return MenuVisibility(cut: cut, cutEnabled: cut && hostOnline, paste: paste)
+        let undo = config.actions.contains { $0.id == "cut" } && config.undoMoveAvailable
+            && (menuKind == .contextualContainer || (menuKind == .contextualItems && !selection.isEmpty))
+        return MenuVisibility(cut: cut, cutEnabled: cut && hostOnline, paste: paste, undo: undo)
     }
 
 }

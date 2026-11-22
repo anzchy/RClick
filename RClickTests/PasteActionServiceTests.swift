@@ -772,3 +772,28 @@ extension PasteActionServiceTests {
         #expect(try Data(contentsOf: f.destination.appendingPathComponent(file.lastPathComponent)) == Data("occupied".utf8))
     }
 }
+
+extension PasteActionServiceTests {
+    @Test func undoAvailabilityUsesClockAndPublishesAfterPasteUndoAndLaunch() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        let signals = Counter()
+        let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: f.service, queue: nil) { _ in
+            signals.value.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        await f.cut([file])
+        #expect(!f.service.undoMoveAvailable)
+        #expect(signals.value.withLock { $0 } >= 1) // Launch recovery completed.
+        await f.paste()
+        #expect(f.service.undoMoveAvailable)
+        let afterPaste = signals.value.withLock { $0 }
+        #expect(afterPaste >= 2)
+        f.clock.date.withLock { $0.addTimeInterval(86400) }
+        #expect(!f.service.undoMoveAvailable)
+        await f.service.actionHandler(rid: "undo-move", target: [], trigger: "ctx-container")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(f.warnings.last?.contains("no move to undo") == true)
+        #expect(signals.value.withLock { $0 } > afterPaste)
+    }
+}

@@ -524,7 +524,7 @@ extension PendingCut {
             currentChangeCount: currentChangeCount, hostOnline: hostOnline)
         let folderTarget = menuKind == .contextualContainer || selectedItemIsDirectory
         return MenuVisibility(cut: visibility.cut, cutEnabled: visibility.cutEnabled,
-            paste: visibility.paste && folderTarget)
+            paste: visibility.paste && folderTarget, undo: visibility.undo)
     }
 }
 
