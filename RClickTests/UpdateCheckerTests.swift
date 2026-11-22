@@ -19,6 +19,57 @@ struct UpdateCheckerTests {
         _ = await checker.checkForUpdate(currentVersion: "2.0.0")
         #expect(paths == ["/repos/anzchy/RClick/releases"])
     }
+    @Test func defaultManagerUsesForkReleaseSource() async {
+        #expect(UpdateSource.owner == "anzchy")
+        #expect(UpdateSource.repo == "RClick")
+        var urls: [String] = []
+        let manager = UpdateManager(currentVersion: "2.0.0") { request in
+            urls.append(request.url!.absoluteString)
+            return (Data("[]".utf8), HTTPURLResponse(url: request.url!, statusCode: 200,
+                                                     httpVersion: nil, headerFields: nil)!)
+        }
+        await manager.checkForUpdates()
+        #expect(urls == ["https://api.github.com/repos/anzchy/RClick/releases?per_page=10"])
+        #expect(manager.isUpToDate)
+        #expect(manager.updateError == nil)
+        #expect(manager.showUpdateSheet)
+    }
+
+    @Test func managerRefreshAndAboutCheckNeverRequestStarsEvenWhenClientFails() async {
+        var urls: [String] = []
+        let manager = UpdateManager(currentVersion: "2.0.0") { request in
+            urls.append(request.url!.absoluteString)
+            throw URLError(.notConnectedToInternet)
+        }
+        // Normal refresh and the forced check used by the About button.
+        // About has no load task or other network-loading lifecycle path.
+        await manager.checkForUpdates()
+        #expect(manager.updateError != nil)
+        #expect(!manager.isChecking)
+        await manager.checkForUpdates(force: true)
+        #expect(manager.updateError != nil)
+        #expect(!manager.isChecking)
+        #expect(!manager.isUpToDate)
+        #expect(manager.availableUpdate == nil)
+        #expect(urls == [
+            "https://api.github.com/repos/anzchy/RClick/releases?per_page=10",
+            "https://api.github.com/repos/anzchy/RClick/releases?per_page=10"
+        ])
+    }
+
+    @Test(arguments: [404, 204])
+    func managerWithNoReleaseShowsUpToDateWithoutError(status: Int) async {
+        let manager = UpdateManager(currentVersion: "2.0.0") { request in
+            (Data(), HTTPURLResponse(url: request.url!, statusCode: status,
+                                     httpVersion: nil, headerFields: nil)!)
+        }
+        await manager.checkForUpdates(force: true)
+        #expect(manager.isUpToDate)
+        #expect(manager.updateError == nil)
+        #expect(manager.availableUpdate == nil)
+        #expect(manager.showUpdateSheet)
+    }
+
     private func checker(status: Int = 200, body: String) -> GitHubReleaseChecker {
         GitHubReleaseChecker(owner: "anzchy", repo: "RClick") { request in
             (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: status,
