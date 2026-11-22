@@ -177,6 +177,7 @@ nonisolated enum UndoMoveError: Error { case changed, originalFolder }
 
 extension MoveJournal {
     nonisolated func undoEntries(at now: Date) -> [MoveJournalEntry] {
-        entries.filter { $0.outcome == .moved && $0.timestamp <= now && now.timeIntervalSince($0.timestamp) < 86400 }
+        guard !inProgress else { return [] }
+        return entries.filter { $0.outcome == .moved && $0.timestamp <= now && now.timeIntervalSince($0.timestamp) < 86400 }
     }
 }
