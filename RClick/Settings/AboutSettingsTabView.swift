@@ -178,5 +178,5 @@ struct AboutSettingsTabView: View {
 
 #Preview {
     AboutSettingsTabView()
-        .environmentObject(UpdateManager(owner: "anzchy", repo: "RClick", currentVersion: "1.0.0"))
+        .environmentObject(UpdateManager(currentVersion: "1.0.0"))
 }

@@ -91,6 +91,12 @@ class UpdatePreferences: ObservableObject {
     }
 }
 
+/// Shared production identity for update checks and repository links.
+enum UpdateSource {
+    static let owner = "anzchy"
+    static let repo = "RClick"
+}
+
 // MARK: - GitHub API 服务
 
 /// 一次更新检查的结果。
@@ -200,8 +206,12 @@ class UpdateManager: ObservableObject {
         return FileManager.default.fileExists(atPath: receiptPath)
     }
 
-    init(owner: String, repo: String, currentVersion: String) {
-        self.githubChecker = GitHubReleaseChecker(owner: owner, repo: repo)
+    init(owner: String = UpdateSource.owner, repo: String = UpdateSource.repo,
+         currentVersion: String,
+         client: @escaping (URLRequest) async throws -> (Data, URLResponse) = {
+             try await URLSession.shared.data(for: $0)
+         }) {
+        self.githubChecker = GitHubReleaseChecker(owner: owner, repo: repo, client: client)
         self.preferences = UpdatePreferences()
         self.currentVersion = currentVersion
         self.owner = owner
