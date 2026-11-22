@@ -216,6 +216,35 @@ def agent_info():
     return record
 
 
+def confirm_started(screen, target):
+    # A layout mismatch is not evidence that a submitted task failed to start.
+    # Require the same pinned pane/terminal for the independent metadata proof.
+    envelope = object_value(json.loads(run(['herdr', 'pane', 'get', args.pane])), 'pane envelope')
+    info = object_value(envelope.get('result'), 'pane result')
+    pane = object_value(info.get('pane'), 'pane record')
+    if pane.get('pane_id') != args.pane or pane.get('terminal_id') != target.get('terminal_id'):
+        raise RuntimeError('start confirmation has a changed pane/terminal identity')
+    status = pane.get('agent_status')
+    if isinstance(status, dict):
+        status = status.get('value')
+    if status == 'working':
+        return 'confirmed working pane status'
+    # A fresh reset preceded this send. Match this exact prompt echo, so an old
+    # spinner or a prompt still sitting in the composer cannot prove startup.
+    glyph = '❯' if args.kind == 'claude' else '›'
+    lines = [line.strip() for line in screen.splitlines()]
+    echoes = [i for i, line in enumerate(lines) if line == glyph + ' ' + prompt]
+    if echoes:
+        for line in lines[echoes[-1] + 1:]:
+            if args.kind == 'claude' and (line.startswith('⏺ ') or re.fullmatch(
+                    r'[✻✽✶✳✢·] .+…(?: \([^)]+\))?', line)):
+                return 'confirmed activity after submitted prompt echo'
+            if args.kind == 'codex' and re.fullmatch(
+                    r'• Working \([0-9]+(?:[smh]|ms)(?: [0-9]+[smh])* • esc to interrupt\)', line):
+                return 'confirmed activity after submitted prompt echo'
+    return ''
+
+
 def terminate(signum, frame):
     raise SystemExit('terminated by signal ' + str(signum))
 
@@ -224,6 +253,8 @@ signal.signal(signal.SIGTERM, terminate)
 started = False
 succeeded = False
 listener_attempted = False
+prompt_sent = False
+screen = ''
 failure = ''
 listener = [sys.executable, os.environ.get('RCLICK_LISTENER', scripts / 'listen-notify.py')]
 try:
@@ -284,6 +315,7 @@ try:
             raise RuntimeError('Claude reset did not confirm Context 0% after 3 Enter attempts: '
                                + claude_freshness_reason(screen) + '; pane tail:\n' + screen[-4000:])
     run(['herdr', 'pane', 'send-text', args.pane, prompt])
+    prompt_sent = True
     # Each Enter gets ten reads to become Working; at most three submissions.
     for submission in range(3):
         send_keys()
@@ -308,6 +340,18 @@ except BaseException as error:
     if succeeded:
         raise
     failure = str(error)
+    if prompt_sent and isinstance(error, Exception) and 'changed pane/terminal identity' not in failure:
+        try:
+            confirmation = confirm_started(screen, target)
+        except Exception as confirmation_error:
+            failure += '; start confirmation failed: ' + str(confirmation_error)
+        else:
+            if confirmation:
+                succeeded = True
+                print('WARNING dispatch: screen classifier did not match; ' + confirmation
+                      + '; pane tail:\n' + screen[-4000:], file=sys.stderr)
+                print('DISPATCHED ' + event)
+                sys.exit(0)
     print('FAIL dispatch: ' + (failure or type(error).__name__), file=sys.stderr)
     sys.exit(1)
 finally:

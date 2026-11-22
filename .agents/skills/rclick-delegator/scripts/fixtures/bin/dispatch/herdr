@@ -29,7 +29,11 @@ elif args[:2] == ['pane', 'send-text'] and args[3] not in ('/new', '/clear') and
     import signal
     os.kill(os.getppid(), getattr(signal, os.environ['SEND_SIGNAL']))
 elif args[:2] == ['pane', 'get']:
-    print(json.dumps({'result': {'pane': {'agent_session': {'value': 'session'}}}}))
+    status = os.environ.get('PANE_STATUS', 'idle')
+    if os.environ.get('WRAPPED_PANE_STATUS') == '1': status = {'value': status}
+    print(json.dumps({'result': {'pane': {'pane_id': os.environ.get('PANE_ID', 'w1:p2'),
+        'terminal_id': os.environ.get('PANE_TERMINAL', 'term_worker'),
+        'agent_status': status, 'agent_session': {'value': 'session'}}}}))
 elif args[:2] == ['pane', 'read']:
     prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
     if prompts:

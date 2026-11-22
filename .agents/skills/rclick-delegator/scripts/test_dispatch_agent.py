@@ -412,6 +412,61 @@ class DispatchTests(unittest.TestCase):
                 self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
+    def test_classifier_miss_keeps_listener_when_pane_status_is_working(self):
+        for kind in ('claude', 'codex'):
+            for wrapped in ('0', '1'):
+                with self.subTest(kind=kind, wrapped=wrapped):
+                    self.log.unlink(missing_ok=True)
+                    result = self.run_dispatch(kind=kind, SCREEN='Unrecognized active layout',
+                                               PANE_STATUS='working', WRAPPED_PANE_STATUS=wrapped)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('DISPATCHED i61-test-r1-1120', result.stdout)
+                    self.assertIn('WARNING dispatch: screen classifier did not match; confirmed working pane status', result.stderr)
+                    self.assertIn('pane tail:\nUnrecognized active layout', result.stderr)
+                    self.assertEqual(self.calls()[-1], ['pane', 'get', 'w1:p2'])
+                    self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
+
+    def test_classifier_miss_uses_activity_after_this_prompt_echo(self):
+        echo = '❯ ' + self.prompt.read_text()
+        for activity in ('⏺ Writing report', '✢ Enchanting… (7s · ↓ 184 tokens)'):
+            with self.subTest(activity=activity):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(SCREEN=echo + '\n' + activity + '\nChanged chrome', PANE_STATUS='idle')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('DISPATCHED', result.stdout)
+                self.assertIn('confirmed activity after submitted prompt echo', result.stderr)
+                self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
+        for screen in ('✢ Enchanting… (7s · ↓ 184 tokens)\n' + echo,
+                       '❯ An older prompt\n⏺ Writing report', echo + '\nNo activity yet'):
+            with self.subTest(screen=screen):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(SCREEN=screen, PANE_STATUS='idle')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('DISPATCHED', result.stdout)
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_classifier_miss_checks_idle_status_before_stopping_listener(self):
+        result = self.run_dispatch(SCREEN='Idle layout', PANE_STATUS='idle', ENTERS_NEEDED='999')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('DISPATCHED', result.stdout)
+        calls = self.calls()
+        index = calls.index(['pane', 'send-text', 'w1:p2', self.prompt.read_text()])
+        self.assertEqual(sum(c[:2] == ['pane', 'send-keys'] for c in calls[index:]), 3)
+        self.assertEqual(sum(c[:2] == ['pane', 'read'] for c in calls[index:]), 30)
+        self.assertEqual(calls[-2:], [['pane', 'get', 'w1:p2'],
+                                    ['listener', 'stop', '--event', 'i61-test-r1-1120']])
+
+    def test_classifier_miss_does_not_accept_replaced_pane(self):
+        for key, value in (('PANE_TERMINAL', 'term_replaced'), ('PANE_ID', 'w1:p99')):
+            with self.subTest(key=key):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(SCREEN='❯ ' + self.prompt.read_text() + '\n⏺ Active',
+                                           PANE_STATUS='working', **{key: value})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('DISPATCHED', result.stdout)
+                self.assertIn('changed pane/terminal identity', result.stderr)
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_real_working_notice_and_chrome_variants(self):
         fixtures = SCRIPTS / 'fixtures/claude-screens'
         raw = (fixtures / 'claude-fail-r5-working-with-notice.txt').read_text()
