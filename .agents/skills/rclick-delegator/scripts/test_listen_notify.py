@@ -387,6 +387,58 @@ class ListenerTests(unittest.TestCase):
 
         return run
 
+    def test_letter_agent_and_delegator_start_and_deliver_round_trip(self):
+        root = self.root / "letter-events"
+        event = root / "letter-round"
+        args = ["start", "--event", "letter-round", "--task", "letter-round",
+            "--agent", "worker", "--agent-pane", "w1:pB", "--handoff", str(self.handoff),
+            "--handoff-marker", "letter-round", "--poll", "handoff", "--route", "claude-pane",
+            "--pane", "w1:pC", "--terminal-id", "term_123abc", "--cwd", "/tmp/rclick",
+            "--state-root", str(root)]
+        self.handoff.write_text("Report-Task: letter-round\nDONE\n")
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append(argv)
+            if argv[:3] == ["herdr", "agent", "get"]:
+                self.assertEqual(argv[3], "w1:pB")
+                return self.completed(argv, stdout=json.dumps({"result": {
+                    "type": "agent_info", "agent": {"pane_id": "w1:pB",
+                    "terminal_id": "term_worker", "agent_status": "done"}}}))
+            if argv == ["herdr", "pane", "list"]:
+                return self.completed(argv, stdout=json.dumps(self.pane_list(pane="w1:pC")))
+            if argv[:3] == ["herdr", "pane", "read"]:
+                self.assertEqual(argv[3], "w1:pC")
+                return self.completed(argv, stdout=claude_screen(EMPTY_BOX))
+            if argv[:3] == ["herdr", "pane", "run"]:
+                self.assertEqual(argv[3], "w1:pC")
+                self.assertEqual(argv[4], ": RCLICK_LISTENER_EVENT_letter-round")
+                return self.completed(argv)
+            self.assertEqual(Path(argv[0]).name, "poll-handoff.sh")
+            self.assertEqual(argv[-2:], ["w1:pB", "term_worker"])
+            return self.completed(argv, stdout="worker done")
+
+        start = listen_notify.start_listener
+        # Exercise real registration and CLI acknowledgement; only detached process launch is fake.
+        def start_without_process(event_dir, config):
+            return start(event_dir, config, launch=lambda *a, **k: type("Worker", (), {"pid": 99999999})())
+
+        output = io.StringIO()
+        with patch.object(listen_notify, "_resolve_agent", RESOLVE_AGENT), \
+                patch.object(listen_notify.subprocess, "run", side_effect=run), \
+                patch.object(listen_notify, "start_listener", side_effect=start_without_process), \
+                redirect_stdout(output):
+            self.assertEqual(listen_notify.main(args), 0)
+        self.assertTrue(output.getvalue().startswith("started event=letter-round "), output.getvalue())
+        config = json.loads((event / "config.json").read_text())
+        self.assertEqual(config["agent_pane"], "w1:pB")
+        self.assertEqual(config["destination"]["pane"], "w1:pC")
+        self.assertEqual(listen_notify.run_event(event, run=run), "delivered")
+        self.assertEqual(listen_notify.run_event(event, run=run), "already-delivered")
+        receipt = json.loads((event / "queue-receipt.json").read_text())
+        self.assertEqual(receipt["destination"]["pane"], "w1:pC")
+        self.assertEqual(sum(argv[:3] == ["herdr", "pane", "run"] for argv in calls), 1)
+
     def test_claude_route_checks_pane_then_sends_once_with_receipt(self):
         config = self.claude_config()
         calls = []
