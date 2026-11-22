@@ -45,6 +45,23 @@ class DispatchTests(unittest.TestCase):
                     'TEST_KIND': 'claude', 'TEST_ROLE': 'implementer', 'ENTERS_NEEDED': '1'}
         subprocess.run(['git', 'init', '-q', '-b', 'topic'], cwd=self.repo, check=True)
 
+    def test_check_fresh_accepts_alphanumeric_panes_and_rejects_junk(self):
+        for pane in ('w1:p3', 'w1:pB', 'w10:p12', 'w1:pAB', 'w2:pa9'):
+            with self.subTest(pane=pane):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(args=['--check-fresh', '--pane', pane, '--kind', 'claude'], RESET_ENTERS_NEEDED='0')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, 'FRESH\n')
+                self.assertEqual(self.calls(), [['pane', 'read', pane, '--source', 'recent-unwrapped', '--lines', '100']])
+        for pane in ('w1:p', 'w1:p-1', 'w1:p3;rm', 'w1:p 3', '', 'p3',
+                     'w1:pB/', ' w1:pB', 'w1:pB\n'):
+            with self.subTest(pane=pane):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(args=['--check-fresh', '--pane', pane, '--kind', 'claude'], RESET_ENTERS_NEEDED='0')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('--pane must be a herdr pane ID', result.stderr)
+                self.assertEqual(self.calls(), [])
+
     def test_inherited_reset_transport_overrides_are_removed(self):
         with patch.dict(os.environ, {'RCLICK_HERDR': '/nonexistent/herdr',
                                      'RCLICK_SLEEP': '/nonexistent/sleep'}):

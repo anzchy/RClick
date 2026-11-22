@@ -152,7 +152,7 @@ def live_status(screen):
         r'(?: · [↑↓↕] [0-9.,kK]+ tokens(?: · .+)?)?\))?', above[-1]))
 
 
-if not re.fullmatch(r'w[0-9]+:p[0-9]+', args.pane):
+if not re.fullmatch(r'w[0-9]+:p[0-9A-Za-z]+', args.pane):
     refuse('--pane must be a herdr pane ID')
 if args.check_fresh:
     if args.kind != 'claude':
