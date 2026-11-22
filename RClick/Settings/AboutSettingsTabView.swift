@@ -10,13 +10,11 @@ import SwiftUI
 
 struct AboutSettingsTabView: View {
     @EnvironmentObject var updateManager: UpdateManager
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Form {
             aboutSection
             communitySection
-            appsSection
         }
         .formStyle(.grouped)
     }
@@ -66,8 +64,11 @@ struct AboutSettingsTabView: View {
                     .foregroundStyle(updateStatus.color)
             }
         } footer: {
-            Text(appLocalized: "RClick is a right-click menu extension that allows you to add applications for opening folders and includes some common actions.")
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(appLocalized: "RClick is a right-click menu extension that allows you to add applications for opening folders and includes some common actions.")
+                Text(appLocalized: "RClick is a modified version of RClick by wflixu (https://github.com/wflixu/RClick), licensed under GPL-3.0.")
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -162,65 +163,6 @@ struct AboutSettingsTabView: View {
         }
     }
 
-    // MARK: - 更多应用
-
-    /// 作者的其他 App。仅在 About 页展示，不参与功能；链接直接开到 App Store。
-    private struct PromotedApp: Identifiable {
-        let id: String
-        let name: String
-        let icon: String
-        let summary: String
-        let appStoreURL: URL
-    }
-
-    private var promotedApps: [PromotedApp] {
-        [
-            PromotedApp(
-                id: "imonet",
-                name: "iMonet",
-                icon: "iMonetIcon",
-                summary: AppLocalization.localized("A mouse-first image viewer with animated GIF, APNG and WebP playback."),
-                appStoreURL: URL(string: "https://apps.apple.com/cn/app/imonet/id6770070921?mt=12")!
-            ),
-            PromotedApp(
-                id: "livecam",
-                name: "LiveCam",
-                icon: "LiveCamIcon",
-                summary: AppLocalization.localized("Show your avatar while recording your screen or live streaming."),
-                appStoreURL: URL(string: "https://apps.apple.com/cn/app/livecam/id6476108478?mt=12")!
-            ),
-        ]
-    }
-
-    private var appsSection: some View {
-        Section {
-            ForEach(promotedApps) { app in
-                LabeledContent {
-                    Button(AppLocalization.localized("View on the App Store")) {
-                        openURL(app.appStoreURL)
-                    }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(app.icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: 32, height: 32)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(app.name)
-                            Text(app.summary)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-        } header: {
-            Text(appLocalized: "More Apps")
-        }
-    }
-
     func getAppVersion() -> String {
         if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
             return version
@@ -238,5 +180,5 @@ struct AboutSettingsTabView: View {
 
 #Preview {
     AboutSettingsTabView()
-        .environmentObject(UpdateManager(owner: "wflixu", repo: "RClick", currentVersion: "1.0.0"))
+        .environmentObject(UpdateManager(owner: "anzchy", repo: "RClick", currentVersion: "1.0.0"))
 }
