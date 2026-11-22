@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
 
 ### Fixed
+- Show Paste (move here) on a single folder or the window background, and hide it on file and multiple-selection menus
 - Pin Paste destinations with an open directory descriptor, recheck their real location and refuse unsafe ancestor swaps before an exclusive move
 - Offer updates when GitHub release titles or notes are absent, including older releases in the feed
 - Use the app name for the shared warning window, including New File warnings

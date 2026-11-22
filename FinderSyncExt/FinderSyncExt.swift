@@ -376,13 +376,16 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
 
         let shouldReadCutSelection = menuKind == .contextualMenuForItems
             && config.actions.contains { $0.id == "cut" }
-        let cutSelection = shouldReadCutSelection
-            ? (FIFinderSyncController.default().selectedItemURLs() ?? []).map(\.path) : []
+        let cutURLs = shouldReadCutSelection ? (FIFinderSyncController.default().selectedItemURLs() ?? []) : []
+        let cutSelection = cutURLs.map(\.path)
+        let selectedItemIsDirectory = cutURLs.count == 1
+            && (try? cutURLs[0].resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         let cutChangeCount = NSPasteboard.general.changeCount
-        let cutVisibility = PendingCut.menuVisibility(
+        let cutVisibility = PendingCut.renderMenuVisibility(
             config: config, menuKind: menuKind == .contextualMenuForItems ? .contextualItems :
                 (menuKind == .contextualMenuForContainer ? .contextualContainer : nil),
-            selection: cutSelection, currentChangeCount: cutChangeCount, hostOnline: !offline
+            selection: cutSelection, selectedItemIsDirectory: selectedItemIsDirectory,
+            currentChangeCount: cutChangeCount, hostOnline: !offline
         )
         var visibleActions = config.actions.filter { $0.id != "cut" || cutVisibility.cut }
         if cutVisibility.paste {

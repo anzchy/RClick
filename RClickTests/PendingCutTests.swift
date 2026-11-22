@@ -132,3 +132,22 @@ struct PendingCutTests {
     }
 
 }
+
+extension PendingCutTests {
+    @Test func pasteRenderPolicyRequiresOneFolderOrTheBackground() {
+        let config = MenuConfigPayload(actions: [ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)],
+            cutChangeCount: 42, cutItemCount: 1)
+        let rows: [(MenuTrigger, [String], Bool, Bool)] = [
+            (.contextualItems, ["/file.txt"], false, false),
+            (.contextualItems, ["/folder"], true, true),
+            (.contextualContainer, [], false, true),
+            (.contextualItems, ["/folder", "/file.txt"], false, false),
+            (.contextualItems, ["/folder", "/other-folder"], true, false),
+        ]
+        for (kind, selection, directory, expected) in rows {
+            let result = PendingCut.renderMenuVisibility(config: config, menuKind: kind, selection: selection,
+                selectedItemIsDirectory: directory, currentChangeCount: 42, hostOnline: true)
+            #expect(result.paste == expected)
+        }
+    }
+}
