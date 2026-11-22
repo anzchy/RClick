@@ -335,8 +335,18 @@ delete its line in the same change.
     (`RClick/Runtime/UndoJournal.swift:61-66`); entries are kept for 24 hours. An unreadable journal is set aside
     when it can be renamed (`:74-80`); otherwise `load` throws and Paste moves nothing and lists the items with "The
     move journal could not be read or quarantined" (`RClick/Runtime/ActionService.swift:432`, `:446-448`, `:568`,
-    `:646`). A journal that cannot be saved stops the move and reports the items left (`:514-526`, `:647`). Nothing
-    reads the journal back to the user: Undo is not built (#11);
+    `:646`). A journal that cannot be saved stops the move and reports the items left (`:514-526`, `:647`).
+    **Undo last move (#11)** reads the journal back: the menu item "Undo last move" (action id `undo-move`, mapped to
+    the `cut` entity, so one "Cut & Paste" toggle) is offered only while the last Paste has `moved` entries younger
+    than 24 hours and the journal is not `inProgress` (`undoMoveAvailable` in the menu config, re-sent after Cut,
+    Paste, Undo and on launch; configs without the field decode as false). Undo runs on the move executor; for each
+    item it finds the object by its recorded stable identity (volume UUID, inode, creation date), checks the original
+    parent folder's identity with a no-follow `lstat` (a replaced, symlinked or deleted folder is refused with "The
+    original folder was replaced"; it is never recreated), and moves it back with the same pinned-descriptor engine
+    as Paste (`RENAME_EXCL`, numbered name on a clash). Items that are missing, changed or ambiguous are skipped and
+    listed; the record is cleared after one Undo. Known open points (audit r1/r2, #11): an interrupted Paste can
+    leave the older record offered; all-or-nothing folder grants; hard links pasted together are skipped; an item cut
+    directly from `/private/tmp` cannot be undone; Undo logs nothing;
   - a Quit during a Paste waits for it to finish, with a deadline (`RClick/RClickApp.swift:244-252`,
     `ActionService.deferTermination`);
   - its log lines hold counts and reasons only (`RClick/Runtime/MoveLogEvent.swift`).
@@ -362,8 +372,8 @@ delete its line in the same change.
   PASS into a package (refused, nothing moved); PASS Paste offered only while the pasteboard count matches (gone
   after a Copy Path); PASS the journal (counts only; a Paste that moved nothing does not replace the record).
   Observed: an item deleted before Paste is reported with a raw system message and no file URL is left on the
-  clipboard (#53). NOT VERIFIED: into the Trash, Quit during a move. Moves between disks (#10) and Undo (#11) were
-  not run.
+  clipboard (#53). NOT VERIFIED: into the Trash, Quit during a move. Moves between disks (#10) were
+  not run; Undo (#11) did not exist at that run and has NOT been device-tested.
 - **Gaps:** CHANGELOG [Unreleased] › Added says Finder/device validation and the Undo release gate remain pending;
   issue #48 makes #48, #10, #11 and #12 release blockers for a build containing Paste. Findings 5 and 6.
 
@@ -921,7 +931,7 @@ delete its line in the same change.
 - **What:** the seams #13 added for long file operations: a serial background executor, an injectable file-operation
   layer (move, copy, remove, volume and file identity, and the coordinated exclusive move Paste uses), and the access
   lease (`RClick/Runtime/ActionExecutor.swift`, `RClick/Runtime/FileOperations.swift`, `RClick/Runtime/AccessLease.swift`).
-  Delete Direct and Paste run on the executor; Cut and Paste hold the access lease. Undo (#11) is not built.
+  Delete Direct and Paste run on the executor; Cut and Paste hold the access lease. Undo (#11) runs on the same executor.
 - **Status:** `infrastructure`.
 - **Tests:** `ActionExecutorTests`, `FileOperationsTests`, `FaultInjectingFileOperationsTests`,
   `BookmarkAccessLeaserTests`.
@@ -955,5 +965,6 @@ delete its line in the same change.
 
 ## Not in the spine yet
 
-- **Undo last move** (#11): specified and ticketed, no code on main; the Paste journal records what it will need.
-  Add it to the spine in the PR that ships it.
+- **Undo last move** (#11): shipped with the PR that closes #11; described under `paste-move` above (it shares its
+  journal, engine, executor and menu config). Device validation is pending (#12). It is not a separate spine entry
+  yet: split it out when the doc gardener (#56) exists.
