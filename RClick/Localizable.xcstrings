@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "RClick is a modified version of RClick by wflixu (https://github.com/wflixu/RClick), licensed under GPL-3.0.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RClick is a modified version of RClick by wflixu (https://github.com/wflixu/RClick), licensed under GPL-3.0."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RClick 是基于 wflixu 的 RClick (https://github.com/wflixu/RClick) 修改的版本，采用 GPL-3.0 许可。"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RClick は wflixu の RClick (https://github.com/wflixu/RClick) を改変したバージョンで、GPL-3.0 ライセンスで提供されています。"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RClick es una versión modificada de RClick de wflixu (https://github.com/wflixu/RClick), bajo la licencia GPL-3.0."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RClick est une version modifiée de RClick de wflixu (https://github.com/wflixu/RClick), sous licence GPL-3.0."
+        }
+      }
+    }
+  },
   "Blank is unavailable because this format requires a template.": {
     "localizations": {
       "en": {
@@ -1449,41 +1483,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "……以及其他 %lld 项"
-          }
-        }
-      }
-    },
-    "A mouse-first image viewer with animated GIF, APNG and WebP playback." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A mouse-first image viewer with animated GIF, APNG and WebP playback."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un visor de imágenes centrado en el ratón, con reproducción de GIF, APNG y WebP animados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Une visionneuse d'images centrée sur la souris, avec lecture des GIF, APNG et WebP animés."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "カーソル中心にズームできる画像ビューア。GIF、APNG、WebP のアニメーション再生に対応。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以鼠标为中心的图片查看器，支持 GIF、APNG 和 WebP 动图播放。"
           }
         }
       }
@@ -5723,41 +5722,6 @@
         }
       }
     },
-    "More Apps" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "More Apps"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Más apps"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Autres apps"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "その他のアプリ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更多应用"
-          }
-        }
-      }
-    },
     "Name" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7962,41 +7926,6 @@
         }
       }
     },
-    "Show your avatar while recording your screen or live streaming." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show your avatar while recording your screen or live streaming."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muestra tu avatar mientras grabas la pantalla o transmites en directo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Affichez votre avatar pendant l'enregistrement d'écran ou le direct."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面収録やライブ配信時にアバターを重ねて表示します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "录屏或直播时叠加显示你的头像。"
-          }
-        }
-      }
-    },
     "Simple Icons" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9672,41 +9601,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已忽略版本 %@"
-          }
-        }
-      }
-    },
-    "View on the App Store" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View on the App Store"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ver en el App Store"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voir sur l'App Store"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App Store で見る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前往 App Store"
           }
         }
       }
