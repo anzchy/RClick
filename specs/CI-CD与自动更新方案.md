@@ -7,8 +7,8 @@ RClick 决定放弃 App Store 发布，转为纯开源项目。需要两个关�
 2. **自动更新改进**：现有更新器功能基础，参考 capcap 项目的成熟实现进行增强
 
 ### 参考项目
-- **iMonet** (`/Users/lixu/code/iMonet`)：完整的签名+公证+DMG 发布流程（已禁用自动触发，仅 workflow_dispatch）
-- **capcap** (`/Users/lixu/repos/capcap-main`)：成熟的自定义更新器（状态机、SHA-256 校验、ditto 解压、分离交换脚本）
+- **iMonet** (`/Users/test/code/iMonet`)：完整的签名+公证+DMG 发布流程（已禁用自动触发，仅 workflow_dispatch）
+- **capcap** (`/Users/test/repos/capcap-main`)：成熟的自定义更新器（状态机、SHA-256 校验、ditto 解压、分离交换脚本）
 
 ---
 
@@ -76,8 +76,8 @@ RClick 决定放弃 App Store 发布，转为纯开源项目。需要两个关�
 |--------|------|
 | `MACOS_CERT_P12` | Developer ID Application 证书的 base64 |
 | `MACOS_CERT_PASSWORD` | 证书导出密码 |
-| `MACOS_APP_PROVISIONING_PROFILE` | `cn.wflixu.RClick` 的 Developer ID provisioning profile（base64），须授权 `group.cn.wflixu.RClick` |
-| `MACOS_EXTENSION_PROVISIONING_PROFILE` | `cn.wflixu.RClick.FinderSyncExt` 的 Developer ID provisioning profile（base64），须授权同一 App Group |
+| `MACOS_APP_PROVISIONING_PROFILE` | `cn.anzchy.RClick` 的 Developer ID provisioning profile（base64），须授权 `group.cn.anzchy.RClick` |
+| `MACOS_EXTENSION_PROVISIONING_PROFILE` | `cn.anzchy.RClick.FinderSyncExt` 的 Developer ID provisioning profile（base64），须授权同一 App Group |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 | `NOTARY_KEY_ID` | App Store Connect API Key ID |
 | `NOTARY_ISSUER_ID` | API Key Issuer ID |
@@ -93,7 +93,7 @@ RClick 决定放弃 App Store 发布，转为纯开源项目。需要两个关�
 | `RClick/RClickDebug.entitlements` | 主 App (Debug) | app-groups, bookmarks, temporary-exception.files.home-relative-path.read-write(/) |
 | `FinderSyncExt/FinderSyncExt.entitlements` | 扩展 | app-groups, bookmarks, app-sandbox(通过 build setting) |
 
-`group.` 前缀的 App Group 在 macOS 上必须由每个进程自己的 provisioning profile 授权。主 App 和 FinderSync 扩展使用不同 Bundle ID，因此需要各自的 Developer ID profile；二者都必须包含 `group.cn.wflixu.RClick`。
+`group.` 前缀的 App Group 在 macOS 上必须由每个进程自己的 provisioning profile 授权。主 App 和 FinderSync 扩展使用不同 Bundle ID，因此需要各自的 Developer ID profile；二者都必须包含 `group.cn.anzchy.RClick`。
 
 **Release 签名策略**：以项目 entitlements 为基础，签名前精确校验 profile 的 Bundle ID、App Group 和签名证书，再补入 `com.apple.application-identifier` 与 `com.apple.developer.team-identifier`。所有代码签名均使用导入证书的 identity hash，避免同名证书歧义。
 
@@ -270,5 +270,5 @@ git tag v2.0.2-test && git push origin v2.0.2-test
 | `RClick/Settings/AboutSettingsTabView.swift` | **小改** | 适配新 API |
 
 参考代码位置：
-- iMonet CI: `/Users/lixu/code/iMonet/.github/workflows/release.yml`
-- capcap 更新器: `/Users/lixu/repos/capcap-main/capcap/Utilities/UpdateChecker.swift` 和 `UpdateInstaller.swift`
+- iMonet CI: `/Users/test/code/iMonet/.github/workflows/release.yml`
+- capcap 更新器: `/Users/test/repos/capcap-main/capcap/Utilities/UpdateChecker.swift` 和 `UpdateInstaller.swift`

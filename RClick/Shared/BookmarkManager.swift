@@ -104,8 +104,8 @@ final class BookmarkManager: ObservableObject {
     /// 于是"把 `/` 加进授权目录"恰好命中唯一一个永远不匹配的边界，用户越授权越
     /// 用不了（Issue #155）。分量比较天然处理它：`/` 的 `pathComponents` 是 `["/"]`。
     ///
-    /// 按分量比较同时也挡住了字符串前缀的另一个坑：`/Users/lixu` 不该覆盖
-    /// `/Users/lixu2`，而 `hasPrefix("/Users/lixu")` 会误判为覆盖。
+    /// 按分量比较同时也挡住了字符串前缀的另一个坑：`/Users/test` 不该覆盖
+    /// `/Users/test2`，而 `hasPrefix("/Users/test")` 会误判为覆盖。
     ///
     /// 两个入参都必须是**已解析符号链接**的路径 —— 调用点负责这一步
     /// （`authorizedDirectories` 在写入时就已 `resolvingSymlinksInPath`）。
