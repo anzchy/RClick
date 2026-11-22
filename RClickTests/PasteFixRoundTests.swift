@@ -361,3 +361,33 @@ extension PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
     }
 }
+
+
+extension PasteActionServiceTests {
+    @Test func sourceAncestorSwapCannotSubstituteAnotherItemAtRename() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file("Résumé 日本語 notes.txt")
+        let expected = try f.operations.fileIdentity(of: item)
+        let expectedDestination = try f.operations.fileIdentity(of: f.destination)
+        let parked = f.root.appendingPathComponent("parked-source")
+        let replacement = f.root.appendingPathComponent("replacement")
+        try FileManager.default.createDirectory(at: replacement, withIntermediateDirectories: true)
+        let impostor = replacement.appendingPathComponent(item.lastPathComponent)
+        try Data("impostor".utf8).write(to: impostor)
+        let source = f.source
+        f.operations.onNextRename {
+            try FileManager.default.moveItem(at: source, to: parked)
+            try FileManager.default.createSymbolicLink(at: source, withDestinationURL: replacement)
+        }
+        let operations = f.operations
+        let to = f.destination.appendingPathComponent(item.lastPathComponent)
+        try await Task.detached {
+            try operations.coordinatedExclusiveMove(from: item, to: to, expected: expected,
+                expectedDestination: expectedDestination, timeout: 30)
+        }.value
+        #expect(try Data(contentsOf: to) == Data("original".utf8))
+        #expect(try operations.fileIdentity(of: to) == expected)
+        #expect(try Data(contentsOf: impostor) == Data("impostor".utf8))
+        #expect(!FileManager.default.fileExists(atPath: parked.appendingPathComponent(item.lastPathComponent).path))
+    }
+}
