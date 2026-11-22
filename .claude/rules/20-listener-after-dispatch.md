@@ -27,12 +27,16 @@ Only `DISPATCHED <event>` completes dispatch. The listener is registered before 
 finish before registration. Manual dispatches must also register before submitting, so a fast report cannot predate the listener.
 
 Claude reset uses `/clear` and requires the bottom-most `Context 0%` footer plus a fresh welcome/idle composer; Codex uses `reset.sh`, which handles `/new` and the
-current-worktree chooser and proves a fresh session. A NEW Codex session must actually show `Working` after
-submission. The helper requires the live `• Working (<time> • esc to interrupt)` row next to an empty Codex composer;
-Claude requires its live spinner with elapsed time/token counters, an idle `❯`, and herdr's `working` status
-with matching pane/terminal identity. Composer content and transcript lines never prove activity. It allows at most three Enter attempts (ten reads each),
-and fails with the pane tail if submission never starts. Every unsuccessful exit, including catchable interruption/termination, requests stop for a listener this
-invocation started; a duplicate-owner refusal never stops a foreign listener; inspect any cleanup failure before another dispatch.
+current-worktree chooser and proves a fresh session. Normal confirmation requires the live
+`• Working (<time> • esc to interrupt)` row next to an empty Codex composer; Claude uses its live spinner,
+an idle `❯`, and herdr's `working` status with matching pane/terminal identity. Composer content alone never
+proves activity. It allows at most three Enter attempts (ten reads each); before failing after submission,
+it checks the pinned pane's status again or activity following the exact submitted prompt echo.
+A `DISPATCHED` with a classifier warning keeps the registered listener live; verify it with
+`.agents/skills/rclick-delegator/scripts/listen-notify.py status`.
+An unconfirmed start fails with the pane tail. Every unsuccessful exit, including catchable interruption/termination,
+requests stop for a listener this invocation started; a duplicate-owner refusal never stops a foreign listener;
+inspect any cleanup failure before another dispatch.
 
 ## Manual listener arguments and recovery
 
