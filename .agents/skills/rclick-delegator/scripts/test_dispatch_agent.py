@@ -1,4 +1,5 @@
 """Offline CLI dispatch contract: fake terminal transport, real reset, injected marker writer, and no elapsed-time budgets."""
+import ast
 import json
 import os
 import re
@@ -61,6 +62,21 @@ class DispatchTests(unittest.TestCase):
                          {p.name for p in SCRIPTS.iterdir() if p.is_file()})
         result = self.run_dispatch(kind='codex')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_listener_and_marker_production_defaults(self):
+        source = (SCRIPTS / 'dispatch-agent.sh').read_text().split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        tree = ast.parse(source)
+        defaults = {}
+        with patch.dict(os.environ, {}, clear=True):
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == 'get' and node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and node.args[0].value in ('RCLICK_LISTENER', 'RCLICK_MARK_TARGET')):
+                    defaults[node.args[0].value] = eval(compile(ast.Expression(node), '<default>', 'eval'),
+                                                       {'os': os, 'scripts': SCRIPTS})
+        self.assertEqual(defaults, {'RCLICK_LISTENER': SCRIPTS / 'listen-notify.py',
+                                   'RCLICK_MARK_TARGET': SCRIPTS.parent.parent / 'rclick-verify/scripts/mark-target.mjs'})
 
     def test_static_fixtures_and_untimed_module_warmup(self):
         module = sys.modules[__name__]
