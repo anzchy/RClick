@@ -157,7 +157,7 @@ started = False
 succeeded = False
 listener_attempted = False
 failure = ''
-listener = [sys.executable, scripts / 'listen-notify.py']
+listener = [sys.executable, os.environ.get('RCLICK_LISTENER', scripts / 'listen-notify.py')]
 try:
     envelope = object_value(json.loads(run(['herdr', 'pane', 'list'])), 'pane envelope')
     result = object_value(envelope.get('result'), 'pane result')

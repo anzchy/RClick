@@ -3,13 +3,20 @@ import json
 import os
 import re
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import fixture_warmup
 
 SCRIPTS = Path(__file__).resolve().parent
+FIXTURE_BIN = SCRIPTS / 'fixtures/bin/dispatch'
+
+
+def setUpModule():
+    fixture_warmup.warm_up()
 
 
 class DispatchTests(unittest.TestCase):
@@ -19,25 +26,12 @@ class DispatchTests(unittest.TestCase):
         self.root = Path(self.tmp.name).resolve()
         self.repo = self.root / 'repo'
         self.scripts = self.repo / '.agents/skills/rclick-delegator/scripts'
-        self.scripts.mkdir(parents=True)
-        for name in ('dispatch-agent.sh', 'reset.sh'):
-            if (SCRIPTS / name).exists():
-                shutil.copy2(SCRIPTS / name, self.scripts / name)
-        marker = self.repo / '.agents/skills/rclick-verify/scripts'
-        marker.mkdir(parents=True)
-        # The real marker writer's git timeout is covered by its own verify suite.
-        # Dispatch tests inject its filesystem/argv contract without timed git probes.
-        self.marker = self.root / 'marker.mjs'
-        self.marker.write_text('''import fs from 'node:fs';
-import path from 'node:path';
-const [home, worktree, issue, task, handoff, branch] = process.argv.slice(2);
-const out = path.join(home, '.build/rclick-verify/target-worktree');
-fs.mkdirSync(path.dirname(out), {recursive:true});
-fs.writeFileSync(out, JSON.stringify({worktree, branch, issue:Number(issue), task, handoff}));
-fs.writeFileSync(path.join(home, 'marker-used'), 'yes');
-''')
-        self.bin = self.root / 'bin'
-        self.bin.mkdir()
+        self.scripts.parent.mkdir(parents=True)
+        # Link the entire production directory: reset's current and future siblings
+        # stay available without creating fresh executable copies per test.
+        self.scripts.symlink_to(SCRIPTS, target_is_directory=True)
+        self.marker = FIXTURE_BIN / 'marker.mjs'
+        self.bin = FIXTURE_BIN
         self.log = self.root / 'calls'
         self.home = self.root / 'home'
         self.home.mkdir()
@@ -46,70 +40,31 @@ fs.writeFileSync(path.join(home, 'marker-used'), 'yes');
         self.report = self.root / 'report.md'
         self.report.touch()
         self.env = {**os.environ, 'HOME': str(self.home), 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
-                    'RCLICK_PYTHON': sys.executable, 'RCLICK_MARK_TARGET': str(self.marker), 'CALLS': str(self.log), 'TEST_REPO': str(self.repo),
+                    'RCLICK_PYTHON': sys.executable, 'RCLICK_LISTENER': str(FIXTURE_BIN / 'listen-notify.py'), 'RCLICK_MARK_TARGET': str(self.marker), 'CALLS': str(self.log), 'TEST_REPO': str(self.repo),
                     'TEST_KIND': 'claude', 'TEST_ROLE': 'implementer', 'ENTERS_NEEDED': '1'}
         subprocess.run(['git', 'init', '-q', '-b', 'topic'], cwd=self.repo, check=True)
-        self.write_exec(self.bin / 'sleep', '#!/bin/sh\nexit 0\n')
-        self.write_exec(self.bin / 'date', '#!/bin/sh\nprintf "1120\\n"\n')
-        self.write_exec(self.scripts / 'listen-notify.py', '''#!/usr/bin/env python3
-import json, os, sys
-from pathlib import Path
-with open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(['listener', *sys.argv[1:]]) + '\\n')
-if sys.argv[1] == 'start' and os.environ.get('CREATE_EVENT') == '1':
-    event = sys.argv[sys.argv.index('--event')+1]
-    (Path.home() / '.rclick-roster/herdr/delegator/listeners' / event).mkdir(parents=True)
-print(os.environ.get('LISTENER_RESULT', 'started') + ' event=test')
-sys.exit(int(os.environ.get('LISTENER_EXIT', '0')))
-''')
-        self.write_exec(self.bin / 'herdr', '''#!/usr/bin/env python3
-import json, os, sys
-from pathlib import Path
-args = sys.argv[1:]
-log = Path(os.environ['CALLS'])
-previous = [json.loads(s) for s in log.read_text().splitlines()] if log.exists() else []
-with log.open('a') as f: f.write(json.dumps(args) + '\\n')
-kind = os.environ['TEST_KIND']
-repo = os.environ['TEST_REPO']
-if args == ['pane', 'list']:
-    print(json.dumps({'id': 'cli:pane:list', 'result': {'type': 'pane_list', 'panes': [
-        {'pane_id': 'w1:p9', 'terminal_id': 'term_fresh', 'cwd': repo, 'foreground_cwd': repo,
-         'agent': 'claude', 'terminal_title_stripped': 'rclick-delegator'},
-        {'pane_id': 'w1:p2', 'terminal_id': 'term_worker', 'cwd': repo, 'foreground_cwd': repo,
-         'agent': kind}]}}))
-elif args[:2] == ['agent', 'get']:
-    prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
-    working = False
-    if prompts:
-        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
-        working = enters >= int(os.environ['ENTERS_NEEDED'])
-    if prompts and os.environ.get('MALFORMED_AGENT'):
-        print(json.dumps({'result': {'type': 'agent_info', 'agent': []}}))
-        sys.exit(0)
-    print(json.dumps({'result': {'type': 'agent_info', 'agent': {'pane_id': 'w1:p2',
-        'terminal_id': os.environ.get('WORKING_TERMINAL', 'term_worker') if working else 'term_worker', 'agent_status': 'working' if working else 'idle'}}}, separators=(',', ':')))
-elif args[:2] == ['pane', 'send-text'] and args[3] not in ('/new', '/clear') and os.environ.get('SEND_SIGNAL'):
-    import signal
-    os.kill(os.getppid(), getattr(signal, os.environ['SEND_SIGNAL']))
-elif args[:2] == ['pane', 'get']:
-    print(json.dumps({'result': {'pane': {'agent_session': {'value': 'session'}}}}))
-elif args[:2] == ['pane', 'read']:
-    prompts = [i for i, c in enumerate(previous) if c[:3] == ['pane', 'send-text', 'w1:p2'] and c[3] not in ('/new', '/clear')]
-    if prompts:
-        if os.environ.get('SCREEN'):
-            print(os.environ['SCREEN'])
-            sys.exit(0)
-        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous[prompts[-1]+1:])
-        print(('✻ Thinking… (1s · ↓ 12 tokens)\\n────────────────────\\n❯\\n────────────────────\\nContext 1% used' if kind == 'claude' else '• Working (1s • esc to interrupt)\\n\\n› Ask Codex to do anything\\n\\nContext 1% used') if enters >= int(os.environ['ENTERS_NEEDED']) else 'idle: prompt waiting')
-    elif kind == 'codex':
-        enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
-        if enters < 2: print('Where should the new conversation run?')
-        else: print('>_ OpenAI Codex (v0.167.0)\\n' + repo + '\\n› Ask Codex to do anything\\nContext 0% used')
-    else: print(os.environ.get('CLAUDE_RESET_SCREEN', 'Claude Code v2.1.310\\n\\n────────────────────\\n❯\\n────────────────────\\n' + os.environ.get('CLAUDE_FOOTER', 'Context 0% used')))
-''')
 
-    def write_exec(self, path, text):
-        path.write_text(text)
-        path.chmod(0o755)
+    def test_production_scripts_directory_includes_every_reset_sibling(self):
+        self.assertEqual(self.scripts.resolve(), SCRIPTS)
+        self.assertEqual({p.name for p in self.scripts.iterdir() if p.is_file()},
+                         {p.name for p in SCRIPTS.iterdir() if p.is_file()})
+        result = self.run_dispatch(kind='codex')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_static_fixtures_and_untimed_module_warmup(self):
+        module = sys.modules[__name__]
+        self.assertTrue(callable(getattr(module, 'setUpModule', None)))
+        expected = {p for p in (SCRIPTS / 'fixtures').rglob('*')
+                    if p.is_file() and os.access(p, os.X_OK)}
+        self.assertTrue(expected <= set(fixture_warmup.fixture_paths()))
+        with patch.object(fixture_warmup.subprocess, 'run') as run:
+            module.setUpModule()
+        executed = {Path(call.args[0][0]) for call in run.call_args_list}
+        self.assertTrue(expected <= executed)
+        self.assertTrue(all('timeout' not in call.kwargs for call in run.call_args_list))
+        for name in ('herdr', 'sleep', 'date', 'listen-notify.py'):
+            self.assertTrue(os.access(FIXTURE_BIN / name, os.X_OK), name)
+        self.assertEqual(self.bin.resolve(), SCRIPTS / 'fixtures/bin/dispatch')
 
     def args(self, kind='claude', role='implementer'):
         args = ['--agent', 'worker', '--pane', 'w1:p2', '--role', role, '--kind', kind,
