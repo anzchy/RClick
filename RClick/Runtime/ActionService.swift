@@ -513,7 +513,9 @@ final class ActionService {
                         }
                     }
                 } catch {
-                    result.failures.append(FileActionFailure(path: path, error: error))
+                    let failure: any Error = Self.sourceHasVanished(error)
+                        && (try? operations.fileIdentity(of: source)) == nil ? PasteMoveError.changed : error
+                    result.failures.append(FileActionFailure(path: path, error: failure))
                     if let index = journal.entries.lastIndex(where: { $0.originalPath == source.path && $0.outcome == .intended }) {
                         journal.entries[index].outcome = .failed
                         do { try store.persist(journal) }
@@ -542,16 +544,25 @@ final class ActionService {
             publishConfig = false
             return
         }
+        // A vanished URL cannot be represented as a retryable Finder item.
+        // Keep unreadable/replaced entries (and dangling symlinks) pending, but
+        // drop paths known to have disappeared before rewriting the marker.
+        let pending = Set(result.failures.map(\.path) + result.unchanged)
+        let remainingPaths = await executor.run {
+            record.paths.filter { path in
+                guard pending.contains(path) else { return false }
+                do { _ = try operations.fileIdentity(of: URL(fileURLWithPath: path)); return true }
+                catch { return !Self.sourceHasVanished(error) }
+            }
+        }
         var clipboardFailed = false
         // This is an ownership check, not a pasteboard compare-and-swap.
         if cutPasteboard.changeCount != record.changeCount {
             cutRecord = nil
-        } else if result.failures.isEmpty && result.unchanged.isEmpty {
+        } else if remainingPaths.isEmpty {
             _ = cutPasteboard.prepareForNewContents(with: .currentHostOnly)
             cutRecord = nil
         } else {
-            let pending = Set(result.failures.map(\.path) + result.unchanged)
-            let remainingPaths = record.paths.filter { pending.contains($0) }
             if let count = PendingCut(pasteboard: cutPasteboard).writeCut(remainingPaths) {
                 let identities = remainingPaths.compactMap { path in
                     record.paths.firstIndex(of: path).map { record.identities[$0] }
@@ -636,6 +647,14 @@ final class ActionService {
         case let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile: return .missing
         case let error as CocoaError where error.code == .fileReadNoPermission || error.code == .fileWriteNoPermission: return .permission
         default: return .filesystem
+        }
+    }
+
+    private nonisolated static func sourceHasVanished(_ error: any Error) -> Bool {
+        switch error {
+        case let error as POSIXError: return error.code == .ENOENT || error.code == .ENOTDIR
+        case let error as CocoaError: return error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile
+        default: return false
         }
     }
 

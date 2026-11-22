@@ -41,7 +41,7 @@ extension PasteActionServiceTests {
         }
         defer { NotificationCenter.default.removeObserver(token) }
         await f.paste()
-        let remaining = includeMissing ? [staying, missing] : [staying]
+        let remaining = [staying]
         #expect(f.service.pendingCut?.paths == remaining.map(\.path))
         #expect(f.board.changeCount != originalCount)
         #expect(f.service.pendingCut?.changeCount == f.board.changeCount)
@@ -51,6 +51,7 @@ extension PasteActionServiceTests {
         #expect(try Data(contentsOf: f.destination.appendingPathComponent("incoming.txt")) == Data("original".utf8))
         #expect(f.journal.load()?.entries.map(\.originalPath) == [incoming.path])
         #expect(f.warnings.count == (includeMissing ? 1 : 0))
+        if includeMissing { #expect(f.warnings.first?.contains("missing.txt: Changed since cut") == true) }
         #expect(updates.value.withLock { $0 } == 1)
         #expect(f.leaser.balance == 0)
     }
