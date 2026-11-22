@@ -40,7 +40,7 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ```bash
 # Clone the repository
-git clone https://github.com/wflixu/RClick.git
+git clone https://github.com/anzchy/RClick.git
 cd RClick
 
 # Open in Xcode
@@ -191,8 +191,8 @@ xcodebuild test -project RClick.xcodeproj -scheme RClick -destination 'platform=
 
 ## Finding Issues to Work On
 
-- Browse [open issues](https://github.com/wflixu/RClick/issues) — look for **`good first issue`** or **`help wanted`** labels.
-- If you have an idea, [open a discussion](https://github.com/wflixu/RClick/issues) first to get feedback before writing code.
+- Browse [open issues](https://github.com/anzchy/RClick/issues) — look for **`good first issue`** or **`help wanted`** labels.
+- If you have an idea, [open a discussion](https://github.com/anzchy/RClick/issues) first to get feedback before writing code.
 
 ---
 
