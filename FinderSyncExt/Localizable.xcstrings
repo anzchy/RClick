@@ -1,40 +1,7 @@
 {
   "sourceLanguage": "en",
   "strings": {
-  "RClick is a modified version of RClick by wflixu (https://github.com/wflixu/RClick), licensed under GPL-3.0.": {
-    "localizations": {
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "RClick is a modified version of RClick by wflixu (https://github.com/wflixu/RClick), licensed under GPL-3.0."
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "RClick 是基于 wflixu 的 RClick (https://github.com/wflixu/RClick) 修改的版本，采用 GPL-3.0 许可。"
-        }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "RClick は wflixu の RClick (https://github.com/wflixu/RClick) を改変したバージョンで、GPL-3.0 ライセンスで提供されています。"
-        }
-      },
-      "es": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "RClick es una versión modificada de RClick de wflixu (https://github.com/wflixu/RClick), bajo la licencia GPL-3.0."
-        }
-      },
-      "fr": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "RClick est une version modifiée de RClick de wflixu (https://github.com/wflixu/RClick), sous licence GPL-3.0."
-        }
-      }
-    }
-  },
+
   "The destination changed": {
     "localizations": {
       "en": {
