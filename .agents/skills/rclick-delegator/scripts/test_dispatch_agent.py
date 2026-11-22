@@ -39,10 +39,21 @@ class DispatchTests(unittest.TestCase):
         self.prompt.write_text('Read the brief. Literal $(oops) `oops` and "quotes". Task: i61-test')
         self.report = self.root / 'report.md'
         self.report.touch()
-        self.env = {**os.environ, 'HOME': str(self.home), 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
+        self.env = {**{k: v for k, v in os.environ.items() if not k.startswith('RCLICK_')}, 'HOME': str(self.home), 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
                     'RCLICK_PYTHON': sys.executable, 'RCLICK_LISTENER': str(FIXTURE_BIN / 'listen-notify.py'), 'RCLICK_MARK_TARGET': str(self.marker), 'CALLS': str(self.log), 'TEST_REPO': str(self.repo),
                     'TEST_KIND': 'claude', 'TEST_ROLE': 'implementer', 'ENTERS_NEEDED': '1'}
         subprocess.run(['git', 'init', '-q', '-b', 'topic'], cwd=self.repo, check=True)
+
+    def test_inherited_reset_transport_overrides_are_removed(self):
+        with patch.dict(os.environ, {'RCLICK_HERDR': '/nonexistent/herdr',
+                                     'RCLICK_SLEEP': '/nonexistent/sleep'}):
+            isolated = DispatchTests()
+            isolated.setUp()
+            try:
+                result = isolated.run_dispatch(kind='codex')
+                self.assertEqual(result.returncode, 0, result.stderr)
+            finally:
+                isolated.doCleanups()
 
     def test_production_scripts_directory_includes_every_reset_sibling(self):
         self.assertEqual(self.scripts.resolve(), SCRIPTS)
