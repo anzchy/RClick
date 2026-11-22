@@ -53,8 +53,10 @@ struct PasteActionServiceTests {
         let value = Mutex<MoveJournal?>(nil)
         let history = Mutex<[MoveJournal]>([])
         let failOutcomes = Mutex(false)
+        let failFinal = Mutex(false)
         func load() -> MoveJournal? { value.withLock { $0 } }
         func save(_ journal: MoveJournal) throws {
+            if failFinal.withLock({ $0 }), !journal.inProgress { throw CocoaError(.fileWriteUnknown) }
             if failOutcomes.withLock({ $0 }), journal.entries.contains(where: { $0.outcome == .moved }) {
                 throw CocoaError(.fileWriteUnknown)
             }
@@ -1031,5 +1033,50 @@ extension PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: file.path))
         #expect(f.journal.load()?.entries.count == 1)
         #expect(f.warnings.isEmpty)
+    }
+}
+
+
+extension PasteActionServiceTests {
+    @Test func undoIsHiddenAndStaleClickRefusedUntilFailedFinalPersistIsRecovered() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]) // Wait for launch recovery before injecting the failure.
+        let signals = Counter()
+        let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: f.service, queue: nil) { _ in
+            signals.value.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        f.journal.failFinal.withLock { $0 = true }
+        await f.paste()
+        #expect(f.journal.load()?.inProgress == true)
+        #expect(f.journal.load()?.entries.first?.outcome == .moved)
+        #expect(!f.service.undoMoveAvailable)
+        #expect(signals.value.withLock { $0 } > 0)
+        for kind in [MenuTrigger.contextualContainer, .contextualItems] {
+            let config = MenuConfigPayload(actions: [ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)],
+                undoMoveAvailable: f.service.undoMoveAvailable)
+            #expect(!PendingCut.renderMenuVisibility(config: config, menuKind: kind,
+                selection: [file.path], selectedItemIsDirectory: false, currentChangeCount: 0, hostOnline: true).undo)
+        }
+        f.warnings = []
+        await undo(f.service)
+        #expect(f.warnings.last?.contains("no move to undo") == true)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent(file.lastPathComponent)) == Data("original".utf8))
+        #expect(f.journal.load()?.inProgress == true)
+        f.journal.failFinal.withLock { $0 = false }
+        let relaunched = ActionService(state: State(), permission: f.permission, confirmation: Confirmation(),
+            fileOperations: f.operations, pasteboard: f.board, now: { [clock = f.clock] in clock.now() },
+            accessLeaser: f.leaser, journalStore: f.journal, cutWarning: { _ in })
+        let recoveredSignals = Counter()
+        let recoveredToken = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: relaunched, queue: nil) { _ in
+            recoveredSignals.value.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(recoveredToken) }
+        await relaunched.actionHandler(rid: "cut", target: [], trigger: "ctx-items")
+        #expect(relaunched.undoMoveAvailable)
+        #expect(recoveredSignals.value.withLock { $0 } > 0)
+        #expect(!FileManager.default.fileExists(atPath: file.path)) // Recovery never moves files.
     }
 }
