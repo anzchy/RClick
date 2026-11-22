@@ -62,6 +62,7 @@ struct MenuConfigPayload: Codable {
     let iconStyle: Int
     let cutChangeCount: Int?
     let cutItemCount: Int
+    let undoMoveAvailable: Bool
 
     init(
         version: Int = 1,
@@ -75,7 +76,8 @@ struct MenuConfigPayload: Codable {
         commonDirsCollapsed: Bool = true,
         iconStyle: Int = RCAppIconStyle.simple.rawValue,
         cutChangeCount: Int? = nil,
-        cutItemCount: Int = 0
+        cutItemCount: Int = 0,
+        undoMoveAvailable: Bool = false
     ) {
         self.version = version
         self.actions = actions
@@ -88,13 +90,14 @@ struct MenuConfigPayload: Codable {
         self.commonDirsCollapsed = commonDirsCollapsed
         self.iconStyle = iconStyle
         self.cutChangeCount = cutChangeCount
+        self.undoMoveAvailable = undoMoveAvailable
         self.cutItemCount = cutItemCount
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, actions, apps, newFiles, commonDirs
         case actionsCollapsed, appsCollapsed, newFilesCollapsed, commonDirsCollapsed
-        case iconStyle, cutChangeCount, cutItemCount
+        case iconStyle, cutChangeCount, cutItemCount, undoMoveAvailable
     }
 
     init(from decoder: Decoder) throws {
@@ -111,6 +114,7 @@ struct MenuConfigPayload: Codable {
         // Payloads produced before icon styles existed used original app icons.
         iconStyle = try values.decodeIfPresent(Int.self, forKey: .iconStyle) ?? RCAppIconStyle.original.rawValue
         cutChangeCount = try values.decodeIfPresent(Int.self, forKey: .cutChangeCount)
+        undoMoveAvailable = try values.decodeIfPresent(Bool.self, forKey: .undoMoveAvailable) ?? false
         cutItemCount = try values.decodeIfPresent(Int.self, forKey: .cutItemCount) ?? 0
     }
 
@@ -402,7 +406,8 @@ nonisolated final class Messager: NSObject, Sendable {
                                           newFilesCollapsed: config.newFilesCollapsed, commonDirsCollapsed: config.commonDirsCollapsed,
                                           iconStyle: config.iconStyle,
                                           cutChangeCount: config.cutChangeCount,
-                                          cutItemCount: config.cutItemCount)
+                                          cutItemCount: config.cutItemCount,
+                                          undoMoveAvailable: config.undoMoveAvailable)
         guard let payload = try? JSONEncoder().encode(versioned) else { return }
         state.withLock { $0.lastConfig = payload }
         sendRaw(MainToExtensionAction.menuConfig.rawValue, direction: .toExtension, payload: payload, id: UUID().uuidString)

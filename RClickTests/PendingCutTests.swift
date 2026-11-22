@@ -206,3 +206,42 @@ extension PendingCutTests {
         }
     }
 }
+
+extension PendingCutTests {
+    @Test func undoFlagShowsOneRowOnSelectionAndBackground() throws {
+        let data = Data(#"{"version":1,"actions":[{"id":"cut","name":"Cut & Paste","icon":"scissors","tag":6}],"apps":[],"newFiles":[],"commonDirs":[],"actionsCollapsed":false,"appsCollapsed":false,"newFilesCollapsed":true,"commonDirsCollapsed":true,"undoMoveAvailable":true}"#.utf8)
+        let config = try JSONDecoder().decode(MenuConfigPayload.self, from: data)
+        let background = PendingCut.menuVisibility(config: config, menuKind: .contextualContainer,
+            selection: [], currentChangeCount: 0, hostOnline: true)
+        #expect(background.undo)
+    }
+}
+
+extension PendingCutTests {
+    @Test func undoVisibilityTableFollowsCutForEveryMenuAndOfflineState() {
+        let action = ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)
+        let rows: [(MenuTrigger?, [String], Bool)] = [
+            (.contextualContainer, [], true), (.contextualContainer, ["/a"], true),
+            (.contextualItems, [], false), (.contextualItems, ["/a"], true),
+            (.contextualItems, ["/a", "/b"], true), (.toolbar, ["/a"], false),
+            (.contextualSidebar, ["/a"], false), (nil, ["/a"], false)
+        ]
+        for (kind, selection, eligible) in rows {
+            for enabled in [false, true] {
+                for available in [false, true] {
+                    for online in [false, true] {
+                        for count in [41, 42] {
+                            let config = MenuConfigPayload(actions: enabled ? [action] : [],
+                                cutChangeCount: 42, cutItemCount: 1, undoMoveAvailable: available)
+                            let result = PendingCut.renderMenuVisibility(config: config, menuKind: kind,
+                                selection: selection, selectedItemIsDirectory: false, currentChangeCount: count, hostOnline: online)
+                            #expect(result.undo == (eligible && enabled && available))
+                            if !enabled { #expect(!result.cut && !result.paste && !result.undo) }
+                        }
+                    }
+                }
+            }
+        }
+        #expect(RCAction.entityID(for: "undo-move") == "cut")
+    }
+}

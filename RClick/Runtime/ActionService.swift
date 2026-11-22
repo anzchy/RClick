@@ -83,6 +83,7 @@ final class ActionService {
             journalRecovery = Task { [weak self] in
                 guard let self else { return }
                 await self.restoreMoveJournal()
+                NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self)
             }
         }
     }
@@ -92,6 +93,9 @@ final class ActionService {
         let identities: [FileIdentity]
         let changeCount: Int
     }
+
+    private var undoJournal: MoveJournal?
+    var undoMoveAvailable: Bool { !(undoJournal?.undoEntries(at: now()).isEmpty ?? true) }
 
     private var journalNotice: String?
     private var journalRecovery: Task<Void, Never>?
@@ -312,12 +316,13 @@ final class ActionService {
         }.map(\.originalPath)).count
         let accessiblePaths = Set(accessible.map(\.path))
         do {
-            let report = try await executor.run {
+            let (report, restored) = try await executor.run {
                 var journal = loaded
                 let report = try journal.reconcile(using: operations, at: timestamp, accessibleDirectories: accessiblePaths)
                 try store.persist(journal)
-                return report
+                return (report, journal)
             }
+            undoJournal = restored
             if report.missingAccess > 0 {
                 journalNotice = "A previous move is awaiting recovery because folder access is missing; its undo information is retained for 24 hours"
             } else if report.ambiguous > 0 {
@@ -344,6 +349,13 @@ final class ActionService {
             logMove(MoveLogEvent(kind: .recoveryFailed, total: recoveryItems,
                 affected: recoveryItems, reasons: [.journalWrite]))
         }
+    }
+
+    private func refreshUndoJournal() async {
+        do {
+            let store = try journalStore ?? AtomicUndoJournalStore.appGroup()
+            undoJournal = try await executor.run { try store.load() }
+        } catch { undoJournal = nil }
     }
 
     private func undoMove() async {
@@ -444,6 +456,7 @@ final class ActionService {
             }
             return result
         }
+        await refreshUndoJournal()
         if !result.failures.isEmpty {
             let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
             cutWarning(String(format: AppLocalization.localized("Some items could not be restored:\n%@"), lines.joined(separator: "\n")))
@@ -691,6 +704,7 @@ final class ActionService {
                 clipboardFailed = true
             }
         }
+        await refreshUndoJournal()
         logPasteResult(result, clipboardFailed: clipboardFailed)
         if !result.failures.isEmpty {
             let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }

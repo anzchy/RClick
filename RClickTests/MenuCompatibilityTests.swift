@@ -52,10 +52,12 @@ struct MenuCompatibilityTests {
         let legacy = try JSONDecoder().decode(MenuConfigPayload.self, from: old)
         #expect(legacy.cutChangeCount == nil)
         #expect(legacy.cutItemCount == 0)
-        let current = MenuConfigPayload(cutChangeCount: 42, cutItemCount: 3)
+        #expect(!legacy.undoMoveAvailable)
+        let current = MenuConfigPayload(cutChangeCount: 42, cutItemCount: 3, undoMoveAvailable: true)
         let decoded = try JSONDecoder().decode(MenuConfigPayload.self, from: JSONEncoder().encode(current))
         #expect(decoded.cutChangeCount == 42)
         #expect(decoded.cutItemCount == 3)
+        #expect(decoded.undoMoveAvailable)
         // Encoding includes both fields and preserves the existing version.
         let fields = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
         #expect(fields["cutChangeCount"] as? Int == 42)

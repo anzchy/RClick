@@ -23,7 +23,7 @@ final class CutIPCIntegrationTests: XCTestCase {
             commonDirs: [CommonDirMenuItem(id: "folder", name: "Folder", icon: "folder", url: "/tmp/example")],
             actionsCollapsed: true, appsCollapsed: true, newFilesCollapsed: false,
             commonDirsCollapsed: false, iconStyle: RCAppIconStyle.original.rawValue,
-            cutChangeCount: 42, cutItemCount: 3
+            cutChangeCount: 42, cutItemCount: 3, undoMoveAvailable: true
         )
         app.sendRunningNotification()
         app.sendMenuConfig(input)
@@ -32,12 +32,13 @@ final class CutIPCIntegrationTests: XCTestCase {
         XCTAssertEqual(ext.currentSession, app.currentSession)
         XCTAssertEqual(snapshot.cutChangeCount, 42)
         XCTAssertEqual(snapshot.cutItemCount, 3)
+        XCTAssertTrue(snapshot.undoMoveAvailable)
 
         // Each stored property has a non-default fixture and an explicit comparison.
         // A future stored property must extend this fixture and its assertions.
         XCTAssertEqual(Set(Mirror(reflecting: input).children.compactMap(\.label)), Set([
             "version", "actions", "apps", "newFiles", "commonDirs", "actionsCollapsed", "appsCollapsed",
-            "newFilesCollapsed", "commonDirsCollapsed", "iconStyle", "cutChangeCount", "cutItemCount",
+            "newFilesCollapsed", "commonDirsCollapsed", "iconStyle", "cutChangeCount", "cutItemCount", "undoMoveAvailable",
         ]))
         XCTAssertEqual(snapshot.version, 1, "the signed sender owns version normalization")
         let encoder = JSONEncoder()

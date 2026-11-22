@@ -10,6 +10,12 @@ import Foundation
 
 @MainActor
 final class MenuService {
+    private let undoAvailable: @MainActor () -> Bool
+
+    init(undoAvailable: @escaping @MainActor () -> Bool = { RCRuntime.shared.actionService.undoMoveAvailable }) {
+        self.undoAvailable = undoAvailable
+    }
+
     /// 菜单版本号（防重复 / 防乱序）
     private var menuVersion = 0
 
@@ -39,7 +45,8 @@ final class MenuService {
             commonDirsCollapsed: state.foldCommonDirMenu,
             iconStyle: state.appIconStyle,
             cutChangeCount: cutChangeCount,
-            cutItemCount: cutItemCount
+            cutItemCount: cutItemCount,
+            undoMoveAvailable: undoAvailable()
         )
     }
 }
