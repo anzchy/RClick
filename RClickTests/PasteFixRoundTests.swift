@@ -504,3 +504,30 @@ extension PasteActionServiceTests {
     }
 }
 
+
+extension PasteActionServiceTests {
+    @Test(arguments: [POSIXErrorCode.ENOENT, .ENOTDIR, .ELOOP])
+    func failedSourceParentOpenReportsChanged(_ code: POSIXErrorCode) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let operations = f.operations
+        let expected = try operations.fileIdentity(of: item)
+        let expectedDestination = try operations.fileIdentity(of: f.destination)
+        let to = f.destination.appendingPathComponent(item.lastPathComponent)
+        operations.denyDirectoryOpen(item.deletingLastPathComponent(), error: code)
+        // Check the engine result directly: ActionService's later vanished-item
+        // probe must not mask a missing source-parent error translation.
+        let changed = await Task.detached {
+            do {
+                try operations.coordinatedExclusiveMove(from: item, to: to, expected: expected,
+                    expectedDestination: expectedDestination, timeout: 30)
+                return false
+            } catch PasteMoveError.changed { return true }
+            catch { return false }
+        }.value
+        #expect(changed)
+        #expect(try Data(contentsOf: item) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(atPath: to.path))
+        #expect(operations.renameCalls.isEmpty)
+    }
+}
