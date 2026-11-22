@@ -137,6 +137,44 @@ struct UpdateCheckerTests {
         #expect(release.version == "4.0.0")
     }
 
+    @Test func olderReleaseWithNullTitleAndNotesDoesNotBlockNewerRelease() async {
+        let older = release("1.0.0")
+            .replacingOccurrences(of: "\"name\":\"Release\"", with: "\"name\":null")
+            .replacingOccurrences(of: "\"body\":\"Notes\"", with: "\"body\":null")
+        let result = await checker(body: "[\(older),\(release("3.0.0"))]")
+            .checkForUpdate(currentVersion: "2.0.0")
+        guard case .updateAvailable(let release) = result else {
+            Issue.record("Nullable older release blocked newer update"); return
+        }
+        #expect(release.version == "3.0.0")
+    }
+
+    @Test func newestReleaseWithNullNotesIsAvailable() async {
+        let newest = release("3.0.0")
+            .replacingOccurrences(of: "\"body\":\"Notes\"", with: "\"body\":null")
+        let result = await checker(body: "[\(newest),\(release("1.0.0"))]")
+            .checkForUpdate(currentVersion: "2.0.0")
+        guard case .updateAvailable(let release) = result else {
+            Issue.record("Newest update with null notes missing"); return
+        }
+        #expect(release.version == "3.0.0")
+    }
+
+    @Test(arguments: ["42", "null"])
+    func nonStringReleaseTagFails(tag: String) async {
+        let invalid = release("3.0.0").replacingOccurrences(of: "\"v3.0.0\"", with: tag)
+        let result = await checker(body: "[\(invalid)]").checkForUpdate(currentVersion: "2.0.0")
+        guard case .failed(let reason) = result else {
+            Issue.record("Malformed release shape reported success"); return
+        }
+        #expect(!reason.isEmpty)
+    }
+
+    @Test func wrongTopLevelShapeFails() async {
+        let result = await checker(body: release("3.0.0")).checkForUpdate(currentVersion: "2.0.0")
+        guard case .failed = result else { Issue.record("Object feed reported success"); return }
+    }
+
     @Test func malformedFeedFails() async {
         let result = await checker(body: "{broken").checkForUpdate(currentVersion: "2.0.0")
         guard case .failed(let reason) = result else { Issue.record("Malformed feed reported success"); return }

@@ -51,7 +51,7 @@ struct UpdateView: View {
                 .foregroundColor(.secondary)
             
             ScrollView {
-                Text(release.body)
+                Text(release.body ?? "")
                     .font(.body)
                     .padding(5)
             }
