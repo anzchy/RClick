@@ -14,26 +14,26 @@ struct BookmarkAccessTests {
     private func at(_ path: String) -> URL { URL(fileURLWithPath: path) }
 
     @Test func rootCoversEverything() {
-        #expect(BookmarkManager.covers(at("/"), at("/Users/lixu/Desktop")))
+        #expect(BookmarkManager.covers(at("/"), at("/Users/test/Desktop")))
         #expect(BookmarkManager.covers(at("/"), at("/Volumes/Installer")))
         #expect(BookmarkManager.covers(at("/"), at("/")))
     }
 
     @Test func folderCoversItselfAndItsDescendants() {
-        #expect(BookmarkManager.covers(at("/Users/lixu"), at("/Users/lixu")))
-        #expect(BookmarkManager.covers(at("/Users/lixu"), at("/Users/lixu/Desktop")))
-        #expect(BookmarkManager.covers(at("/Users/lixu/Desktop"), at("/Users/lixu/Desktop/a.txt")))
+        #expect(BookmarkManager.covers(at("/Users/test"), at("/Users/test")))
+        #expect(BookmarkManager.covers(at("/Users/test"), at("/Users/test/Desktop")))
+        #expect(BookmarkManager.covers(at("/Users/test/Desktop"), at("/Users/test/Desktop/a.txt")))
     }
 
     @Test func folderDoesNotCoverSiblingsOrAncestors() {
-        #expect(!BookmarkManager.covers(at("/Users/lixu/Desktop"), at("/Users/lixu/Movies")))
-        #expect(!BookmarkManager.covers(at("/Users/lixu/Desktop"), at("/Users/lixu")))
-        #expect(!BookmarkManager.covers(at("/Users/lixu/Desktop"), at("/")))
+        #expect(!BookmarkManager.covers(at("/Users/test/Desktop"), at("/Users/test/Movies")))
+        #expect(!BookmarkManager.covers(at("/Users/test/Desktop"), at("/Users/test")))
+        #expect(!BookmarkManager.covers(at("/Users/test/Desktop"), at("/")))
     }
 
     /// 按分量比较不能比原来按字符串比较更松：共享前缀的兄弟目录必须仍然不覆盖。
     @Test func siblingSharingAPrefixIsNotCovered() {
-        #expect(!BookmarkManager.covers(at("/Users/lixu"), at("/Users/lixu2")))
+        #expect(!BookmarkManager.covers(at("/Users/test"), at("/Users/test2")))
         #expect(!BookmarkManager.covers(at("/Volumes/Disk"), at("/Volumes/Disk2/file")))
     }
 }
