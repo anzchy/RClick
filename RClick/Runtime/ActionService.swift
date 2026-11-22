@@ -209,6 +209,11 @@ final class ActionService {
             return
         }
 
+        if rid == "undo-move" {
+            guard rcitem.enabled else { return }
+            await undoMove()
+            return
+        }
         if rid == "paste-move" {
             guard rcitem.enabled else { return }
             await pasteMove(target, trigger: trigger)
@@ -338,6 +343,110 @@ final class ActionService {
             journalNotice = "The move journal could not be saved; no further files can be moved until it is writable"
             logMove(MoveLogEvent(kind: .recoveryFailed, total: recoveryItems,
                 affected: recoveryItems, reasons: [.journalWrite]))
+        }
+    }
+
+    private func undoMove() async {
+        defer { NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: self) }
+        guard !preparingCut, !terminationPending else {
+            cutWarning(AppLocalization.localized("A move is already in progress"))
+            return
+        }
+        preparingCut = true
+        defer { releaseReservation() }
+        let store: any UndoJournalStore
+        let entries: [MoveJournalEntry]
+        do {
+            store = try journalStore ?? AtomicUndoJournalStore.appGroup()
+            let timestamp = now()
+            entries = try await executor.run {
+                (try store.load())?.undoEntries(at: timestamp) ?? []
+            }
+        } catch {
+            cutWarning(moveFailureDescription(error))
+            return
+        }
+        guard !entries.isEmpty else {
+            cutWarning(AppLocalization.localized("There is no move to undo"))
+            return
+        }
+        let directories = entries.flatMap {
+            [URL(fileURLWithPath: $0.originalPath).deletingLastPathComponent(),
+             URL(fileURLWithPath: $0.movedToPath).deletingLastPathComponent()]
+        }
+        for directory in directories where !permission.hasAccess(to: directory) {
+            guard await permission.promptForPermission(for: directory) != nil else {
+                cutWarning(AppLocalization.localized("Undo requires access to both folders"))
+                return
+            }
+        }
+        guard !Task.isCancelled, directories.allSatisfy({ permission.hasAccess(to: $0) }) else {
+            cutWarning(AppLocalization.localized("Undo requires access to both folders"))
+            return
+        }
+        let lease = accessLeaser.beginAccess(covering: directories)
+        defer { lease.end() }
+        let operations = fileOperations
+        let timeout = coordinationTimeout
+        terminationBoundary.protectMutation()
+        defer { terminationBoundary.unprotectMutation() }
+        let result = await executor.run { () -> FileActionResult in
+            var result = FileActionResult()
+            // Consume durably before mutation: a crash must never replay an Undo.
+            // Recovery-only previous/deferred entries are not Undo history.
+            do {
+                guard var journal = try store.load() else { throw JournalFailure.unreadable }
+                journal.entries = []
+                journal.previous = []
+                journal.inProgress = false
+                try store.persist(journal)
+            } catch {
+                result.failures = entries.map { FileActionFailure(path: $0.movedToPath, error: error) }
+                return result
+            }
+            for entry in entries {
+                let source = URL(fileURLWithPath: entry.movedToPath)
+                let original = URL(fileURLWithPath: entry.originalPath)
+                do {
+                    // A lexical path is only a hint. Duplicate identities in a
+                    // batch are ambiguous (for example hard links): skip safely.
+                    guard entries.filter({ $0.identity == entry.identity }).count == 1,
+                          try operations.stableMoveIdentity(of: source) == entry.identity else {
+                        throw UndoMoveError.changed
+                    }
+                    let destination = try original.deletingLastPathComponent().canonicalMoveDirectory()
+                    if let refusal = try operations.destinationRefusal(destination) { throw refusal }
+                    guard operations.isWritable(destination), operations.isWritable(source.deletingLastPathComponent()) else {
+                        throw POSIXError(.EACCES)
+                    }
+                    let expected = try operations.fileIdentity(of: source)
+                    let expectedDestination = try operations.fileIdentity(of: destination)
+                    guard expected.volume == expectedDestination.volume else { throw PasteMoveError.crossVolume }
+                    let facts = try operations.moveFacts(of: source)
+                    if facts.mountPoint { throw PasteMoveError.mountPoint }
+                    if facts.directory, try operations.contains(source, destination) { throw PasteMoveError.insideSource }
+                    var number = 1
+                    while true {
+                        let name = try MoveName.candidate(original.lastPathComponent, number: number,
+                            plainFolder: facts.directory && !facts.package)
+                        do {
+                            try operations.coordinatedExclusiveMove(from: source,
+                                to: destination.appendingPathComponent(name), expected: expected,
+                                expectedDestination: expectedDestination, expectedStable: entry.identity, timeout: timeout)
+                            result.completed.append(entry.movedToPath)
+                            break
+                        } catch let error as POSIXError where error.code == .EEXIST { number += 1 }
+                    }
+                } catch {
+                    result.failures.append(FileActionFailure(path: entry.movedToPath,
+                        error: Self.sourceHasVanished(error) ? UndoMoveError.changed : error))
+                }
+            }
+            return result
+        }
+        if !result.failures.isEmpty {
+            let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
+            cutWarning(String(format: AppLocalization.localized("Some items could not be restored:\n%@"), lines.joined(separator: "\n")))
         }
     }
 
@@ -689,6 +798,7 @@ final class ActionService {
         case PasteMoveError.insideSource: key = "A folder cannot be moved into itself"
         case PasteMoveError.mountPoint: key = "A volume root cannot be moved"
         case PasteMoveError.cloud: key = "Moving items outside their cloud container is not supported yet"
+        case UndoMoveError.changed: key = "The moved item is missing or has changed"
         case PasteMoveError.changed: key = "Changed since cut"
         case PasteMoveError.destinationChanged: key = "The destination changed"
         case PasteMoveError.timeout: key = "File coordination timed out"

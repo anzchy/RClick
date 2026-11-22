@@ -210,7 +210,7 @@ struct RCAction: @MainActor RCBase {
 
 extension RCAction {
     static func entityID(for clickID: String) -> String {
-        clickID == "paste-move" ? "cut" : clickID
+        ["paste-move", "undo-move"].contains(clickID) ? "cut" : clickID
     }
 
 

@@ -758,3 +758,17 @@ struct PasteActionServiceTests {
     }
 
 }
+
+extension PasteActionServiceTests {
+    @Test func undoRoundTripRestoresOriginalNameAndConsumesRecord() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file("Résumé 日本語.txt")
+        try Data("occupied".utf8).write(to: f.destination.appendingPathComponent(file.lastPathComponent))
+        await f.cut([file]); await f.paste()
+        await f.service.actionHandler(rid: "undo-move", target: [], trigger: "ctx-container")
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(f.journal.load()?.entries.isEmpty == true)
+        #expect(!FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("Résumé 日本語 2.txt").path))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent(file.lastPathComponent)) == Data("occupied".utf8))
+    }
+}
