@@ -234,8 +234,8 @@ try:
                     raise RuntimeError('Claude working status has a changed pane/terminal identity')
                 working = record.get('agent_status') == 'working'
             if working:
-                print('DISPATCHED ' + event)
                 succeeded = True
+                print('DISPATCHED ' + event)
                 sys.exit(0)
     raise RuntimeError('pane never showed Working after 3 Enter attempts; pane tail:\n' + screen[-4000:])
 except BaseException as error:

@@ -197,6 +197,19 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(calls[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
         self.assertNotIn('DISPATCHED', result.stdout)
 
+    def test_closed_stdout_after_start_preserves_successful_listener(self):
+        process = subprocess.Popen([str(self.scripts / 'dispatch-agent.sh'), *self.args()],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   cwd=self.repo, env={**self.env, 'PYTHONUNBUFFERED': '1'})
+        self.assertIn('started', process.stdout.readline())
+        process.stdout.close()
+        stderr = process.stderr.read()
+        process.stderr.close()
+        process.wait()
+        self.assertIn('BrokenPipeError', stderr)
+        self.assertEqual(self.calls()[-1], ['agent', 'get', 'w1:p2'])
+        self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
+
     def test_duplicate_directory_refused_before_any_transport(self):
         event = self.home / '.rclick-roster/herdr/delegator/listeners/i61-test-r1-1120'
         event.mkdir(parents=True)
