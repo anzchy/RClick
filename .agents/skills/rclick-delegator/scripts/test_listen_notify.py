@@ -25,6 +25,7 @@ SCRIPT = Path(__file__).with_name("listen-notify.py")
 SPEC = importlib.util.spec_from_file_location("listen_notify", SCRIPT)
 listen_notify = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(listen_notify)
+RESOLVE_AGENT = listen_notify._resolve_agent
 REPORT_SCRIPT = Path(__file__).with_name("poll-report.py")
 REPORT_SPEC = importlib.util.spec_from_file_location("poll_report", REPORT_SCRIPT)
 poll_report = importlib.util.module_from_spec(REPORT_SPEC)
@@ -187,6 +188,43 @@ class ListenerTests(unittest.TestCase):
         self.event_dir = self.root / "events" / self.config["event"]
         self.event_dir.mkdir(parents=True)
         (self.event_dir / "config.json").write_text(json.dumps(self.config))
+
+    def test_alphanumeric_panes_resolve_and_survive_registered_state(self):
+        for pane in ("w1:p3", "w1:pB", "w10:p12", "w1:pAB", "w2:pa9"):
+            with self.subTest(pane=pane):
+                payload = {"result": {"type": "agent_info", "agent": {
+                    "pane_id": pane, "terminal_id": "term_abc123"}}}
+                with patch.object(listen_notify.subprocess, "run",
+                        return_value=self.completed([], stdout=json.dumps(payload))):
+                    self.assertEqual(RESOLVE_AGENT(pane), (pane, "term_abc123"))
+                config = dict(self.config, agent_pane=pane,
+                    poll=self.config["poll"][:-2] + [pane, "term_abc123"], schema=2)
+                config.pop("thread")
+                config["destination"] = {"kind": "claude-pane", "pane": pane,
+                    "terminal_id": "term_dest", "cwd": "/tmp/rclick"}
+                event = self.root / pane.replace(":", "-")
+                listen_notify.register_event(event, config)
+                self.assertEqual(json.loads((event / "config.json").read_text()), config)
+
+    def test_invalid_panes_rejected_at_identity_and_state_boundaries(self):
+        for pane in ("w1:p", "w1:p-1", "w1:p3;rm", "w1:p 3", "", "p3",
+                     "w1:pB/", " w1:pB", "w1:pB\n"):
+            with self.subTest(pane=pane):
+                payload = {"result": {"type": "agent_info", "agent": {
+                    "pane_id": pane, "terminal_id": "term_abc123"}}}
+                with patch.object(listen_notify.subprocess, "run",
+                        return_value=self.completed([], stdout=json.dumps(payload))):
+                    with self.assertRaisesRegex(ValueError, "invalid pane_id"):
+                        RESOLVE_AGENT("worker")
+                with self.assertRaisesRegex(ValueError, "agent_pane"):
+                    listen_notify.register_event(self.root / "invalid-source", dict(self.config,
+                        agent_pane=pane, poll=self.config["poll"][:-2] + [pane, "term_abc123"]))
+                config = dict(self.config, schema=2)
+                config.pop("thread")
+                config["destination"] = {"kind": "claude-pane", "pane": pane,
+                    "terminal_id": "term_dest", "cwd": "/tmp/rclick"}
+                with self.assertRaisesRegex(ValueError, "pane"):
+                    listen_notify.register_event(self.root / "invalid-destination", config)
 
     def test_source_pins_are_paired_and_poll_argv_matches(self):
         config = dict(self.config)

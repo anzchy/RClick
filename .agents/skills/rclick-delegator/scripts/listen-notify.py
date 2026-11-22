@@ -50,7 +50,7 @@ IDENTITY_FIELDS = ("schema", "event", "task", "agent", "thread", "destination",
                    "handoff", "handoff_marker", "poll", "agent_pane", "agent_terminal")
 REQUIRED_FIELDS = ("schema", "event", "task", "agent", "handoff", "poll", "created_at")
 EVENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-PANE_PATTERN = re.compile(r"^w[0-9]+:p[0-9]+$")
+PANE_PATTERN = re.compile(r"^w[0-9]+:p[0-9A-Za-z]+$")
 TERMINAL_PATTERN = re.compile(r"^term_[A-Za-z0-9_-]+$")
 # Claude Code's input box sits between two full-width rules; the top one may end in " <label> ─".
 RULE_PATTERN = re.compile(r"^─{20,}(?: [^\n]* ─)?$")
