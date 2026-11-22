@@ -173,7 +173,7 @@ extension FileOperations {
     }
 }
 
-nonisolated enum UndoMoveError: Error { case changed }
+nonisolated enum UndoMoveError: Error { case changed, originalFolder }
 
 extension MoveJournal {
     nonisolated func undoEntries(at now: Date) -> [MoveJournalEntry] {

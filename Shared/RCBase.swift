@@ -540,3 +540,18 @@ extension NewFileMenuItem {
         return group
     }
 }
+
+
+extension ActionMenuItem {
+    static var pasteMove: Self { Self(id: "paste-move", name: "Paste (move here)", icon: "doc.on.clipboard", tag: 6) }
+    static var undoMove: Self { Self(id: "undo-move", name: "Undo last move", icon: "arrow.uturn.backward", tag: 6) }
+
+    /// Finder transports tags, not representedObject. Refuse ambiguous hashes.
+    static func leafTag(id: String) -> Int { "action_\(id)".hash }
+    static func clickID(forTag tag: Int, in actions: [Self]) -> String? {
+        var ids = actions.map(\.id)
+        if ids.contains("cut") { ids += [pasteMove.id, undoMove.id] }
+        let matches = ids.filter { leafTag(id: $0) == tag }
+        return matches.count == 1 ? matches.first : nil
+    }
+}

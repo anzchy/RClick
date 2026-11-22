@@ -245,3 +245,22 @@ extension PendingCutTests {
         #expect(RCAction.entityID(for: "undo-move") == "cut")
     }
 }
+
+extension PendingCutTests {
+    @Test func finderPreservedTagsRouteUndoAndPasteThroughCutsSingleToggle() throws {
+        let cut = ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)
+        for item in [cut, .pasteMove, .undoMove] {
+            let original = NSMenuItem(title: item.name, action: nil, keyEquivalent: "")
+            original.tag = ActionMenuItem.leafTag(id: item.id)
+            original.representedObject = item.id
+            let delivered = NSMenuItem(title: original.title, action: original.action, keyEquivalent: "")
+            delivered.tag = original.tag
+            #expect(delivered.representedObject == nil)
+            #expect(ActionMenuItem.clickID(forTag: delivered.tag, in: [cut]) == item.id)
+            #expect(RCAction.entityID(for: item.id) == "cut")
+            #expect(ActionMenuItem.clickID(forTag: delivered.tag, in: []) == nil)
+        }
+        #expect(ActionMenuItem.leafTag(id: "undo-move") != ActionMenuItem.leafTag(id: "paste-move"))
+        #expect(ActionMenuItem.clickID(forTag: ActionMenuItem.leafTag(id: "undo-move"), in: [cut, .undoMove]) == nil)
+    }
+}
