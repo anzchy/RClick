@@ -452,15 +452,13 @@ final class ActionService {
                           try operations.stableMoveIdentity(of: source) == entry.identity else {
                         throw UndoMoveError.changed
                     }
-                    let destination: URL
-                    do { destination = try original.deletingLastPathComponent().canonicalMoveDirectory().standardizedFileURL }
-                    catch { throw UndoMoveError.originalFolder }
+                    let (destination, expectedDestination) = try operations.originalUndoDirectory(
+                        original.deletingLastPathComponent(), expected: entry.originalParentIdentity)
                     if let refusal = try operations.destinationRefusal(destination) { throw refusal }
                     guard operations.isWritable(destination), operations.isWritable(source.deletingLastPathComponent()) else {
                         throw POSIXError(.EACCES)
                     }
                     let expected = try operations.fileIdentity(of: source)
-                    let expectedDestination = try operations.fileIdentity(of: destination)
                     guard expected.volume == expectedDestination.volume else { throw PasteMoveError.crossVolume }
                     let facts = try operations.moveFacts(of: source)
                     if facts.mountPoint { throw PasteMoveError.mountPoint }
@@ -643,6 +641,7 @@ final class ActionService {
                     }
                     let plainFolder = facts.directory && !facts.package
                     let stableIdentity = try operations.stableMoveIdentity(of: source)
+                    let parentIdentity = try operations.stableMoveIdentity(of: source.deletingLastPathComponent())
                     var number = 1
                     while true {
                         let name = try MoveName.candidate(source.lastPathComponent, number: number, plainFolder: plainFolder)
@@ -651,7 +650,7 @@ final class ActionService {
                         // descriptor move can outlive an ancestor rename; #11 Undo
                         // must verify the item's identity before trusting movedToPath.
                         journal.entries.append(MoveJournalEntry(originalPath: source.path, movedToPath: to.path,
-                            identity: stableIdentity, timestamp: timestamp, outcome: .intended))
+                            identity: stableIdentity, timestamp: timestamp, outcome: .intended, originalParentIdentity: parentIdentity))
                         try store.persist(journal) // Write-ahead: no rename may precede this durable intent.
                         do {
                             try operations.coordinatedExclusiveMove(from: source, to: to, expected: identity, expectedDestination: expectedDestination, timeout: timeout)
@@ -845,6 +844,7 @@ final class ActionService {
         case PasteMoveError.insideSource: key = "A folder cannot be moved into itself"
         case PasteMoveError.mountPoint: key = "A volume root cannot be moved"
         case PasteMoveError.cloud: key = "Moving items outside their cloud container is not supported yet"
+        case UndoMoveError.originalFolderReplaced: key = "The original folder was replaced"
         case UndoMoveError.originalFolder: key = "The original folder is missing or unavailable"
         case UndoMoveError.changed: key = "The moved item is missing or has changed"
         case PasteMoveError.changed: key = "Changed since cut"

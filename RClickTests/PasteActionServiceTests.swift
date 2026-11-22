@@ -1080,3 +1080,48 @@ extension PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: file.path)) // Recovery never moves files.
     }
 }
+
+
+extension PasteActionServiceTests {
+    @Test(arguments: ["symlink", "recreated", "deleted", "unchanged", "legacy", "legacy-symlink"])
+    func undoChecksOriginalParentBeforeRestoring(_ kind: String) async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let file = try f.file()
+        await f.cut([file]); await f.paste()
+        if kind.hasPrefix("legacy") {
+            // A version-1 journal from before parent identities were recorded.
+            let data = try JSONEncoder().encode(try #require(f.journal.load()))
+            var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            var entries = try #require(object["entries"] as? [[String: Any]])
+            for index in entries.indices { entries[index].removeValue(forKey: "originalParentIdentity") }
+            object["entries"] = entries
+            try f.journal.save(JSONDecoder().decode(MoveJournal.self, from: JSONSerialization.data(withJSONObject: object)))
+        }
+        let other = f.root.appendingPathComponent("other")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: false)
+        if ["symlink", "legacy-symlink", "recreated", "deleted"].contains(kind) {
+            // Retain the old object elsewhere to rule out accidental inode reuse.
+            try FileManager.default.moveItem(at: f.source, to: f.root.appendingPathComponent("old-source"))
+            if kind.contains("symlink") {
+                try FileManager.default.createSymbolicLink(at: f.source, withDestinationURL: other)
+            } else if kind == "recreated" {
+                try FileManager.default.createDirectory(at: f.source, withIntermediateDirectories: false)
+            }
+        }
+        await undo(f.service)
+        let shouldRestore = ["unchanged", "legacy"].contains(kind)
+        #expect(FileManager.default.fileExists(atPath: file.path) == shouldRestore)
+        #expect(FileManager.default.fileExists(atPath: f.destination.appendingPathComponent(file.lastPathComponent).path) == !shouldRestore)
+        #expect(!FileManager.default.fileExists(atPath: other.appendingPathComponent(file.lastPathComponent).path))
+        if shouldRestore {
+            #expect(try Data(contentsOf: file) == Data("original".utf8))
+            #expect(f.warnings.isEmpty)
+        } else {
+            #expect(f.warnings.count == 1)
+            #expect(f.warnings.last?.contains("The original folder was replaced") == true)
+            if kind == "deleted" { #expect(!FileManager.default.fileExists(atPath: f.source.path)) }
+        }
+        #expect(f.journal.load()?.entries.isEmpty == true)
+        #expect(f.leaser.balance == 0)
+    }
+}

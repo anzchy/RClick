@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Direct Delete now always asks for confirmation before permanently removing files. Hold Option while choosing it to skip the prompt
 
 ### Added
+- Hide Undo until interrupted Paste recovery completes, and refuse restoration into a replaced original folder
 - Undo last move restores the latest same-volume Paste for up to 24 hours, including after relaunch, with identity checks, exclusive numbered names and a summary for skipped items; Finder and sandbox device validation remain pending
 - Implemented multiple snapshots per New File type, including custom types, with a Blank entry, per-template Finder submenus and an editable template list; backups retain metadata and report omitted template files; custom types requiring a template are hidden until one is available; device validation remains pending
 - Opt-in same-volume Paste (move here), with exclusive no-overwrite moves, partial-failure retry and a durable journal for Undo; Finder/device validation remains pending

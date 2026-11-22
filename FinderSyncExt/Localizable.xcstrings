@@ -240,6 +240,40 @@
         }
       }
     },
+    "The original folder was replaced" : {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original folder was replaced"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原文件夹已被替换"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のフォルダが置き換えられました"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La carpeta original ha sido reemplazada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le dossier d’origine a été remplacé"
+          }
+        }
+      }
+    },
     "Changed since cut": {
       "extractionState": "manual",
       "localizations": {
