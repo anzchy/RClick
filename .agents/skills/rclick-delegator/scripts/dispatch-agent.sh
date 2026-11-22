@@ -54,22 +54,63 @@ def send_keys():
     run(['herdr', 'pane', 'send-keys', args.pane, 'Enter'])
 
 
-def fresh_claude(screen):
+def claude_freshness_reason(screen):
+    """An empty composer and zero footer must bound a transcript-free welcome."""
     lines = [line.strip() for line in screen.splitlines() if line.strip()]
-    footers = [i for i, line in enumerate(lines) if re.match(r'^Context\s', line)]
-    composers = [i for i, line in enumerate(lines) if line.startswith('❯')]
     welcomes = [i for i, line in enumerate(lines) if 'Claude Code' in line]
-    if not footers or not composers or not welcomes:
-        return False
-    footer, composer, welcome = footers[-1], composers[-1], welcomes[-1]
-    banner = [line for line in lines[welcome + 1:composer]
-              if not re.fullmatch(r'[─━]+', line) and not line.startswith('✘ Auto-update failed')]
-    # /clear may remain as one echoed history row after the welcome banner.
-    if banner and banner[-1] == '❯ /clear':
-        banner.pop()
-    return (welcome < composer < footer and len(lines) - footer <= 5 and len(banner) <= 2
-            and (lines[composer] == '❯' or lines[composer].startswith('❯ Try '))
-            and bool(re.fullmatch(r'Context\s+(?:[█░]+\s+)?0%\s*(?:used)?', lines[footer])))
+    if not welcomes:
+        return 'missing Claude Code welcome banner'
+    composers = [i for i, line in enumerate(lines) if line.startswith('❯')]
+    if not composers or lines[composers[-1]] != '❯' and not lines[composers[-1]].startswith('❯ Try '):
+        return 'missing empty composer'
+    composer, welcome = composers[-1], welcomes[-1]
+
+    def separator(line):
+        # Agent panes label the upper rule; its width is terminal-dependent.
+        return bool(re.fullmatch(r'[─━]+(?: [A-Za-z0-9._-]+ [─━]+)?', line))
+
+    def notice(line):
+        return line.startswith(('⚠ ', '✘ Auto-update failed'))
+
+    if composer == 0 or composer + 1 >= len(lines) or not all(
+            separator(lines[i]) for i in (composer - 1, composer + 1)):
+        return 'empty composer is not between separators'
+    if welcome >= composer:
+        return 'welcome banner is not above composer'
+    footers = [i for i, line in enumerate(lines) if re.match(r'^Context\s', line)]
+    if not footers or footers[-1] <= composer + 1:
+        return 'missing Context footer below composer'
+    footer = footers[-1]
+    if not re.fullmatch(r'Context\s+(?:[█░▒▓▏▎▍▌▋▊▉]+\s+)?0%\s*(?:used)?', lines[footer]):
+        return 'Context footer is not zero'
+    # Accept HUD model/cwd and permission hints, never arbitrary newer output.
+    if any(not re.fullmatch(r'\[[^]\n]+\]\s*│.*', line)
+           for line in lines[composer + 2:footer]):
+        return 'unexpected content before Context footer'
+    if any(not line.startswith(('⏵⏵ ', '? for shortcuts')) for line in lines[footer + 1:]):
+        return 'unexpected content after Context footer'
+    region = lines[welcome + 1:composer - 1]
+    echoes = [i for i, line in enumerate(region) if line == '❯ /clear']
+    # Banner metadata is recognizable by its model/billing or cwd syntax.
+    # It is allowed only before the echo, never as transcript after /clear.
+    before = region[:echoes[-1]] if echoes else region
+    after = region[echoes[-1] + 1:] if echoes else []
+    for line in before:
+        if separator(line) or notice(line):
+            continue
+        metadata = re.sub(r'^[▐▛█▝▜▀▟▙▘▗▖ ]*', '', line)
+        if re.match(r'(?:Opus|Sonnet|Haiku) [0-9].* · ', metadata):
+            continue
+        if metadata.startswith(('~/', '/', '@rclick-')):
+            continue
+        return 'unexpected content between welcome and composer'
+    if any(not (separator(line) or notice(line)) for line in after):
+        return 'transcript content after /clear'
+    return ''
+
+
+def fresh_claude(screen):
+    return not claude_freshness_reason(screen)
 
 
 def live_status(screen):

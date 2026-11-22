@@ -1,0 +1,18 @@
+
+ ▐▛███▛█   Claude Code v2.1.325
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   @rclick-opus-auditor · …/opus-au…
+
+
+❯ /clear
+
+
+
+
+
+────────────────────── rclick-opus-auditor ─
+❯
+────────────────────────────────────────────
+  [Opus 5.5] │ opus-auditor git:(HEAD*)
+  Context ░░░░ 0%
+  ⏵⏵ bypass permissions on (shift+tab to

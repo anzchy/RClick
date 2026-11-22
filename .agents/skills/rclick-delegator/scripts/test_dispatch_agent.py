@@ -412,6 +412,31 @@ class DispatchTests(unittest.TestCase):
                 self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
+    def test_agent_pane_freshness_and_transcript_mutations(self):
+        fixtures = SCRIPTS / 'fixtures/claude-screens'
+        for name in ('claude-fresh-agent-pane-after-clear.txt', 'claude-fail-r4-raw.txt'):
+            screen = (fixtures / name).read_text()
+            if name == 'claude-fail-r4-raw.txt':
+                # The saved failure log wraps the exact pane tail with dispatch diagnostics.
+                screen = screen.split('pane tail:\n', 1)[1].rsplit('\nstopped event=', 1)[0]
+            with self.subTest(capture=name):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(CLAUDE_RESET_SCREEN=screen)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            rejected = [screen.replace('❯ /clear', '❯ /clear\n⏺ Read file\n⎿ tool output'),
+                        screen.replace('0%', '3%'), screen.replace('❯\n', '❯ pending\n'),
+                        screen.replace('Claude Code', 'Shell'),
+                        screen + '\n⏺ New output after footer',
+                        screen.replace('❯ /clear', '❯ /clear\n· Thinking… (1s)'),
+                        (fixtures / 'claude-bare-clear-only.txt').read_text()]
+            for bad in rejected:
+                with self.subTest(capture=name, rejected=bad):
+                    self.log.unlink(missing_ok=True)
+                    result = self.run_dispatch(CLAUDE_RESET_SCREEN=bad)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
+                    self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_prompt_strips_one_final_newline_and_refuses_all_other_newlines(self):
         self.prompt.write_text('Read the brief. Task i61-test\n')
         result = self.run_dispatch()
