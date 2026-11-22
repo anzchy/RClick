@@ -314,3 +314,33 @@ extension PasteActionServiceTests {
         #expect(f.leaser.balance == 0)
     }
 }
+
+
+extension PasteActionServiceTests {
+    @Test func writableSearchableDropBoxAcceptsPasteWithoutReadPermission() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        await f.cut([item])
+        try FileManager.default.setAttributes([.posixPermissions: 0o300], ofItemAtPath: f.destination.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: f.destination.path) }
+        await f.paste()
+        #expect(f.warnings.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: item.path))
+        #expect(try Data(contentsOf: f.destination.appendingPathComponent("notes.txt")) == Data("original".utf8))
+        #expect(f.journal.load()?.entries.first?.outcome == .moved)
+        #expect(f.service.pendingCut == nil)
+    }
+
+    @Test func directoryOpenPermissionFailureIsNotDestinationChanged() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let operations = f.operations
+        let destination = f.destination
+        operations.onNextCoordination { _ in operations.denyDirectoryOpen(destination) }
+        await f.cut([item]); await f.paste()
+        #expect(f.warnings.first?.contains(POSIXError(.EACCES).localizedDescription) == true)
+        #expect(f.warnings.first?.contains("The destination changed") == false)
+        #expect(FileManager.default.fileExists(atPath: item.path))
+        #expect(f.service.pendingCut?.paths == [item.path])
+    }
+}

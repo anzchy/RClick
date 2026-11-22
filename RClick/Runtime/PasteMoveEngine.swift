@@ -24,7 +24,7 @@ extension FileOperations {
     nonisolated func openMoveDirectory(_ url: URL) throws -> Int32 {
         let descriptor = try url.withUnsafeFileSystemRepresentation { path in
             guard let path else { throw PasteMoveError.invalidDestination }
-            return open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+            return open(path, O_SEARCH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
         }
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         return descriptor
@@ -85,7 +85,9 @@ extension FileOperations {
                         // never redirect the write through the lexical destination.
                         let directory: Int32
                         do { directory = try openMoveDirectory(to.deletingLastPathComponent()) }
-                        catch { throw PasteMoveError.destinationChanged }
+                        catch let error as POSIXError where [.ENOENT, .ENOTDIR, .ELOOP].contains(error.code) {
+                            throw PasteMoveError.destinationChanged
+                        }
                         defer { closeMoveDirectory(directory) }
                         do {
                             let identity = try directoryIdentity(directory)
