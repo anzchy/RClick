@@ -280,8 +280,8 @@ extension PasteActionServiceTests {
             try operations.coordinatedExclusiveMove(from: item, to: folder.appendingPathComponent("notes.txt"),
                 expected: expected, expectedDestination: expectedDestination, timeout: 30)
         }.value
-        #expect(try Data(contentsOf: parked.appendingPathComponent("destination/notes.txt")) == Data("original".utf8))
         #expect(!FileManager.default.fileExists(atPath: replacement.appendingPathComponent("destination/notes.txt").path))
+        #expect(try Data(contentsOf: parked.appendingPathComponent("destination/notes.txt")) == Data("original".utf8))
         #expect(!FileManager.default.fileExists(atPath: item.path))
     }
 }
