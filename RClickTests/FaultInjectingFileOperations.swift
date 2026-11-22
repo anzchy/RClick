@@ -18,6 +18,8 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var descriptorPath: URL?
+        var renameHook: (@Sendable () throws -> Void)?
         var reportedTrash: [URL]?
         var accountHome: URL?
         var volumeUUIDs: [String: String] = [:]
@@ -167,13 +169,38 @@ final class FaultInjectingFileOperations: FileOperations {
         faults.withLock { _ = $0.createClash.insert(url.path) }
     }
 
+    func reportDescriptorPath(_ path: URL) { faults.withLock { $0.descriptorPath = path } }
+    func directoryPath(_ descriptor: Int32) throws -> URL {
+        try faults.withLock { $0.descriptorPath } ?? base.directoryPath(descriptor)
+    }
+    func onNextRename(_ hook: @escaping @Sendable () throws -> Void) { faults.withLock { $0.renameHook = hook } }
+    func directoryIdentity(_ descriptor: Int32) throws -> FileIdentity {
+        let identity = try base.directoryIdentity(descriptor)
+        let path = try base.directoryPath(descriptor)
+        return FileIdentity(volume: adjustedVolume(identity.volume, for: path), fileNumber: identity.fileNumber)
+    }
+    func exclusiveRename(from source: URL, to destination: URL, directory: Int32) throws {
+        try recordRename(from: source, to: destination)
+        try base.exclusiveRename(from: source, to: destination, directory: directory)
+    }
+
     func exclusiveRename(from source: URL, to destination: URL) throws {
+        try recordRename(from: source, to: destination)
+        try base.exclusiveRename(from: source, to: destination)
+    }
+
+    private func recordRename(from source: URL, to destination: URL) throws {
+        let hook = faults.withLock { state in
+            let hook = state.renameHook
+            state.renameHook = nil
+            return hook
+        }
+        try hook?()
         faults.withLock { $0.renames.append(source.path); $0.moveEvents.append("rename") }
         if let code = faults.withLock({ $0.renameErrors[source.path] }) { throw POSIXError(code) }
         if faults.withLock({ $0.createClash.remove(destination.path) != nil }) {
             try Data("racing owner".utf8).write(to: destination, options: .withoutOverwriting)
         }
-        try base.exclusiveRename(from: source, to: destination)
     }
 
     private func throwIfNameExists(at destination: URL) throws {

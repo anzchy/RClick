@@ -16,6 +16,11 @@ nonisolated protocol FileOperations: Sendable {
     func moveFacts(of url: URL) throws -> MoveFacts
     func trashDirectories() -> [URL]
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal?
+    func openMoveDirectory(_ url: URL) throws -> Int32
+    func closeMoveDirectory(_ descriptor: Int32)
+    func directoryIdentity(_ descriptor: Int32) throws -> FileIdentity
+    func directoryPath(_ descriptor: Int32) throws -> URL
+    func exclusiveRename(from source: URL, to destination: URL, directory: Int32) throws
     func exclusiveRename(from source: URL, to destination: URL) throws
     func waitForCoordination(_ completion: DispatchSemaphore, timeout: TimeInterval) -> DispatchTimeoutResult
     func notifyMove(_ notification: MoveNotification, using coordinator: NSFileCoordinator, from source: URL, to destination: URL)
