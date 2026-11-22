@@ -522,3 +522,16 @@ extension PendingCut {
             paste: visibility.paste && folderTarget)
     }
 }
+
+extension NewFileMenuItem {
+    /// Render the collapsed New File group at the same seam as its offline policy.
+    nonisolated static func makeGroupMenuItem(title: String, items: [NSMenuItem], hostOnline: Bool) -> NSMenuItem {
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+        for item in items { submenu.addItem(item) }
+        let group = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        group.submenu = submenu
+        group.isEnabled = hostOnline
+        return group
+    }
+}

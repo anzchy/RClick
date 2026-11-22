@@ -443,13 +443,8 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
             if config.newFilesCollapsed {
                 // 折叠：使用子菜单
                 let newFilesTitle = AppLocalization.localized("New File")
-                let newFilesSubMenu = NSMenu(title: newFilesTitle)
-                for newFile in config.newFiles {
-                    let item = makeNewFileItem(newFile)
-                    newFilesSubMenu.addItem(item)
-                }
-                let newFilesItem = NSMenuItem(title: newFilesTitle, action: nil, keyEquivalent: "")
-                newFilesItem.submenu = newFilesSubMenu
+                let newFilesItem = NewFileMenuItem.makeGroupMenuItem(title: newFilesTitle,
+                    items: config.newFiles.map { makeNewFileItem($0) }, hostOnline: !offline)
                 newFilesItem.image = templateSymbol("doc.badge.plus")
                 menu.addItem(newFilesItem)
             } else {
