@@ -316,6 +316,22 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+    def test_real_claude_reset_layout_and_fail_closed_variants(self):
+        fresh = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-after-clear.txt').read_text()
+        result = self.run_dispatch(CLAUDE_RESET_SCREEN=fresh)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rejected = [fresh.replace('0%', '3%'), fresh.replace('❯\n', '❯ pending\n'),
+                    fresh.replace('❯ /clear', 'Earlier transcript\n❯ /clear')]
+        rejected += [(SCRIPTS / ('fixtures/claude-screens/claude-working-' + n + '.txt')).read_text()
+                     for n in ('1', '2')]
+        for screen in rejected:
+            with self.subTest(screen=screen):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(CLAUDE_RESET_SCREEN=screen)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
+                self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
     def test_prompt_strips_one_final_newline_and_refuses_all_other_newlines(self):
         self.prompt.write_text('Read the brief. Task i61-test\n')
         result = self.run_dispatch()

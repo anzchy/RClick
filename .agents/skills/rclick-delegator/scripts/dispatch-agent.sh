@@ -64,6 +64,9 @@ def fresh_claude(screen):
     footer, composer, welcome = footers[-1], composers[-1], welcomes[-1]
     banner = [line for line in lines[welcome + 1:composer]
               if not re.fullmatch(r'[─━]+', line) and not line.startswith('✘ Auto-update failed')]
+    # /clear may remain as one echoed history row after the welcome banner.
+    if banner and banner[-1] == '❯ /clear':
+        banner.pop()
     return (welcome < composer < footer and len(lines) - footer <= 5 and len(banner) <= 2
             and (lines[composer] == '❯' or lines[composer].startswith('❯ Try '))
             and bool(re.fullmatch(r'Context\s+(?:[█░]+\s+)?0%\s*(?:used)?', lines[footer])))
