@@ -486,6 +486,9 @@ final class ActionService {
                     while true {
                         let name = try MoveName.candidate(source.lastPathComponent, number: number, plainFolder: plainFolder)
                         let to = destination.appendingPathComponent(name)
+                        // This is a lexical intent, not a relocatable location. A
+                        // descriptor move can outlive an ancestor rename; #11 Undo
+                        // must verify the item's identity before trusting movedToPath.
                         journal.entries.append(MoveJournalEntry(originalPath: source.path, movedToPath: to.path,
                             identity: stableIdentity, timestamp: timestamp, outcome: .intended))
                         try store.persist(journal) // Write-ahead: no rename may precede this durable intent.
