@@ -346,7 +346,8 @@ struct GeneralSettingsTabView: View {
         }
         let omittedTemplates = backup.importOmittedTemplateCount(templateStore: store.newFileTemplateStore)
         store.cdirs = backup.commonDirs.map { $0.toModel() }
-        backup.preferences.apply()
+        backup.preferences.apply(to: store)
+        if let value = backup.preferences.showMenuBarExtra { showMenuBarExtra = value }
         store.sync(preserveTemplateSnapshots: true)
 
         if skippedApps > 0 || omittedTemplates > 0 {
@@ -436,7 +437,8 @@ struct GeneralSettingsTabView: View {
             appIconStyle: RCAppIconStyle.simple.rawValue,
             showMenuBarExtra: true,
             launchAtLogin: false
-        ).apply()
+        ).apply(to: store)
+        showMenuBarExtra = true
         store.sync()
         logger.info("重置所有设置")
     }

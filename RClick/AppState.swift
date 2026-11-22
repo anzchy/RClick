@@ -81,9 +81,17 @@ class AppState: ObservableObject, ActionStateProviding {
         }
     }
 
-    init(inExt: Bool = false) {
+    init(inExt: Bool = false, preferencesDefaults: UserDefaults = .group) {
+        _foldAppsMenu = AppStorage(wrappedValue: false, "foldAppsMenu", store: preferencesDefaults)
+        _foldActionsMenu = AppStorage(wrappedValue: false, "foldActionsMenu", store: preferencesDefaults)
+        _foldNewFileMenu = AppStorage(wrappedValue: true, "foldNewFileMenu", store: preferencesDefaults)
+        _foldCommonDirMenu = AppStorage(wrappedValue: true, "foldCommonDirMenu", store: preferencesDefaults)
+        _showCommonDirs = AppStorage(wrappedValue: false, "showCommonDirs", store: preferencesDefaults)
+        _appIconStyle = AppStorage(wrappedValue: RCAppIconStyle.simple.rawValue, "appIconStyle", store: preferencesDefaults)
         // Before anything reads the switches above.
-        Self.migrateLayoutToggles(from: .standard, to: .group)
+        if preferencesDefaults === UserDefaults.group {
+            Self.migrateLayoutToggles(from: .standard, to: preferencesDefaults)
+        }
         self.inExt = inExt
         Task { @MainActor in
             logger.debug("start load")

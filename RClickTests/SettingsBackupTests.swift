@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import SwiftData
+import Synchronization
 
 @testable import RClick
 
@@ -180,4 +181,72 @@ struct SettingsBackupTests {
         }
     }
 
+}
+
+
+extension SettingsBackupTests {
+    nonisolated final class Signals: Sendable { let count = Mutex(0) }
+
+    @Test func importRestoresEveryExportedPreferenceAndRefreshesMenu() throws {
+        let suite = "RClickTests-backup-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = AppState(preferencesDefaults: defaults)
+        state.foldAppsMenu = false; state.foldActionsMenu = false
+        state.foldNewFileMenu = true; state.foldCommonDirMenu = true
+        state.showCommonDirs = true; state.appIconStyle = 2
+        defaults.set(false, forKey: Key.showMenuBarExtra)
+        var login = false
+        let before = SettingsBackup(appState: state, defaults: defaults, launchAtLogin: { login })
+        state.foldAppsMenu = true; state.foldActionsMenu = true
+        state.foldNewFileMenu = false; state.foldCommonDirMenu = false
+        state.showCommonDirs = false; state.appIconStyle = 0
+        defaults.set(true, forKey: Key.showMenuBarExtra); login = true
+        let signals = Signals()
+        let token = NotificationCenter.default.addObserver(forName: .menuConfigShouldUpdate, object: nil, queue: nil) { _ in
+            signals.count.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let decoded = try JSONDecoder().decode(SettingsBackup.self, from: JSONEncoder().encode(before))
+        decoded.preferences.apply(to: state, defaults: defaults, setLaunchAtLogin: { login = $0 })
+        var after = SettingsBackup(appState: state, defaults: defaults, launchAtLogin: { login })
+        after.exportedAt = before.exportedAt
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        #expect(try encoder.encode(after) == encoder.encode(before))
+        #expect(state.foldActionsMenu == false)
+        #expect(signals.count.withLock { $0 } == 1)
+        let menu = MenuService().buildConfig(from: state)
+        #expect(menu.actionsCollapsed == false)
+        #expect(menu.appsCollapsed == false)
+        #expect(menu.newFilesCollapsed == true)
+        #expect(menu.commonDirsCollapsed == true)
+        #expect(menu.iconStyle == 2)
+    }
+
+    @Test func oldBackupWithMissingPreferencesKeepsCurrentValues() throws {
+        let suite = "RClickTests-old-backup-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = AppState(preferencesDefaults: defaults)
+        state.foldAppsMenu = true; state.foldActionsMenu = true
+        state.foldNewFileMenu = false; state.foldCommonDirMenu = false
+        state.showCommonDirs = true; state.appIconStyle = 2
+        defaults.set(false, forKey: Key.showMenuBarExtra)
+        var login = true
+        let before = SettingsBackup(appState: state, defaults: defaults, launchAtLogin: { login })
+        let missing = try JSONDecoder().decode(SettingsBackup.Preferences.self, from: Data("{}".utf8))
+        missing.apply(to: state, defaults: defaults, setLaunchAtLogin: { login = $0 })
+        let after = SettingsBackup(appState: state, defaults: defaults, launchAtLogin: { login })
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        #expect(try encoder.encode(before.preferences) == encoder.encode(after.preferences))
+        let partial = try JSONDecoder().decode(SettingsBackup.Preferences.self, from: Data(#"{"foldActionsMenu":false}"#.utf8))
+        partial.apply(to: state, defaults: defaults, setLaunchAtLogin: { login = $0 })
+        #expect(state.foldActionsMenu == false)
+        #expect(state.foldAppsMenu == true)
+        #expect(state.foldNewFileMenu == false)
+        #expect(state.showCommonDirs == true)
+        #expect(state.appIconStyle == 2)
+        #expect(defaults.bool(forKey: Key.showMenuBarExtra) == false)
+        #expect(login == true)
+    }
 }
