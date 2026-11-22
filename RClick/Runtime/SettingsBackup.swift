@@ -69,14 +69,14 @@ struct SettingsBackup: Codable {
     }
 
     struct Preferences: Codable {
-        var foldAppsMenu: Bool
-        var foldActionsMenu: Bool
-        var foldNewFileMenu: Bool
-        var foldCommonDirMenu: Bool
-        var showCommonDirs: Bool
-        var appIconStyle: Int
-        var showMenuBarExtra: Bool
-        var launchAtLogin: Bool
+        var foldAppsMenu: Bool?
+        var foldActionsMenu: Bool?
+        var foldNewFileMenu: Bool?
+        var foldCommonDirMenu: Bool?
+        var showCommonDirs: Bool?
+        var appIconStyle: Int?
+        var showMenuBarExtra: Bool?
+        var launchAtLogin: Bool?
     }
 }
 
@@ -84,7 +84,7 @@ struct SettingsBackup: Codable {
 
 @MainActor
 extension SettingsBackup {
-    init(appState: AppState, defaults: UserDefaults = .group) {
+    init(appState: AppState, defaults: UserDefaults = .group, launchAtLogin: () -> Bool = { LaunchAtLogin.isEnabled }) {
         schemaVersion = Self.currentSchemaVersion
         exportedAt = Date()
         apps = appState.apps.map { App($0) }
@@ -102,7 +102,7 @@ extension SettingsBackup {
             showCommonDirs: appState.showCommonDirs,
             appIconStyle: appState.appIconStyle,
             showMenuBarExtra: defaults.object(forKey: Key.showMenuBarExtra) as? Bool ?? true,
-            launchAtLogin: LaunchAtLogin.isEnabled
+            launchAtLogin: launchAtLogin()
         )
     }
 }
@@ -257,17 +257,21 @@ extension SettingsBackup {
 
 @MainActor
 extension SettingsBackup.Preferences {
-    func apply(to defaults: UserDefaults = .group) {
-        defaults.set(foldAppsMenu, forKey: "foldAppsMenu")
-        defaults.set(foldActionsMenu, forKey: "foldActionsMenu")
-        defaults.set(foldNewFileMenu, forKey: "foldNewFileMenu")
-        defaults.set(foldCommonDirMenu, forKey: "foldCommonDirMenu")
-        defaults.set(showCommonDirs, forKey: "showCommonDirs")
-        defaults.set(appIconStyle, forKey: "appIconStyle")
-        defaults.set(showMenuBarExtra, forKey: Key.showMenuBarExtra)
-
-        if LaunchAtLogin.isEnabled != launchAtLogin {
-            LaunchAtLogin.isEnabled = launchAtLogin
+    func apply(to appState: AppState, defaults: UserDefaults = .group,
+        setLaunchAtLogin: (Bool) -> Void = { enabled in
+            if LaunchAtLogin.isEnabled != enabled { LaunchAtLogin.isEnabled = enabled }
         }
+    ) {
+        // AppState owns AppStorage wrappers outside SwiftUI's view update cycle.
+        // Writing defaults alone can leave those wrappers serving stale values.
+        if let foldAppsMenu { appState.foldAppsMenu = foldAppsMenu; defaults.set(foldAppsMenu, forKey: "foldAppsMenu") }
+        if let foldActionsMenu { appState.foldActionsMenu = foldActionsMenu; defaults.set(foldActionsMenu, forKey: "foldActionsMenu") }
+        if let foldNewFileMenu { appState.foldNewFileMenu = foldNewFileMenu; defaults.set(foldNewFileMenu, forKey: "foldNewFileMenu") }
+        if let foldCommonDirMenu { appState.foldCommonDirMenu = foldCommonDirMenu; defaults.set(foldCommonDirMenu, forKey: "foldCommonDirMenu") }
+        if let showCommonDirs { appState.showCommonDirs = showCommonDirs; defaults.set(showCommonDirs, forKey: "showCommonDirs") }
+        if let appIconStyle { appState.appIconStyle = appIconStyle; defaults.set(appIconStyle, forKey: "appIconStyle") }
+        if let showMenuBarExtra { defaults.set(showMenuBarExtra, forKey: Key.showMenuBarExtra) }
+        if let launchAtLogin { setLaunchAtLogin(launchAtLogin) }
+        NotificationCenter.default.post(name: .menuConfigShouldUpdate, object: nil)
     }
 }
