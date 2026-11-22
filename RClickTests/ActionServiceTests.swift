@@ -67,9 +67,30 @@ final class ActionServiceTests {
         var cdirs: [CommonDir] = []
         var showCommonDirs = false
 
-        func getAppItem(rid: String) -> OpenWithApp? { nil }
+        func getAppItem(rid: String) -> OpenWithApp? { apps.first { $0.id == rid } }
         func getActionItem(rid: String) -> RCAction? { nil }
         func getFileType(rid: String) -> NewFile? { nil }
+    }
+
+    @Test func openAppSendsTheRawSelectedPercentPathToWorkspace() async throws {
+        let (dir, _) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let raw = dir.appendingPathComponent("100%41.txt")
+        let other = dir.appendingPathComponent("100A.txt")
+        try Data("selected".utf8).write(to: raw)
+        try Data("other".utf8).write(to: other)
+        let state = MockState()
+        var app = OpenWithApp(id: "editor", appURL: dir.appendingPathComponent("Editor.app"))
+        app.opensContainingDir = false
+        state.apps = [app]
+        let permission = MockPermission(); permission.hasAccessResult = true
+        var opened: [URL] = []
+        let service = ActionService(state: state, permission: permission, confirmation: MockConfirmation(),
+            openApplication: { urls, _, _, _ in opened += urls })
+        await service.openApp(rid: "editor", target: [raw.path, raw.absoluteString])
+        #expect(opened == [raw, raw])
+        #expect(try Data(contentsOf: raw) == Data("selected".utf8))
+        #expect(try Data(contentsOf: other) == Data("other".utf8))
     }
 
     private func makeTempFile() throws -> (dir: URL, file: URL) {

@@ -29,6 +29,7 @@ final class ActionService {
     private let journalStore: (any UndoJournalStore)?
     private let undoExpiryWait: @Sendable (TimeInterval) async throws -> Void
     private let cutPasteboard: any CutPasteboard
+    private let openApplication: ([URL], URL, NSWorkspace.OpenConfiguration, @escaping @Sendable (NSRunningApplication?, (any Error)?) -> Void) -> Void
     private let pasteboard: NSPasteboard
     private let moveLogSink: (@Sendable (MoveLogEvent, String) -> Void)?
     private let cutWarning: (String) -> Void
@@ -51,6 +52,9 @@ final class ActionService {
         now: @escaping @Sendable () -> Date = { Date() },
         accessLeaser: any ScopedAccessLeasing = BookmarkAccessLeaser(),
         revealNewFile: ((URL) -> Void)? = nil,
+        openApplication: @escaping ([URL], URL, NSWorkspace.OpenConfiguration, @escaping @Sendable (NSRunningApplication?, (any Error)?) -> Void) -> Void = { urls, app, config, completion in
+            NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: config, completionHandler: completion)
+        },
         journalStore: (any UndoJournalStore)? = nil,
         undoExpiryWait: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
         cutPasteboard: (any CutPasteboard)? = nil,
@@ -76,6 +80,7 @@ final class ActionService {
         self.pasteboard = pasteboard
         self.now = now
         self.accessLeaser = accessLeaser
+        self.openApplication = openApplication
         self.revealNewFile = revealNewFile
         self.moveLogSink = moveLogSink
         self.cutWarning = cutWarning
@@ -177,7 +182,7 @@ final class ActionService {
         let config = NSWorkspace.OpenConfiguration()
         // 以新实例打开（浏览器类 app 会新开窗口而非新 tab）
         config.createsNewApplicationInstance = opensNewInstance
-        NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: config) { [weak self] runningApp, error in
+        openApplication([url], appUrl, config) { [weak self] runningApp, error in
             guard let self else { return }
             if let error {
                 // 失败兜底：再弹授权并重试一次
@@ -198,7 +203,7 @@ final class ActionService {
         }
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = opensNewInstance
-        NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: config) { _, retryError in
+        openApplication([url], appUrl, config) { _, retryError in
             if let retryError {
                 logger.error("重试打开仍失败：\(url.path) — \(retryError.localizedDescription)")
             }

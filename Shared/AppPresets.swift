@@ -117,8 +117,11 @@ enum AppPresets {
         let bundleID = appPath.flatMap { Bundle(url: URL(fileURLWithPath: $0))?.bundleIdentifier }
         let opensContainingDir = explicit ?? bundleID.map { terminalBundleIDs.contains($0) } ?? false
         return targetPaths.map { raw in
-            let decoded = raw.removingPercentEncoding ?? raw
-            var url = URL(fileURLWithPath: decoded)
+            // Finder sends raw paths. Only an actual file URL carries URL escapes.
+            var url = raw.lowercased().hasPrefix("file://")
+                ? (URL(string: raw).flatMap { $0.isFileURL ? $0 : nil } ?? URL(fileURLWithPath: raw))
+                : URL(fileURLWithPath: raw)
+            let decoded = url.path
             if opensContainingDir {
                 var isDir: ObjCBool = false
                 if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue {
