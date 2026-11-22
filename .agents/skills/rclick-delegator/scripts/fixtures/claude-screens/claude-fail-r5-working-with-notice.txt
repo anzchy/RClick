@@ -13,7 +13,7 @@ FAIL dispatch: pane never showed Working after 3 Enter attempts; pane tail:
 ✢ Enchanting… (7s · ↓ 184 tokens)
   ⚠ claude.ai connectors are disabled bec…
 ────────────────────── rclick-opus-auditor ─
-❯ 
+❯
 ────────────────────────────────────────────
   [Opus 5.5] │ opus-auditor git:(HEAD*)
   Context ░░░░ 1%
