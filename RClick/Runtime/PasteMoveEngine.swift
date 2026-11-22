@@ -103,6 +103,11 @@ extension FileOperations {
     }
     nonisolated func prepareCoordinatedMove(_ source: URL) throws {}
     nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity, expectedDestination: FileIdentity, timeout: TimeInterval) throws {
+        try coordinatedExclusiveMove(from: source, to: destination, expected: expected,
+            expectedDestination: expectedDestination, expectedStable: nil, timeout: timeout)
+    }
+    nonisolated func coordinatedExclusiveMove(from source: URL, to destination: URL, expected: FileIdentity,
+        expectedDestination: FileIdentity, expectedStable: StableMoveIdentity?, timeout: TimeInterval) throws {
         let job = MoveCoordinationJob()
         let done = DispatchSemaphore(value: 0)
         // A dedicated Foundation thread keeps blocking file presenters off both
@@ -125,6 +130,17 @@ extension FileOperations {
                         defer { closeMoveDirectory(sourceDirectory) }
                         guard try fileIdentity(of: from, directory: sourceDirectory) == expected else {
                             throw PasteMoveError.changed
+                        }
+                        if let expectedStable {
+                            var info = stat()
+                            let status = try from.withMoveName { fstatat(sourceDirectory, $0, &info, AT_SYMLINK_NOFOLLOW) }
+                            let birth = Date(timeIntervalSince1970: Double(info.st_birthtimespec.tv_sec)
+                                + Double(info.st_birthtimespec.tv_nsec) / 1_000_000_000)
+                            guard status == 0, info.st_ino == expectedStable.inode,
+                                  birth == expectedStable.creationDate,
+                                  try volumeUUID(of: directoryPath(sourceDirectory).appendingPathComponent(from.lastPathComponent)) == expectedStable.volumeUUID else {
+                                throw UndoMoveError.changed
+                            }
                         }
                         notifyMove(.willMoveTo, using: job.coordinator, from: from, to: to)
                         // Pin the directory, classify the kernel's path for that open

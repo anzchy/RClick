@@ -172,3 +172,11 @@ extension FileOperations {
         catch let error as POSIXError where error.code == .ENOENT { return nil }
     }
 }
+
+nonisolated enum UndoMoveError: Error { case changed }
+
+extension MoveJournal {
+    nonisolated func undoEntries(at now: Date) -> [MoveJournalEntry] {
+        entries.filter { $0.outcome == .moved && $0.timestamp <= now && now.timeIntervalSince($0.timestamp) < 86400 }
+    }
+}
