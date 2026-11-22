@@ -20,6 +20,7 @@ final class FaultInjectingFileOperations: FileOperations {
     private struct Faults {
         var destinationClassificationHook: (@Sendable () throws -> Void)?
         var deniedOpen: URL?
+        var directoryOpenError: POSIXErrorCode = .EACCES
         var descriptorPath: URL?
         var renameHook: (@Sendable () throws -> Void)?
         var reportedTrash: [URL]?
@@ -180,9 +181,13 @@ final class FaultInjectingFileOperations: FileOperations {
         faults.withLock { _ = $0.createClash.insert(url.path) }
     }
 
-    func denyDirectoryOpen(_ url: URL) { faults.withLock { $0.deniedOpen = url } }
+    func denyDirectoryOpen(_ url: URL, error: POSIXErrorCode = .EACCES) {
+        faults.withLock { $0.deniedOpen = url; $0.directoryOpenError = error }
+    }
     func openMoveDirectory(_ url: URL) throws -> Int32 {
-        if faults.withLock({ $0.deniedOpen?.path == url.path }) { throw POSIXError(.EACCES) }
+        if let code = faults.withLock({ $0.deniedOpen?.path == url.path ? $0.directoryOpenError : nil }) {
+            throw POSIXError(code)
+        }
         return try base.openMoveDirectory(url)
     }
     func reportDescriptorPath(_ path: URL) { faults.withLock { $0.descriptorPath = path } }
