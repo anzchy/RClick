@@ -1,5 +1,5 @@
 
-[![](./RClick/Assets.xcassets/AppIcon.appiconset/AppIcon@1x.png)](https://github.com/wflixu/RClick/releases)
+[![](./RClick/Assets.xcassets/AppIcon.appiconset/AppIcon@1x.png)](https://github.com/anzchy/RClick/releases)
 
 # RClick
 
@@ -8,10 +8,10 @@
 [![macOS 15.6+](https://img.shields.io/badge/macOS_15.6+-Compatible-green)](https://www.apple.com/macos/macos-sequoia/)
 [![Xcode 26+](https://img.shields.io/badge/Xcode-26%2B-blue)](https://developer.apple.com/xcode/)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/wflixu/RClick)](https://github.com/wflixu/RClick/releases)
-[![GitHub downloads](https://img.shields.io/github/downloads/wflixu/RClick/total)](https://github.com/wflixu/RClick/releases)
 
 Enhance your macOS Finder context menu with custom actions. Built with Swift 6.2 and SwiftUI for macOS 15.6+. Full dark mode support with adaptive icons.
+
+RClick is a modified version of RClick by wflixu (https://github.com/wflixu/RClick), licensed under GPL-3.0.
 
 ## 🚀 Features
 
@@ -24,15 +24,6 @@ Enhance your macOS Finder context menu with custom actions. Built with Swift 6.2
 - [x] **Quick Access Folders** — Pin frequently used directories to the right-click menu.
 - [x] **Terminal-aware Opening** — Terminal presets hand the containing folder to the app by default, with an automatic/on/off override per app.
 - [x] **Dark Mode** — Full light/dark appearance support with adaptive icons and SF Symbols.
-
-## 📱 More Apps
-
-If RClick is useful to you, here are two other apps I maintain:
-
-| App | What it does | Download |
-|-----|--------------|----------|
-| [![iMonet icon](images/apps/imonet-icon.png)](https://apps.apple.com/cn/app/imonet/id6770070921?mt=12) **iMonet** | A mouse-first image viewer for macOS. Zoom follows your cursor, with native animated GIF, APNG and WebP playback. | [Mac App Store](https://apps.apple.com/cn/app/imonet/id6770070921?mt=12) |
-| [![LiveCam icon](images/apps/livecam-icon.png)](https://apps.apple.com/cn/app/livecam/id6476108478?mt=12) **LiveCam** | Show your avatar while recording your screen or live streaming, with configurable size, border and shape. | [Mac App Store](https://apps.apple.com/cn/app/livecam/id6476108478?mt=12) |
 
 ## 🏗 Architecture
 
@@ -56,7 +47,7 @@ Communication between the two processes uses `DistributedNotificationCenter`. Se
 
 ### Download
 
-Get the latest release from the [Releases page](https://github.com/wflixu/RClick/releases).
+Get the latest release from the [Releases page](https://github.com/anzchy/RClick/releases).
 
 Download the `.dmg`, open it, and drag **RClick** to your Applications folder.
 
@@ -65,7 +56,7 @@ Download the `.dmg`, open it, and drag **RClick** to your Applications folder.
 ### Build from Source
 
 ```bash
-git clone https://github.com/wflixu/RClick.git
+git clone https://github.com/anzchy/RClick.git
 cd RClick
 open RClick.xcodeproj
 ```
@@ -118,26 +109,6 @@ RClick supports five languages with the following priority:
 - System language is auto-detected — no manual language picker in the app
 - To add a new language, add an entry to `Localizable.xcstrings` and register it in the Xcode project
 
-## 👥 Contributors
-
-Thanks to all the people who have contributed to RClick!
-
-<a href="https://github.com/wflixu/RClick/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=wflixu/RClick" />
-</a>
-
-Recent contributions:
-
-- **[@SonneFish](https://github.com/SonneFish)** — built-in app presets, per-app visibility and icon styles ([#168](https://github.com/wflixu/RClick/pull/168)); Finder icon-cache and heartbeat performance ([#167](https://github.com/wflixu/RClick/pull/167)); permission status refresh ([#169](https://github.com/wflixu/RClick/pull/169)); quiet offline relaunch and settings reopen ([#170](https://github.com/wflixu/RClick/pull/170))
-- **[@Consciencieux](https://github.com/Consciencieux)** — confirmation before Direct Delete ([#163](https://github.com/wflixu/RClick/pull/163))
-- **[@Juns-g](https://github.com/Juns-g)** — watching mounted volumes so external and network drives show the menu ([#152](https://github.com/wflixu/RClick/pull/152))
-- **[@Dam0rt](https://github.com/Dam0rt)** — French localization ([#149](https://github.com/wflixu/RClick/pull/149))
-- **[@stors789](https://github.com/stors789)** — App Groups provisioning in the release pipeline ([#141](https://github.com/wflixu/RClick/pull/141))
-- **[@EliasMatDev](https://github.com/EliasMatDev)** — Latin American Spanish localization ([#138](https://github.com/wflixu/RClick/pull/138))
-- **[@shoal-rat](https://github.com/shoal-rat)** — Finder observation fix, so the menu appears in every folder ([#126](https://github.com/wflixu/RClick/pull/126))
-- **[@P013onEr](https://github.com/P013onEr)** — string catalogs and trilingual localization ([#120](https://github.com/wflixu/RClick/pull/120)), draggable menu ordering ([#121](https://github.com/wflixu/RClick/pull/121))
-- **[@chunyang-wen](https://github.com/chunyang-wen)** — removed a needless `await` ([#21](https://github.com/wflixu/RClick/pull/21))
-
 ## Similar Projects
 
 - [SzContext](https://github.com/RoadToDream/SzContext)
@@ -149,8 +120,8 @@ Recent contributions:
 
 We welcome contributions! Here's how you can help:
 
-- **[Report a Bug](https://github.com/wflixu/RClick/issues/new?template=bug_report.md)** — Found something broken? Let us know.
-- **[Request a Feature](https://github.com/wflixu/RClick/issues/new?template=feature_request.md)** — Have an idea? We'd love to hear it.
+- **[Report a Bug](https://github.com/anzchy/RClick/issues/new?template=bug_report.md)** — Found something broken? Let us know.
+- **[Request a Feature](https://github.com/anzchy/RClick/issues/new?template=feature_request.md)** — Have an idea? We'd love to hear it.
 - **[Submit a PR](CONTRIBUTING.md)** — Read our contribution guide to get started.
 - **[Security Policy](SECURITY.md)** — How to responsibly report vulnerabilities.
 
