@@ -42,4 +42,6 @@ elif args[:2] == ['pane', 'read']:
         enters = sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous)
         if enters < 2: print('Where should the new conversation run?')
         else: print('>_ OpenAI Codex (v0.167.0)\n' + repo + '\n› Ask Codex to do anything\nContext 0% used')
+    elif sum(c[:3] == ['pane', 'send-keys', 'w1:p2'] for c in previous) < int(os.environ.get('RESET_ENTERS_NEEDED', '1')):
+        print('❯ /clear\n────────────────────\nContext 14% used')
     else: print(os.environ.get('CLAUDE_RESET_SCREEN', 'Claude Code v2.1.310\n\n────────────────────\n❯\n────────────────────\n' + os.environ.get('CLAUDE_FOOTER', 'Context 0% used')))
