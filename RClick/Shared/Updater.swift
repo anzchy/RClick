@@ -138,25 +138,6 @@ class GitHubReleaseChecker {
         return try decoder.decode(GitHubRelease.self, from: data)
     }
 
-    /// 拉仓库的星标数。走 `/repos/{owner}/{repo}`，和 release 是两个端点。
-    func fetchStarCount() async throws -> Int {
-        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)")!
-        var request = URLRequest(url: url)
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await client(request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-
-        struct Repository: Decodable {
-            let stargazersCount: Int
-            enum CodingKeys: String, CodingKey { case stargazersCount = "stargazers_count" }
-        }
-        return try JSONDecoder().decode(Repository.self, from: data).stargazersCount
-    }
-
     // 检查是否需要更新。
     // 返回枚举而不是 `GitHubRelease?`：那个 `nil` 原来同时背着「网络失败」
     // 「最新 release 是草稿或预发布」「确实已是最新」三种含义，而 `catch` 又把
@@ -198,9 +179,6 @@ class UpdateManager: ObservableObject {
     @Published var downloadProgress: Double = 0
     @Published var showUpdateSheet = false
 
-    /// 仓库星标数。nil 表示还没拿到——界面就不显示数字，不占位、不报错。
-    @Published private(set) var starCount: Int?
-    
     private let githubChecker: GitHubReleaseChecker
     private let preferences: UpdatePreferences
     private let currentVersion: String
@@ -223,38 +201,6 @@ class UpdateManager: ObservableObject {
         self.repo = repo
     }
 
-    // MARK: - 星标数
-
-    private enum StarCache {
-        static let count = "githubStarCount"
-        static let fetchedAt = "githubStarCountFetchedAt"
-        /// 一天拉一次。星数不是实时指标，没必要每次打开「关于」都请求一次。
-        static let lifetime: TimeInterval = 24 * 60 * 60
-    }
-
-    /// 取星标数：优先用缓存，过期或没有才请求。
-    ///
-    /// 失败不打扰用户——有旧值就继续用（别让数字忽然消失），没有就保持 nil，
-    /// 「关于」页那一行只会少一个数字，不会多一条错误。
-    func loadStarCount() async {
-        let defaults = UserDefaults.group
-        let cachedAt = defaults.object(forKey: StarCache.fetchedAt) as? Date
-        let cached = defaults.object(forKey: StarCache.count) as? Int
-
-        if let cachedAt, let cached, Date().timeIntervalSince(cachedAt) < StarCache.lifetime {
-            starCount = cached
-            return
-        }
-
-        if let fresh = try? await githubChecker.fetchStarCount() {
-            starCount = fresh
-            defaults.set(fresh, forKey: StarCache.count)
-            defaults.set(Date(), forKey: StarCache.fetchedAt)
-        } else if let cached {
-            starCount = cached
-        }
-    }
-    
     // 关闭更新提示。
     // 只关窗，**不清空检查结果**：清空会让「关于」页的状态行在关窗后退回「尚未检查」，
     // 把用户刚拿到的信息抹掉；再用「查看详情…」打开时也会看到一张空白的卡片。
@@ -621,7 +567,7 @@ class UpdateManager: ObservableObject {
     // 打开GitHub发布页面
     func openReleasesPage() { openGitHub("/releases") }
 
-    /// 打开仓库主页（「关于」页的「加星」走这里）。
+    /// 打开仓库主页。
     func openRepositoryPage() { openGitHub() }
 
     /// 打开 Issues 列表（「关于」页的「反馈问题」走这里）。

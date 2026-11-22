@@ -19,8 +19,6 @@ struct AboutSettingsTabView: View {
             appsSection
         }
         .formStyle(.grouped)
-        // 带缓存，缓存新鲜时这里只是读一下 UserDefaults，不会真的发请求
-        .task { await updateManager.loadStarCount() }
     }
 
     // MARK: - 版本与更新
@@ -137,23 +135,11 @@ struct AboutSettingsTabView: View {
 
     // MARK: - 项目与反馈
 
-    /// 两行：去项目看看 + 反馈问题。
-    ///
-    /// 原先只有一行裸地址，既没说明项目有没有人在用，也没给任何可做的事。现在每行左边是
-    /// 去处、右边是动作。星数由 `loadStarCount` 带缓存地取，取不到就只少一个数字，
-    /// 不占位也不报错。
     private var communitySection: some View {
         Section {
             LabeledContent {
-                HStack(spacing: 8) {
-                    if let stars = updateManager.starCount {
-                        // 用系统的紧凑数字格式，中文会自动变成「1.2万」而不是「1.2K」
-                        Text(stars.formatted(.number.notation(.compactName)))
-                            .foregroundStyle(.secondary)
-                    }
-                    Button(AppLocalization.localized("Add a Star")) {
-                        updateManager.openRepositoryPage()
-                    }
+                Button(AppLocalization.localized("RClick on GitHub")) {
+                    updateManager.openRepositoryPage()
                 }
             } label: {
                 HStack(spacing: 6) {
