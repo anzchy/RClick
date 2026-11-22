@@ -508,3 +508,17 @@ extension OpenWithApp {
         )
     }
 }
+
+extension PendingCut {
+    /// Finder supplies directory metadata; the render policy itself performs no I/O.
+    nonisolated static func renderMenuVisibility(
+        config: MenuConfigPayload, menuKind: MenuTrigger?, selection: [String],
+        selectedItemIsDirectory: Bool, currentChangeCount: Int, hostOnline: Bool
+    ) -> MenuVisibility {
+        let visibility = menuVisibility(config: config, menuKind: menuKind, selection: selection,
+            currentChangeCount: currentChangeCount, hostOnline: hostOnline)
+        let folderTarget = menuKind == .contextualContainer || selectedItemIsDirectory
+        return MenuVisibility(cut: visibility.cut, cutEnabled: visibility.cutEnabled,
+            paste: visibility.paste && folderTarget)
+    }
+}
