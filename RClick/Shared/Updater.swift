@@ -109,9 +109,15 @@ class GitHubReleaseChecker {
     private let owner: String
     private let repo: String
     
-    init(owner: String, repo: String) {
+    private let client: (URLRequest) async throws -> (Data, URLResponse)
+
+    init(owner: String, repo: String,
+         client: @escaping (URLRequest) async throws -> (Data, URLResponse) = {
+             try await URLSession.shared.data(for: $0)
+         }) {
         self.owner = owner
         self.repo = repo
+        self.client = client
     }
     
     // 获取最新release
@@ -121,7 +127,7 @@ class GitHubReleaseChecker {
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await client(request)
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
@@ -138,7 +144,7 @@ class GitHubReleaseChecker {
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await client(request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
