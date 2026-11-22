@@ -344,3 +344,20 @@ extension PasteActionServiceTests {
         #expect(f.service.pendingCut?.paths == [item.path])
     }
 }
+
+
+extension PasteActionServiceTests {
+    @Test func cutParentReplacedByFileReportsChangedAndClearsClipboard() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        await f.cut([item])
+        try FileManager.default.removeItem(at: f.source)
+        try Data("parent is now a file".utf8).write(to: f.source)
+        await f.paste()
+        #expect(f.warnings.first?.contains("notes.txt: Changed since cut") == true)
+        #expect(f.service.pendingCut == nil)
+        #expect(f.board.types?.contains(PendingCut.markerType) != true)
+        #expect(f.board.types?.contains(PendingCut.sourceType) != true)
+        #expect(!FileManager.default.fileExists(atPath: f.destination.appendingPathComponent("notes.txt").path))
+    }
+}

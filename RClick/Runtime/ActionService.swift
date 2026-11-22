@@ -653,7 +653,15 @@ final class ActionService {
     private nonisolated static func sourceHasVanished(_ error: any Error) -> Bool {
         switch error {
         case let error as POSIXError: return error.code == .ENOENT || error.code == .ENOTDIR
-        case let error as CocoaError: return error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile
+        case let error as CocoaError:
+            if error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return true }
+            // FileManager wraps ENOTDIR as fileReadUnknown (256). Do not treat
+            // every unknown read error as vanished: permission failures must retry.
+            if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+               underlying.domain == NSPOSIXErrorDomain {
+                return underlying.code == Int(ENOENT) || underlying.code == Int(ENOTDIR)
+            }
+            return false
         default: return false
         }
     }
