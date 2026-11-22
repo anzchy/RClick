@@ -443,7 +443,7 @@
     },
     {
       "id": "about",
-      "name": "About (version, community links, more apps)",
+      "name": "About (version, repository link, attribution)",
       "area": "Settings",
       "process": ["app"],
       "reachedBy": ["Settings > About"],
