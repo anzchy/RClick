@@ -391,3 +391,53 @@ extension PasteActionServiceTests {
         #expect(!FileManager.default.fileExists(atPath: parked.appendingPathComponent(item.lastPathComponent).path))
     }
 }
+
+
+extension PasteActionServiceTests {
+    @Test func descriptorPathRereadAloneRefusesRelocationDuringClassification() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let elsewhere = f.root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        let operations = f.operations
+        operations.onNextDestinationClassification { operations.reportDescriptorPath(elsewhere) }
+        let expected = try operations.fileIdentity(of: item)
+        let expectedDestination = try operations.fileIdentity(of: f.destination)
+        let to = f.destination.appendingPathComponent("notes.txt")
+        let refused = await Task.detached {
+            do {
+                try operations.coordinatedExclusiveMove(from: item, to: to, expected: expected,
+                    expectedDestination: expectedDestination, timeout: 30)
+                return false
+            } catch PasteMoveError.destinationChanged { return true }
+            catch { return false }
+        }.value
+        #expect(refused)
+        #expect(FileManager.default.fileExists(atPath: item.path))
+        #expect(!FileManager.default.fileExists(atPath: to.path))
+        #expect(operations.renameCalls.isEmpty)
+    }
+
+    @Test func coordinatedSameParentCheckAloneRefusesNumberingTheSource() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let item = try f.file()
+        let operations = f.operations
+        let expected = try operations.fileIdentity(of: item)
+        let expectedDestination = try operations.fileIdentity(of: f.source)
+        let to = f.source.appendingPathComponent("notes 2.txt")
+        // Exercise the coordinated guard directly: batch preflight's no-op
+        // must not mask a removed in-accessor same-parent check.
+        let refused = await Task.detached {
+            do {
+                try operations.coordinatedExclusiveMove(from: item, to: to, expected: expected,
+                    expectedDestination: expectedDestination, timeout: 30)
+                return false
+            } catch PasteMoveError.destinationChanged { return true }
+            catch { return false }
+        }.value
+        #expect(refused)
+        #expect(FileManager.default.fileExists(atPath: item.path))
+        #expect(!FileManager.default.fileExists(atPath: to.path))
+        #expect(operations.renameCalls.isEmpty)
+    }
+}

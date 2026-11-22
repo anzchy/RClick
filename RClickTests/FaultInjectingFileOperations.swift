@@ -18,6 +18,7 @@ final class FaultInjectingFileOperations: FileOperations {
     }
 
     private struct Faults {
+        var destinationClassificationHook: (@Sendable () throws -> Void)?
         var deniedOpen: URL?
         var descriptorPath: URL?
         var renameHook: (@Sendable () throws -> Void)?
@@ -161,7 +162,16 @@ final class FaultInjectingFileOperations: FileOperations {
         if let value = faults.withLock({ $0.facts[url.path] }) { return value }
         return try readMoveFacts(of: url)
     }
+    func onNextDestinationClassification(_ hook: @escaping @Sendable () throws -> Void) {
+        faults.withLock { $0.destinationClassificationHook = hook }
+    }
     func destinationRefusal(_ url: URL) throws -> DestinationRefusal? {
+        let hook = faults.withLock { state in
+            let hook = state.destinationClassificationHook
+            state.destinationClassificationHook = nil
+            return hook
+        }
+        try hook?()
         if let value = faults.withLock({ $0.destinationRefusals[url.path] }) { return value }
         return try readDestinationRefusal(url)
     }
