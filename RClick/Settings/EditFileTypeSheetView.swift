@@ -23,6 +23,7 @@ struct EditFileTypeSheetView: View {
     @State private var openApp: URL?
     @State private var draft: TemplateDraft
     @State private var replacementID: String?
+    @State private var errorTitle = "Template Import Failed"
     @State private var templateError: String?
     @State private var showTemplateError = false
 
@@ -135,6 +136,7 @@ struct EditFileTypeSheetView: View {
                                 try draft.add(url, store: appState.newFileTemplateStore)
                             }
                         } catch {
+                            errorTitle = "Template Import Failed"
                             templateError = error.localizedDescription
                             showTemplateError = true
                         }
@@ -220,7 +222,7 @@ struct EditFileTypeSheetView: View {
 
                 Button(AppLocalization.localized(isAdding ? "Add" : "Save")) {
                     do { try saveChanges(); dismiss() }
-                    catch { templateError = error.localizedDescription; showTemplateError = true }
+                    catch { errorTitle = "Unable to Save File Type"; templateError = error.localizedDescription; showTemplateError = true }
                 }
                 .keyboardShortcut(.return)
                 .disabled(name.isEmpty || ext.isEmpty)
@@ -228,7 +230,7 @@ struct EditFileTypeSheetView: View {
             .padding(.bottom, 20)
         }
         .frame(width: 620, height: 760)
-        .alert(Text(appLocalized: "Template Import Failed"), isPresented: $showTemplateError) {
+        .alert(Text(AppLocalization.localized(errorTitle)), isPresented: $showTemplateError) {
             Button(AppLocalization.localized("OK")) {}
         } message: {
             Text(templateError ?? "")
@@ -237,11 +239,7 @@ struct EditFileTypeSheetView: View {
 
     private func saveChanges() throws {
         for entry in draft.entries { draft.rename(id: entry.id, name: entry.name) }
-        var updated = file
-        updated.name = name
-        updated.ext = ext
-        updated.icon = icon
-        updated.openApp = openApp
+        var updated = try FileTypeEditDraft(name: name, ext: ext, icon: icon, openApp: openApp).applying(to: file)
         updated.template = nil
         updated.blankEnabled = draft.blankEnabled
         updated.templates = try draft.save(store: appState.newFileTemplateStore, replacing: file.userTemplates,
@@ -254,5 +252,41 @@ struct EditFileTypeSheetView: View {
             appState.sync()
         }
         messager.sendRunningNotification()
+    }
+}
+
+
+/// Fields shared by Add and Edit; template snapshots are committed only after validation.
+struct FileTypeEditDraft {
+    var name: String
+    var ext: String
+    var icon: String
+    var openApp: URL?
+
+    func applying(to file: NewFile) throws -> NewFile {
+        var updated = file
+        updated.name = name
+        updated.ext = try Self.normalizedExtension(ext)
+        updated.icon = icon
+        updated.openApp = openApp
+        return updated
+    }
+}
+
+
+extension FileTypeEditDraft {
+    static func normalizedExtension(_ raw: String) throws -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.contains("/"), !value.allSatisfy({ $0 == "." }) else {
+            throw FileTypeExtensionError.invalid
+        }
+        return value.hasPrefix(".") ? value : "." + value
+    }
+}
+
+enum FileTypeExtensionError: LocalizedError {
+    case invalid
+    var errorDescription: String? {
+        AppLocalization.localized("Enter a file extension without slashes, such as txt or .txt.")
     }
 }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Normalize custom file extensions when saving and creating files, including legacy types saved without a leading dot
 - Open With preserves literal percent sequences in Finder filenames while decoding actual file URLs
 - 2026-11-21: Modified the fork to remove GitHub stars and upstream app promotions, retain GPL attribution, use fork repository links and release identities, handle missing releases without an error, and replace personal path examples
 - Restore Defaults for New File and Reset All Settings remove user template snapshots from the app’s Templates folder and restore Blank; original imported files are preserved
