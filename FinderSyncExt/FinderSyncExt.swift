@@ -379,7 +379,7 @@ class FinderSyncExt: FIFinderSync, @unchecked Sendable {
         let cutURLs = shouldReadCutSelection ? (FIFinderSyncController.default().selectedItemURLs() ?? []) : []
         let cutSelection = cutURLs.map(\.path)
         let selectedItemIsDirectory = cutURLs.count == 1
-            && (try? cutURLs[0].resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            && PendingCut.isPasteFolder(try? cutURLs[0].resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]))
         let cutChangeCount = NSPasteboard.general.changeCount
         let cutVisibility = PendingCut.renderMenuVisibility(
             config: config, menuKind: menuKind == .contextualMenuForItems ? .contextualItems :

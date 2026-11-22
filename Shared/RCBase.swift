@@ -510,6 +510,11 @@ extension OpenWithApp {
 }
 
 extension PendingCut {
+    /// Package directories are Finder files. Symlinks conservatively remain hidden.
+    nonisolated static func isPasteFolder(_ values: URLResourceValues?) -> Bool {
+        values?.isDirectory == true && values?.isPackage != true
+    }
+
     /// Finder supplies directory metadata; the render policy itself performs no I/O.
     nonisolated static func renderMenuVisibility(
         config: MenuConfigPayload, menuKind: MenuTrigger?, selection: [String],

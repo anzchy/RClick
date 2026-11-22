@@ -167,3 +167,32 @@ extension PendingCutTests {
         #expect(submenu.items.first?.submenu?.items.first?.isEnabled == online)
     }
 }
+
+
+extension PendingCutTests {
+    @Test func pasteTargetsUseRealFinderResourceValues() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("RClick-menu-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = MenuConfigPayload(actions: [ActionMenuItem(id: "cut", name: "Cut & Paste", icon: "scissors", tag: 6)],
+            cutChangeCount: 42, cutItemCount: 1)
+        for name in ["folder", "Fake.app", "Document.rtfd", "Fake.bundle"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        try Data().write(to: root.appendingPathComponent("file.txt"))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("folder"))
+        let rows: [(MenuTrigger, [String], Bool)] = [
+            (.contextualItems, ["file.txt"], false), (.contextualItems, ["folder"], true),
+            (.contextualItems, ["Fake.app"], false), (.contextualItems, ["Document.rtfd"], false),
+            (.contextualItems, ["Fake.bundle"], false), (.contextualItems, ["link"], false),
+            (.contextualContainer, [], true), (.contextualItems, ["folder", "file.txt"], false)
+        ]
+        for (kind, names, expected) in rows {
+            let urls = names.map { root.appendingPathComponent($0) }
+            let values = urls.count == 1 ? try urls[0].resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]) : nil
+            let result = PendingCut.renderMenuVisibility(config: config, menuKind: kind, selection: urls.map(\.path),
+                selectedItemIsDirectory: PendingCut.isPasteFolder(values), currentChangeCount: 42, hostOnline: true)
+            #expect(result.paste == expected, "target: \(names)")
+        }
+    }
+}
