@@ -271,3 +271,87 @@ extension NewFileCreationTests {
         }
     }
 }
+
+
+extension NewFileCreationTests {
+    // Literal expectations from the owner's boundary-dot policy; inner dots are valid.
+    private static let boundaryExtensionNames = [
+        "..zzc": ".zzc", "zzc.": ".zzc", ".zzc.": ".zzc",
+        "zzc.more": ".zzc.more", ".zzc.more": ".zzc.more", ".tar.gz": ".tar.gz", "tar.gz": ".tar.gz", "tar.gz.": ".tar.gz",
+        "zzc": ".zzc", ".zzc": ".zzc", "  ..zzc..  ": ".zzc"
+    ]
+
+    @Test(arguments: ["..zzc", "zzc.", ".zzc.", "zzc.more", ".zzc.more", ".tar.gz", "tar.gz", "tar.gz.",
+        "zz c", "zz\tc", "zz\nc", "zzc", ".zzc", "", "   ", "...", "a/b", "  ..zzc..  "])
+    func boundaryDotPolicyAppliesToAddAndEditSaveModels(_ raw: String) throws {
+        for editing in [false, true] {
+            let original = editing ? NewFile(ext: ".old", name: "Before", idx: 7, id: "existing")
+                : NewFile(ext: "", name: "", idx: 0, id: "new")
+            let draft = FileTypeEditDraft(name: "After", ext: raw, icon: "doc", openApp: nil)
+            if let expected = Self.boundaryExtensionNames[raw] {
+                let saved = try draft.applying(to: original)
+                #expect(saved.ext == expected)
+                #expect(saved.id == original.id)
+                #expect(saved.idx == original.idx)
+            } else {
+                #expect(throws: (any Error).self) { try draft.applying(to: original) }
+            }
+        }
+    }
+
+    @Test(arguments: ["..zzc", "zzc.", ".zzc.", "zzc.more", ".zzc.more", ".tar.gz", "tar.gz", "tar.gz.",
+        "zz c", "zz\tc", "zz\nc", "zzc", ".zzc", "", "   ", "...", "a/b", "  ..zzc..  "])
+    func boundaryDotPolicyAppliesToLegacyCreationWithoutRewritingRecords(_ raw: String) async throws {
+        let dir = try directory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let state = State()
+        state.newFiles = [NewFile(ext: raw, name: "Custom", idx: 0, id: "custom")]
+        var outputs: [URL] = []
+        var warnings: [String] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(),
+            revealNewFile: { outputs.append($0) })
+        if let expected = Self.boundaryExtensionNames[raw] {
+            let expectedURL = dir.appendingPathComponent("Untitled" + expected)
+            #expect(service.getUniqueFilePath(dir: dir.path, ext: raw) == expectedURL.path)
+            await service.createFile(rid: "custom", target: [dir.path], templateResource: { _ in nil },
+                templateWarning: { warnings.append($0) })
+            #expect(outputs == [expectedURL])
+            #expect(try Data(contentsOf: expectedURL).isEmpty)
+            await service.createFile(rid: "custom", target: [dir.path], templateResource: { _ in nil },
+                templateWarning: { warnings.append($0) })
+            #expect(outputs.map(\.lastPathComponent) == ["Untitled" + expected, "Untitled1" + expected])
+            #expect(try Data(contentsOf: expectedURL).isEmpty)
+            #expect(warnings.isEmpty)
+        } else {
+            await service.createFile(rid: "custom", target: [dir.path], templateResource: { _ in nil },
+                templateWarning: { warnings.append($0) })
+            #expect(outputs.isEmpty)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+            #expect(warnings.count == 1)
+        }
+        #expect(state.newFiles.first?.ext == raw)
+    }
+}
+
+
+extension NewFileCreationTests {
+    @Test(arguments: ["", "...", "zz c", "a/b"])
+    func rejectedExtensionsExplainTheReasonAtSaveAndCreation(_ raw: String) async throws {
+        let key = ["", "..."].contains(raw)
+            ? "Enter a file extension containing at least one character other than a dot."
+            : "Enter a file extension without slashes or whitespace."
+        let expected = AppLocalization.localized(key)
+        do {
+            _ = try FileTypeEditDraft(name: "Type", ext: raw, icon: "doc", openApp: nil).applying(to: .txt)
+            Issue.record("Invalid extension was accepted")
+        } catch { #expect(error.localizedDescription == expected) }
+        let dir = try directory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let state = State(); state.newFiles = [NewFile(ext: raw, name: "Type", idx: 0, id: "custom")]
+        var warnings: [String] = []
+        let service = ActionService(state: state, permission: Permission(), confirmation: Confirmation(), revealNewFile: { _ in
+            Issue.record("An invalid extension created a file")
+        })
+        await service.createFile(rid: "custom", target: [dir.path], templateWarning: { warnings.append($0) })
+        #expect(warnings == [expected])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+    }
+}

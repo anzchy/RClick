@@ -35,36 +35,70 @@
         }
       }
     },
-    "Enter a file extension without slashes, such as txt or .txt." : {
+    "Enter a file extension without slashes or whitespace." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter a file extension without slashes, such as txt or .txt."
+            "value" : "Enter a file extension without slashes or whitespace."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请输入不含斜杠的文件扩展名，例如 txt 或 .txt。"
+            "value" : "请输入不含斜杠或空白字符的文件扩展名。"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "txt や .txt のように、スラッシュを含まない拡張子を入力してください。"
+            "value" : "スラッシュや空白文字を含まないファイル拡張子を入力してください。"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Introduce una extensión sin barras, como txt o .txt."
+            "value" : "Introduce una extensión de archivo sin barras ni espacios en blanco."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saisissez une extension sans barre oblique, telle que txt ou .txt."
+            "value" : "Saisissez une extension de fichier sans barre oblique ni espace."
+          }
+        }
+      }
+    },
+    "Enter a file extension containing at least one character other than a dot." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a file extension containing at least one character other than a dot."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入至少包含一个非点号字符的文件扩展名。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ピリオド以外の文字を少なくとも1つ含むファイル拡張子を入力してください。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce una extensión de archivo con al menos un carácter que no sea un punto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez une extension de fichier contenant au moins un caractère autre qu’un point."
           }
         }
       }

@@ -1235,8 +1235,10 @@ final class ActionService {
             return
         }
 
-        guard let ext = try? FileTypeEditDraft.normalizedExtension(rcitem.ext) else {
-            templateWarning(AppLocalization.localized("Enter a file extension without slashes, such as txt or .txt."))
+        let ext: String
+        do { ext = try FileTypeEditDraft.normalizedExtension(rcitem.ext) }
+        catch {
+            templateWarning(error.localizedDescription)
             return
         }
         let fileURL = URL(fileURLWithPath: getUniqueFilePath(dir: dirPath, ext: ext))

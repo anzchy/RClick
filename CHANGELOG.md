@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Normalize leading and trailing dots in custom file extensions, preserve multipart extensions such as tar.gz, and explain invalid whitespace or empty extensions
 - Settings import immediately restores every exported preference and refreshes the Finder menu; older backups keep values for omitted keys
 - Normalize custom file extensions when saving and creating files, including legacy types saved without a leading dot
 - Open With preserves literal percent sequences in Finder filenames while decoding actual file URLs
