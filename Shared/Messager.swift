@@ -212,7 +212,7 @@ nonisolated final class Messager: NSObject, Sendable {
         var lastConfig: Data?
         var invalidated: (@Sendable () -> Void)?
         var failures = IPCFailurePolicy()
-        var rejectionCounts: [IPCRejectionReason: IPCFailurePolicy] = [:]
+        var rejectionCounts: [IPCRejectionLogClass: IPCFailurePolicy] = [:]
         var decodeDrops = IPCFailurePolicy()
         var outgoingDrops = IPCFailurePolicy()
     }
@@ -322,9 +322,12 @@ nonisolated final class Messager: NSObject, Sendable {
         }
     }
     @objc private func receiveNotification(_ notification: NSNotification) {
+        var rejectedClick = false
         do {
             guard let wire = notification.object as? String, wire.utf8.count <= IPCEnvelope.maximumWireBytes else { throw IPCSecurityError.malformed }
             let received = try IPCEnvelope.parseReceived(wire) // Reject malformed floods BEFORE any key read.
+            // Parsed metadata only raises severity; it never grants admission.
+            rejectedClick = received.envelope.direction == .toMain && received.envelope.action == "click"
             guard let key = key() else { throw IPCSecurityError.noKey }
             let message: VerifiedMessage
             do {
@@ -343,16 +346,17 @@ nonisolated final class Messager: NSObject, Sendable {
         } catch {
             if case IPCSecurityError.clockDiscontinuity = error { resynchronize() }
             let reason = IPCRejectionReason(error)
+            let logClass = IPCRejectionLogClass(reason: reason, isClick: rejectedClick)
             let report = state.withLock { state in
                 // Notice remains once per process. Logs have independent category
                 // budgets so expected session churn cannot hide a bad signature.
                 let now = clock.monotonicTime
                 let notice = state.failures.reject(now: now, authenticationFailure: (error as? IPCSecurityError)?.warrantsNotice ?? true).notice
-                let decision = state.rejectionCounts[reason, default: IPCFailurePolicy()].reject(now: now, authenticationFailure: false)
-                return (decision.log, notice, state.rejectionCounts[reason, default: IPCFailurePolicy()].rejectedCount)
+                let decision = state.rejectionCounts[logClass, default: IPCFailurePolicy()].reject(now: now, authenticationFailure: false)
+                return (decision.log, notice, state.rejectionCounts[logClass, default: IPCFailurePolicy()].rejectedCount)
             }
             if report.0 {
-                let level: IPCDiagnostic.Level = reason.isExpected ? .notice : .error
+                let level = reason.logLevel(isClick: rejectedClick)
                 if level == .notice {
                     logger.notice("Rejected IPC messages: category=\(reason.rawValue, privacy: .public) count=\(report.2, privacy: .public)")
                 } else {
@@ -549,9 +553,9 @@ nonisolated final class IPCExtensionDelivery: Sendable {
     func expireClick(_ id: String) -> Bool { state.withLock { $0.pending.expire(id) } }
 }
 
-/// Closed, count-only diagnostics. Expected means the defensive rejection can
-/// occur during discovery, delayed delivery or recovery; it does not authenticate
-/// the traffic or establish why an individual message arrived.
+/// Closed, count-only diagnostics. Expected non-click rejections may occur during
+/// discovery, delayed delivery or recovery; the category does not prove a benign
+/// producer. Replays and all rejected clicks remain errors.
 nonisolated enum IPCRejectionReason: String, Sendable, CaseIterable {
     case noKey, malformed, unauthenticated, direction, session, freshness, replay, capacity, configVersion, configRollback
     case clockDiscontinuity, keychain, unexpected
@@ -573,12 +577,22 @@ nonisolated enum IPCRejectionReason: String, Sendable, CaseIterable {
         case .keychain: .keychain
         }
     }
+    func logLevel(isClick: Bool) -> IPCDiagnostic.Level {
+        isExpected && !isClick ? .notice : .error
+    }
     var isExpected: Bool {
         switch self {
-        case .session, .freshness, .replay, .configRollback, .clockDiscontinuity: true
+        case .session, .freshness, .configRollback, .clockDiscontinuity: true
         default: false
         }
     }
+}
+
+/// Click losses get a separate budget so bootstrap traffic cannot hide them.
+/// The key space stays bounded to twice the closed rejection category count.
+nonisolated struct IPCRejectionLogClass: Hashable {
+    let reason: IPCRejectionReason
+    let isClick: Bool
 }
 
 nonisolated struct IPCDiagnostic: Sendable {
