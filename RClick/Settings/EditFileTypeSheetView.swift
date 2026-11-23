@@ -276,17 +276,26 @@ struct FileTypeEditDraft {
 
 extension FileTypeEditDraft {
     static func normalizedExtension(_ raw: String) throws -> String {
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !value.contains("/"), !value.allSatisfy({ $0 == "." }) else {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Boundary dots are decoration; inner dots belong to multipart extensions.
+        while value.hasPrefix(".") { value.removeFirst() }
+        while value.hasSuffix(".") { value.removeLast() }
+        guard !value.isEmpty else { throw FileTypeExtensionError.empty }
+        guard !value.contains("/"), !value.contains(where: { $0.isWhitespace }) else {
             throw FileTypeExtensionError.invalid
         }
-        return value.hasPrefix(".") ? value : "." + value
+        return "." + value
     }
 }
 
 enum FileTypeExtensionError: LocalizedError {
-    case invalid
+    case empty, invalid
     var errorDescription: String? {
-        AppLocalization.localized("Enter a file extension without slashes, such as txt or .txt.")
+        switch self {
+        case .empty:
+            AppLocalization.localized("Enter a file extension containing at least one character other than a dot.")
+        case .invalid:
+            AppLocalization.localized("Enter a file extension without slashes or whitespace.")
+        }
     }
 }

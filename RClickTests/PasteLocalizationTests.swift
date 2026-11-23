@@ -58,3 +58,24 @@ extension PasteLocalizationTests {
         }
     }
 }
+
+
+extension PasteLocalizationTests {
+    @Test func extensionValidationReasonsExistInBothTargetsAndAllLanguages() throws {
+        let plugins = try #require(Bundle.main.builtInPlugInsURL)
+        let extensionBundle = try #require(Bundle(url: plugins.appendingPathComponent("FinderSyncExt.appex")))
+        let keys = ["Enter a file extension containing at least one character other than a dot.",
+            "Enter a file extension without slashes or whitespace."]
+        for target in [Bundle.main, extensionBundle] {
+            for language in ["en", "zh-Hans", "ja", "es", "fr"] {
+                let path = try #require(target.url(forResource: language, withExtension: "lproj"))
+                let localized = try #require(Bundle(url: path))
+                for key in keys {
+                    let text = localized.localizedString(forKey: key, value: "<missing>", table: "Localizable")
+                    #expect(text != "<missing>")
+                    if language == "en" { #expect(text == key) }
+                }
+            }
+        }
+    }
+}
