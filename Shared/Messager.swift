@@ -211,7 +211,7 @@ nonisolated final class Messager: NSObject, Sendable {
         var configVersion = 0
         var lastConfig: Data?
         var invalidated: (@Sendable () -> Void)?
-        var failures = IPCFailurePolicy()
+        var rejectionNoticeShown = false
         var rejectionCounts: [IPCRejectionLogClass: IPCFailurePolicy] = [:]
         var decodeDrops = IPCFailurePolicy()
         var outgoingDrops = IPCFailurePolicy()
@@ -351,7 +351,8 @@ nonisolated final class Messager: NSObject, Sendable {
                 // Notice remains once per process. Logs have independent category
                 // budgets so expected session churn cannot hide a bad signature.
                 let now = clock.monotonicTime
-                let notice = state.failures.reject(now: now, authenticationFailure: (error as? IPCSecurityError)?.warrantsNotice ?? true).notice
+                let notice = !state.rejectionNoticeShown && ((error as? IPCSecurityError)?.warrantsNotice ?? true)
+                if notice { state.rejectionNoticeShown = true }
                 let decision = state.rejectionCounts[logClass, default: IPCFailurePolicy()].reject(now: now, authenticationFailure: false)
                 return (decision.log, notice, state.rejectionCounts[logClass, default: IPCFailurePolicy()].rejectedCount)
             }
@@ -367,10 +368,10 @@ nonisolated final class Messager: NSObject, Sendable {
             if !isExtension, report.1 { Task { @MainActor in (self.rejectionNotice ?? IPCRejectionNotice.shared).record() } }
         }
     }
-    private func recordDrop(_ kind: IPCDiagnostic.Kind) {
+    private enum DropKind { case undecodableClick, oversizedOutgoing }
+    private func recordDrop(_ kind: DropKind) {
         let report = state.withLock { state -> (Bool, Int) in
             switch kind {
-            case .rejected: return (false, 0)
             case .undecodableClick:
                 let decision = state.decodeDrops.reject(now: clock.monotonicTime, authenticationFailure: false)
                 return (decision.log, state.decodeDrops.rejectedCount)
@@ -380,12 +381,16 @@ nonisolated final class Messager: NSObject, Sendable {
             }
         }
         guard report.0 else { return }
+        let diagnosticKind: IPCDiagnostic.Kind
         switch kind {
-        case .rejected: return
-        case .undecodableClick: logger.error("Undecodable IPC clicks dropped: \(report.1, privacy: .public)")
-        case .oversizedOutgoing: logger.error("Oversized outgoing IPC messages dropped: \(report.1, privacy: .public)")
+        case .undecodableClick:
+            diagnosticKind = .undecodableClick
+            logger.error("Undecodable IPC clicks dropped: \(report.1, privacy: .public)")
+        case .oversizedOutgoing:
+            diagnosticKind = .oversizedOutgoing
+            logger.error("Oversized outgoing IPC messages dropped: \(report.1, privacy: .public)")
         }
-        diagnosticLog?(IPCDiagnostic(kind: kind, count: report.1))
+        diagnosticLog?(IPCDiagnostic(kind: diagnosticKind, count: report.1))
     }
     private func send<T: Encodable>(_ action: String, direction: IPCDirection, data: T?, id: String, inReplyTo: String = "") {
         guard let payload = try? data.map({ try JSONEncoder().encode($0) }) ?? Data() else { return }
