@@ -6,44 +6,71 @@ import Observation
 
 @MainActor
 final class IPCAuthenticationTests: XCTestCase {
-    func testOldExtensionTrafficReportsCountsWhileNewFileAndCutStillAckOnce() async throws {
+    func testLaggingExtensionRebindsAtNextRunningWithinLaunchRetryInterval() async throws {
         let center = NotificationCenter()
-        let oldCenter = NotificationCenter() // A receiver that has not received the new launch announcement.
         let clock = TestIPCClock(wall: 100, monotonic: 200)
         let provider = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        var oldApp: Messager? = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock)
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        oldApp?.sendRunningNotification()
+        oldApp = nil
+        clock.advance(1)
         let logs = Mutex<[IPCDiagnostic]>([])
         let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock,
                            diagnosticLog: { event in logs.withLock { $0.append(event) } })
-        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
-        let oldApp = Messager(isExtension: false, center: oldCenter, keyProvider: provider, clock: clock)
-        let oldExt = Messager(isExtension: true, center: oldCenter, keyProvider: provider, clock: clock)
-        oldApp.sendRunningNotification()
-        // Bridge only outgoing notifications: model delayed discovery in a second extension instance.
-        let bridge = oldCenter.addObserver(forName: Notification.Name(Messager.extensionToMainNotification),
-                                           object: nil, queue: nil) { note in
-            center.post(name: note.name, object: note.object)
-        }
-        defer { oldCenter.removeObserver(bridge) }
         let acks = Mutex<[String]>([])
         let handled = Mutex<[String]>([])
         ext.onMainMessage(.actionAck) { message in acks.withLock { $0.append(message.inReplyTo) } }
         let accepted = expectation(description: "new file and cut accepted once each")
         accepted.expectedFulfillmentCount = 2
         app.onClickEvent { event in handled.withLock { $0.append(event.itemId) }; accepted.fulfill() }
-        app.sendRunningNotification()
-        app.sendMenuConfig(MenuConfigPayload())
-        XCTAssertTrue(logs.withLock { $0.isEmpty }, "opposite notification names exclude sender loopback")
-        oldExt.sendHeartbeat()
-        ext.sendClickEvent(ClickEventPayload(itemId: "text", itemType: .newFile, trigger: .contextualContainer), id: "new-file")
-        for _ in 0..<3 { oldExt.sendHeartbeat() }
+        // Lagging discovery only: this does not reproduce the historical device counts.
+        ext.sendHeartbeat()
         clock.advance(10)
-        oldExt.requestMenuConfig()
+        app.sendRunningNotification() // Real IPCRunningCycle repeats this every 10 seconds.
+        XCTAssertEqual(ext.currentSession, app.currentSession)
+        app.sendMenuConfig(MenuConfigPayload())
+        ext.sendClickEvent(ClickEventPayload(itemId: "text", itemType: .newFile, trigger: .contextualContainer), id: "new-file")
+        for _ in 0..<5 { ext.sendHeartbeat(); ext.requestMenuConfig() }
         ext.sendClickEvent(ClickEventPayload(itemId: "cut", itemType: .action, trigger: .contextualItems), id: "cut")
         await fulfillment(of: [accepted], timeout: 1)
         XCTAssertEqual(handled.withLock { $0 }, ["text", "cut"])
         XCTAssertEqual(acks.withLock { $0 }, ["new-file", "cut"])
-        XCTAssertEqual(logs.withLock { $0.map(\.count) }, [1, 5], "rejections must emit rate-limited diagnostic counts")
-        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, [.rejected(.session), .rejected(.session)])
+        XCTAssertEqual(logs.withLock { $0.map(\.count) }, [1])
+        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, [.rejected(.session)])
+    }
+
+    func testMessagesQueuedBeyondFreshnessWindowRejectClickWithoutAck() async throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let logs = Mutex<[IPCDiagnostic]>([])
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock,
+                           diagnosticLog: { event in logs.withLock { $0.append(event) } })
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock)
+        let handled = Mutex(0)
+        let acks = Mutex(0)
+        app.onClickEvent { _ in handled.withLock { $0 += 1 } }
+        ext.onMainMessage(.actionAck) { _ in acks.withLock { $0 += 1 } }
+        app.sendRunningNotification()
+        // Queue signed messages before shared-center delivery, modelling a stalled
+        // receive thread. This is a hypothesis probe, not a reproduction of TCC.
+        let payload = try JSONEncoder().encode(ClickEventPayload(itemId: "cut", itemType: .action, trigger: .contextualItems))
+        let queued = try ["heartbeat", "click"].map { action in
+            MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: action, id: action,
+                session: ext.currentSession, timestamp: clock.wallTime,
+                nonce: try SystemIPCRandom().bytes(count: 16), payload: action == "click" ? payload : Data()), key: key).wireString()
+        }
+        clock.advance(6)
+        for wire in queued { center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire) }
+        await Task { @MainActor in }.value // Drain any incorrectly accepted onClickEvent work.
+        XCTAssertFalse(logs.withLock { $0.isEmpty })
+        XCTAssertTrue(logs.withLock { $0.allSatisfy { $0.kind == .rejected(.freshness) } })
+        XCTAssertEqual(handled.withLock { $0 }, 0)
+        XCTAssertEqual(acks.withLock { $0 }, 0, "late click retains the existing no-ack behavior")
+        var pending = PendingClicks()
+        pending.register("click")
+        XCTAssertTrue(pending.expire("click"), "without an ack the extension's deadline still expires")
     }
 
     func testEveryRejectionHasAClosedCategoryAndExpectedSeverity() {
