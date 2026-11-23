@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Restrict Paste to a single folder or window background, hide it on packages, support writable/searchable Drop Box destinations and directory aliases, pin source/destination parents and reject unsafe ancestor swaps (#48, #53)
 - Report and discard vanished cut sources, preserve same-folder no-ops and retryable failures, quarantine damaged journals and recover interrupted moves without blocking later Paste (#9, #48, #53)
-- Refuse unsafe Paste destinations including known iCloud and provider storage roots and nested Trash folders; recheck destination identity and safety inside coordination (#9)
+- Refuse Trash folders (including iCloud Drive and cloud-provider Trash), system roots and packages as Paste destinations, refuse moving items out of their cloud container, and recheck destination identity and safety inside coordination (#9)
 - Disable the entire New File submenu while the main app is offline (#53)
 - Normalize custom extensions on save and creation, including legacy dotless values, boundary dots and multipart extensions; reject whitespace and empty extensions (#51)
 - Settings import immediately restores every exported preference and refreshes Finder; omitted keys in older backups retain their values (#52)
