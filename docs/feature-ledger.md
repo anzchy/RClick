@@ -72,11 +72,10 @@ menu bar item, updates, launch at login or localization.
 Each finding names the feature block that carries the detail and at least one source. When a finding is fixed,
 delete its line in the same change.
 
-1. `open-with`: `AppPresets.resolveOpenTargets` (`Shared/AppPresets.swift:120`) applies `removingPercentEncoding` to
-   each target path, and `ActionService.openApp` (`RClick/Runtime/ActionService.swift:132-134`) passes it the
-   clicked Finder paths, so an item whose name holds a literal `%xx` is opened under a different path. PR #29's
-   description lists this line as decoding "app config values, not Finder paths"; the call site passes click
-   targets. No test covers a percent name for Open With; the device result is **UNVERIFIED**. No issue filed yet.
+1. `open-with`: **FIXED in code by #59, device check pending.** `AppPresets.resolveOpenTargets` used to apply
+   `removingPercentEncoding` to every click target, so an item whose name holds a literal `%xx` opened under a
+   different path. Click targets are now raw paths; only real `file://` URL strings are decoded (tests at
+   `resolveOpenTargets` and at the `openApp` seam with a literal `%41` name). Not run on a device.
 2. `delete-direct`, `hide`, `unhide`, `airdrop`, `open-with`, `common-dirs`: `ActionService` interpolates target
    paths into log calls (for example `RClick/Runtime/ActionService.swift:129`, `:186`, `:742`, `:792`, `:990`) with
    no `privacy:` argument. Issue #39. Whether they reach the persisted log unredacted is **UNVERIFIED** (the
@@ -102,13 +101,15 @@ delete its line in the same change.
    before Paste is reported "Changed since cut" and a clipboard with no pending paths left is cleared; with RClick
    offline the whole New File group is disabled. The quarantine attribute on New File outputs is the App Sandbox's
    own quarantine on files a sandboxed process creates (flag `0082`, no RClick code involved): expected, no change.
-7. `new-file`, `new-file-settings`: a custom type whose extension was typed without a dot creates `Untitled<ext>`:
-   the sheet stores the field verbatim and `ActionService.getUniqueFilePath`
-   (`RClick/Runtime/ActionService.swift:1100-1114`) appends the extension with no dot. Issue #51 (device FAIL in the
-   issue #12 comment).
-8. `settings-backup`, `menu-layout`: importing a backup does not restore `foldActionsMenu` (issue #52, observed on
-   the device). `SettingsBackup.Preferences.apply` (`RClick/Runtime/SettingsBackup.swift:260-262`) writes that key, so
-   the cause is **UNVERIFIED**; which other preferences import skips is unchecked (issue #52).
+7. `new-file`, `new-file-settings`: **FIXED in code by #51, device check pending.** A custom type whose extension was
+   typed without a dot created `Untitled<ext>`. The sheet now normalises on save (trim, one leading dot, trailing
+   dots removed, inner dots such as `tar.gz` kept; empty, all-dots, slash or inner-whitespace input is rejected) and
+   creation tolerates a legacy stored dotless value. Open (audit): very long leading-dot input has quadratic
+   normalisation work on the main actor.
+8. `settings-backup`, `menu-layout`: **FIXED in code by #52, device check pending.** Import now applies every
+   preference that export writes (eight preferences, including `foldActionsMenu`) and refreshes the menu; a
+   round-trip test (export, change every preference, import, export again) proves equality; keys missing from an
+   old backup keep the current value. The live menu-bar toggle on import is device-only.
 9. `apps-settings`: Settings > Apps > Edit stores Run Arguments and Environment Variables
    (`RClick/Settings/EditAppSheetView.swift`, persisted by `RClick/Runtime/ConfigService.swift` and
    `RClick/Runtime/SettingsBackup.swift`), but `ActionService.openWithApp` and `openRetryAfterPermission`
@@ -434,7 +435,7 @@ delete its line in the same change.
   Template names are unique within a type, case-insensitively (`TemplateDraft.uniqueName`, `:123-131`). An entry whose
   stored file no longer exists keeps its row and is left out of the menu (`NewFile.Template.isMissing`,
   `Shared/RCBase.swift:252`). See `new-file-settings` for editing and `persistence` for deletion.
-- **Status:** `shipped-on`, `partial` (finding 7: an extension without a dot; finding 11: an unreachable branch).
+- **Status:** `shipped-on`, `partial` (finding 11: an unreachable branch; finding 7 fixed in code by #51).
 - **Default:** TXT, Markdown, DOCX, PPTX, XLSX on; JSON off (`Shared/RCBase.swift:287` `NewFile.all`;
   `RClick/Model/NewFileTypeEntity.swift` `createDefaultFileTypes`); every type starts with Blank on and no template.
   A type stored before this change with one user template is migrated at load to one entry that points at that file,
@@ -570,7 +571,7 @@ delete its line in the same change.
   layouts, not the rendered menu).
 - **Device:** the folded and inline actions layouts PASS for Cut (issue #12 comment); otherwise never run as its own
   row. New File in the folded and flat layouts, with type submenus in both: PASS (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record).
-- **Gaps:** finding 8 (import skips `foldActionsMenu`, issue #52).
+- **Gaps:** finding 8 fixed in code by #52, device check pending.
 
 ### `connection-state`
 - **What:** the extension caches "last message from the app" for 30 s (`Shared/PeerActivity.swift`). Offline it
