@@ -164,12 +164,12 @@ final class ActionService {
     /// 用指定应用打开选中文件/目录（沙盒门控：先 hasAccess，失败兜底再授权重试）
     func openApp(rid: String, target: [String]) async {
         guard let rcitem = state.getAppItem(rid: rid) else {
-            logger.warning("when openapp, but not have app \(rid)")
+            logger.warning("Open With refused; reason=unknownApp count=\(target.count)")
             return
         }
 
         let appUrl = rcitem.url
-        logger.debug("openApp: rid=\(rid) app=\(appUrl.path) target=\(target) opensNewInstance=\(rcitem.opensNewInstance)")
+        logger.debug("Open With started; count=\(target.count)")
 
         // 通过共享目标解析处理「选中文件时打开所在目录」选项
         for resolved in AppPresets.resolveOpenTargets(
@@ -188,7 +188,7 @@ final class ActionService {
         // 门控先行：未授权先弹窗，避免"只是打开一个文件"也要用户授权整个父目录的弹窗偏重
         if !permission.hasAccess(to: accessURL) {
             guard await permission.promptForPermission(for: accessURL) != nil else {
-                logger.warning("用户取消授权，跳过打开：\(url.path)")
+                logger.warning("Open With skipped; reason=permissionCancelled count=1")
                 return
             }
         }
@@ -203,8 +203,8 @@ final class ActionService {
                 Task { @MainActor in
                     await self.openRetryAfterPermission(url: url, appUrl: appUrl, accessURL: accessURL, opensNewInstance: opensNewInstance, firstError: error)
                 }
-            } else if let runningApp {
-                logger.debug("Successfully opened with application: \(runningApp.localizedName ?? "Unknown")")
+            } else if runningApp != nil {
+                logger.debug("Open With succeeded; count=1")
             }
         }
     }
@@ -212,14 +212,14 @@ final class ActionService {
     private func openRetryAfterPermission(url: URL, appUrl: URL, accessURL: URL, opensNewInstance: Bool, firstError: Error) async {
         let logger = self.logger  // 捕获 Sendable logger
         guard await permission.promptForPermission(for: accessURL) != nil else {
-            logger.error("打开失败且用户取消授权：\(url.path) — \(firstError.localizedDescription)")
+            logger.error("Open With failed; reason=permissionCancelled code=\((firstError as NSError).code) count=1")
             return
         }
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = opensNewInstance
         openApplication([url], appUrl, config) { _, retryError in
             if let retryError {
-                logger.error("重试打开仍失败：\(url.path) — \(retryError.localizedDescription)")
+                logger.error("Open With retry failed; reason=workspace code=\((retryError as NSError).code) count=1")
             }
         }
     }
