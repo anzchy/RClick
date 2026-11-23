@@ -1,7 +1,7 @@
 <!-- GENERATED FILE. Do not edit by hand: run `node scripts/feature-ledger/gen-feature-ledger.mjs`. -->
 # RClick feature metrics
 
-Generated from commit `c533b317d5de50017c6deefbc4097115be03ca8f` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
+Generated from commit `707b89d786060f5a93d793f1926ae87838bf45bf` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
 This is the quantitative half of the feature ledger. Every cell below is measured from the repository; nothing is typed by hand or estimated.
 The qualitative half, `docs/feature-ledger.md`, cites these cells and never restates them. Maintenance: `docs/agents/feature-ledger.md`.
 
@@ -51,10 +51,10 @@ There is no issue-count column: a feature that is off by default (Hide, Unhide, 
 | `new-file-office-templates` | New File: bundled DOCX, PPTX and XLSX templates | Finder menu: New File | app | 1 | 1247 | 2 | 5 | 121 | 55fa65a 2026-11-23 | 70 | 0 | 1 |
 | `new-file-auto-rename` | New File: select and rename after creation | Finder menu: New File | app | 2 | 1294 | 0 | 0 | 0 | 55fa65a 2026-11-23 | 71 | 0 | 1 |
 | `common-dirs` | Common Dirs | Finder menu: Common Dirs | app, ipc, extension | 4 | 1812 | 1 | 2 | 24 | 55fa65a 2026-11-23 | 85 | 0 | 2 |
-| `finder-menu` | RClick section in the Finder context menu | Finder menu: presence | extension, app, ipc | 4 | 1503 | 2 | 4 | 95 | 2c09adb 2026-11-22 | 68 | 0 | 4 |
+| `finder-menu` | RClick section in the Finder context menu | Finder menu: presence | extension, app, ipc | 4 | 1561 | 2 | 4 | 95 | 707b89d 2026-11-23 | 72 | 0 | 4 |
 | `finder-toolbar-button` | RClick toolbar button in Finder | Finder menu: presence | extension | 2 | 985 | 1 | 3 | 61 | 2c09adb 2026-11-22 | 43 | 0 | 2 |
 | `menu-layout` | Menu sections: collapse toggles and icon style | Finder menu: presence | app, extension, shared | 6 | 1031 | 3 | 8 | 114 | 533d3dc 2026-11-23 | 51 | 0 | 3 |
-| `connection-state` | Connection-state UX (offline menu, hint relaunch, no-ack alert) | Finder menu: presence | extension, ipc, shared | 4 | 1079 | 1 | 1 | 23 | 2c09adb 2026-11-22 | 53 | 0 | 5 |
+| `connection-state` | Connection-state UX (offline menu, hint relaunch, no-ack alert) | Finder menu: presence | extension, ipc, shared | 4 | 1137 | 1 | 1 | 23 | 707b89d 2026-11-23 | 57 | 0 | 5 |
 | `observed-volumes` | Observed folders and external volumes | Finder menu: presence | extension, shared | 2 | 614 | 1 | 3 | 89 | 2c09adb 2026-11-22 | 33 | 1 | 0 |
 | `settings-window` | Settings window | Settings | app | 3 | 396 | 0 | 0 | 0 | aa934c5 2026-11-22 | 23 | 0 | 0 |
 | `menu-bar-item` | Menu bar item | Settings | app | 3 | 700 | 0 | 0 | 0 | 533d3dc 2026-11-23 | 37 | 0 | 0 |
@@ -65,12 +65,12 @@ There is no issue-count column: a feature that is off by default (Hide, Unhide, 
 | `folder-permissions` | Folder permissions (security-scoped bookmarks) | Settings | app | 5 | 325 | 3 | 12 | 203 | 55fa65a 2026-11-23 | 7 | 1 | 8 |
 | `permission-status` | Permission status (Finder extension, Accessibility) | Settings | app | 2 | 459 | 0 | 0 | 0 | 533d3dc 2026-11-23 | 16 | 0 | 2 |
 | `settings-backup` | Settings backup (export, import) | Settings | app | 3 | 768 | 3 | 10 | 285 | 533d3dc 2026-11-23 | 27 | 0 | 3 |
-| `export-logs` | Export logs | Settings | app | 2 | 423 | 0 | 0 | 0 | 533d3dc 2026-11-23 | 15 | 0 | 0 |
+| `export-logs` | Export logs | Settings | app | 2 | 423 | 0 | 0 | 0 | 533d3dc 2026-11-23 | 15 | 0 | 1 |
 | `reset-all-settings` | Reset All Settings | Settings | app | 4 | 874 | 0 | 0 | 0 | 533d3dc 2026-11-23 | 34 | 0 | 1 |
 | `update` | Check for updates and install | Settings | app | 4 | 691 | 1 | 7 | 58 | d0ef7c6 2026-11-22 | 12 | 2 | 6 |
 | `about` | About (version, repository link, attribution) | Settings | app | 2 | 572 | 0 | 0 | 0 | d0ef7c6 2026-11-22 | 12 | 0 | 3 |
 | `localization` | Localization (English, zh-Hans, ja, es, fr) | Settings | app, extension, shared | 2 | 117 | 2 | 6 | 99 | b90ff24 2026-11-23 | 57 | 0 | 5 |
-| `ipc` | Two-process IPC (signed click, ack, menu config, heartbeat) | Infrastructure | ipc, shared | 5 | 848 | 6 | 56 | 1168 | a223207 2026-11-22 | 40 | 0 | 4 |
+| `ipc` | Two-process IPC (signed click, ack, menu config, heartbeat) | Infrastructure | ipc, shared | 5 | 906 | 6 | 64 | 1385 | 707b89d 2026-11-23 | 45 | 0 | 4 |
 | `persistence` | Persistence (SwiftData in the App Group, migrations) | Infrastructure | app, shared | 12 | 1040 | 10 | 27 | 578 | 533d3dc 2026-11-23 | 29 | 0 | 4 |
 | `app-lifecycle` | App lifecycle (single instance, startup failure, quiet launches) | Infrastructure | app, shared | 6 | 370 | 2 | 6 | 51 | aa934c5 2026-11-22 | 25 | 1 | 2 |
 | `action-execution` | Action execution layer (serial executor, file operations, access lease) | Infrastructure | app | 4 | 185 | 4 | 20 | 312 | a27d263 2026-11-22 | 24 | 0 | 0 |
