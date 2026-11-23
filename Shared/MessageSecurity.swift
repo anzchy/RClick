@@ -3,7 +3,7 @@ import CryptoKit
 import Synchronization
 
 nonisolated enum IPCSecurityError: Error {
-    case noKey, malformed, unauthenticated, direction, session, freshness, replay, capacity, configVersion
+    case noKey, malformed, unauthenticated, direction, session, freshness, replay, capacity, configVersion, configRollback
     case clockDiscontinuity
     case keychain(Int32)
 
@@ -217,7 +217,7 @@ nonisolated final class IPCReceiver: Sendable {
                 guard let revision = try? JSONDecoder().decode(Revision.self, from: envelope.payload),
                       revision.version >= 0 else { throw IPCSecurityError.configVersion }
                 let previous = state.revisions[envelope.session]
-                guard previous == nil || revision.version >= previous! else { throw IPCSecurityError.configVersion }
+                guard previous == nil || revision.version >= previous! else { throw IPCSecurityError.configRollback }
                 state.configVersion = revision.version
                 state.revisions[envelope.session] = revision.version
             } else if announcesSession, envelope.session != state.session {

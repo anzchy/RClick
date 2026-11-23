@@ -6,6 +6,151 @@ import Observation
 
 @MainActor
 final class IPCAuthenticationTests: XCTestCase {
+    func testOldExtensionTrafficReportsCountsWhileNewFileAndCutStillAckOnce() async throws {
+        let center = NotificationCenter()
+        let oldCenter = NotificationCenter() // A receiver that has not received the new launch announcement.
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let provider = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let logs = Mutex<[IPCDiagnostic]>([])
+        let app = Messager(isExtension: false, center: center, keyProvider: provider, clock: clock,
+                           diagnosticLog: { event in logs.withLock { $0.append(event) } })
+        let ext = Messager(isExtension: true, center: center, keyProvider: provider, clock: clock)
+        let oldApp = Messager(isExtension: false, center: oldCenter, keyProvider: provider, clock: clock)
+        let oldExt = Messager(isExtension: true, center: oldCenter, keyProvider: provider, clock: clock)
+        oldApp.sendRunningNotification()
+        // Bridge only outgoing notifications: model delayed discovery in a second extension instance.
+        let bridge = oldCenter.addObserver(forName: Notification.Name(Messager.extensionToMainNotification),
+                                           object: nil, queue: nil) { note in
+            center.post(name: note.name, object: note.object)
+        }
+        defer { oldCenter.removeObserver(bridge) }
+        let acks = Mutex<[String]>([])
+        let handled = Mutex<[String]>([])
+        ext.onMainMessage(.actionAck) { message in acks.withLock { $0.append(message.inReplyTo) } }
+        let accepted = expectation(description: "new file and cut accepted once each")
+        accepted.expectedFulfillmentCount = 2
+        app.onClickEvent { event in handled.withLock { $0.append(event.itemId) }; accepted.fulfill() }
+        app.sendRunningNotification()
+        app.sendMenuConfig(MenuConfigPayload())
+        XCTAssertTrue(logs.withLock { $0.isEmpty }, "opposite notification names exclude sender loopback")
+        oldExt.sendHeartbeat()
+        ext.sendClickEvent(ClickEventPayload(itemId: "text", itemType: .newFile, trigger: .contextualContainer), id: "new-file")
+        for _ in 0..<3 { oldExt.sendHeartbeat() }
+        clock.advance(10)
+        oldExt.requestMenuConfig()
+        ext.sendClickEvent(ClickEventPayload(itemId: "cut", itemType: .action, trigger: .contextualItems), id: "cut")
+        await fulfillment(of: [accepted], timeout: 1)
+        XCTAssertEqual(handled.withLock { $0 }, ["text", "cut"])
+        XCTAssertEqual(acks.withLock { $0 }, ["new-file", "cut"])
+        XCTAssertEqual(logs.withLock { $0.map(\.count) }, [1, 5], "rejections must emit rate-limited diagnostic counts")
+        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, [.rejected(.session), .rejected(.session)])
+    }
+
+    func testEveryRejectionHasAClosedCategoryAndExpectedSeverity() {
+        let cases: [(IPCSecurityError, IPCRejectionReason, Bool)] = [
+            (.noKey, .noKey, false), (.malformed, .malformed, false),
+            (.unauthenticated, .unauthenticated, false), (.direction, .direction, false),
+            (.session, .session, true), (.freshness, .freshness, true), (.replay, .replay, true),
+            (.capacity, .capacity, false), (.configVersion, .configVersion, false),
+            (.configRollback, .configRollback, true), (.clockDiscontinuity, .clockDiscontinuity, true),
+            (.keychain(-34018), .keychain, false)
+        ]
+        for (error, reason, expected) in cases {
+            XCTAssertEqual(IPCRejectionReason(error), reason)
+            XCTAssertEqual(reason.isExpected, expected, reason.rawValue)
+        }
+        struct UnknownFailure: Error {}
+        XCTAssertEqual(IPCRejectionReason(UnknownFailure()), .unexpected)
+        XCTAssertFalse(IPCRejectionReason.unexpected.isExpected)
+        XCTAssertEqual(Set(cases.map { $0.1 }).union([.unexpected]), Set(IPCRejectionReason.allCases))
+    }
+
+    func testReceiveDiagnosticsSeparateDelayedTrafficFromInvalidMessages() throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let logs = Mutex<[IPCDiagnostic]>([])
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock,
+                           diagnosticLog: { event in logs.withLock { $0.append(event) } })
+        func wire(action: String = "running", direction: IPCDirection = .toExtension,
+                  time: Double = 100, payload: Data = Data(), signingKey: Data? = nil) throws -> String {
+            MessageSecurity.sign(IPCEnvelope(direction: direction, action: action, id: UUID().uuidString,
+                session: "launch", timestamp: time, nonce: try SystemIPCRandom().bytes(count: 16), payload: payload),
+                key: signingKey ?? key).wireString()
+        }
+        func post(_ wire: String) { center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: wire) }
+        let running = try wire()
+        post(running)
+        post(running) // Duplicate delivery cannot dispatch again.
+        post(try wire(time: 94))
+        post(try wire(action: "menu-config", payload: JSONEncoder().encode(MenuConfigPayload(version: 3))))
+        post(try wire(action: "menu-config", payload: JSONEncoder().encode(MenuConfigPayload(version: 2))))
+        post(try wire(action: "menu-config", payload: Data("{}".utf8)))
+        post(try wire(action: "menu-config", payload: JSONEncoder().encode(MenuConfigPayload(version: -1))))
+        post(try wire(direction: .toMain))
+        post("malformed")
+        // Expected drops in the same ten-second period must not suppress authentication errors.
+        post(try wire(signingKey: Data(repeating: 7, count: 32)))
+        clock.step(wall: 60, monotonic: 0)
+        post(try wire(time: 160))
+        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, [
+            .rejected(.replay), .rejected(.freshness), .rejected(.configRollback), .rejected(.configVersion),
+            .rejected(.direction), .rejected(.malformed), .rejected(.unauthenticated), .rejected(.clockDiscontinuity)
+        ])
+        XCTAssertEqual(logs.withLock { $0.map(\.count) }, Array(repeating: 1, count: 8))
+        XCTAssertEqual(ext.currentSession, "", "clock barrier still invalidates discovery")
+
+        let keylessLogs = Mutex<[IPCDiagnostic]>([])
+        let keylessCenter = NotificationCenter()
+        let keyless = Messager(isExtension: true, center: keylessCenter, keyProvider: InMemoryKeyProvider(data: nil), clock: clock,
+                              diagnosticLog: { event in keylessLogs.withLock { $0.append(event) } })
+        // Keep the keyless center separate so no other receiver can contribute diagnostics.
+        withExtendedLifetime(keyless) {
+            keylessCenter.post(name: Notification.Name(Messager.mainToExtensionNotification), object: running)
+            XCTAssertFalse(keyless.hasReadableKey)
+            XCTAssertEqual(keylessLogs.withLock { $0.map(\.kind) }, [.rejected(.noKey)])
+        }
+
+        let saturatedCenter = NotificationCenter()
+        let capacityLogs = Mutex<[IPCDiagnostic]>([])
+        let saturated = Messager(isExtension: true, center: saturatedCenter, keyProvider: InMemoryKeyProvider(data: key), clock: clock,
+                                 diagnosticLog: { event in capacityLogs.withLock { $0.append(event) } })
+        for _ in 0...1024 {
+            saturatedCenter.post(name: Notification.Name(Messager.mainToExtensionNotification), object: try wire(time: 160))
+        }
+        XCTAssertEqual(capacityLogs.withLock { $0.map(\.kind) }, [.rejected(.capacity)])
+        XCTAssertEqual(capacityLogs.withLock { $0.map(\.count) }, [1])
+        withExtendedLifetime(saturated) {}
+    }
+
+    func testRelaunchBeforeConfigUsesLoadingStateAndThenCurrentConfig() throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = InMemoryKeyProvider(data: Data(repeating: 0x42, count: 32))
+        let ext = Messager(isExtension: true, center: center, keyProvider: key, clock: clock)
+        let delivery = IPCExtensionDelivery(messager: ext)
+        XCTAssertFalse(delivery.isHostAppRunning) // buildMenu returns offline hint.
+        XCTAssertNil(delivery.menuConfig(as: MenuConfigPayload.self))
+        var app: Messager? = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        app?.sendRunningNotification()
+        app?.sendMenuConfig(MenuConfigPayload(actions: [ActionMenuItem(id: "cut", name: "Cut", icon: "", tag: 1)]))
+        XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.actions.map(\.id), ["cut"])
+        app?.sendQuitNotification()
+        XCTAssertFalse(delivery.isHostAppRunning)
+        app = nil
+        clock.advance(1)
+        app = Messager(isExtension: false, center: center, keyProvider: key, clock: clock)
+        app?.sendRunningNotification()
+        XCTAssertTrue(delivery.isHostAppRunning)
+        XCTAssertNil(delivery.menuConfig(as: MenuConfigPayload.self), "new session cannot render stale config; buildMenu returns loading row")
+        let requested = Mutex(0)
+        app?.onExtensionMessage(.requestConfig) { _ in requested.withLock { $0 += 1 } }
+        ext.requestMenuConfig()
+        XCTAssertEqual(requested.withLock { $0 }, 1, "request after adoption reaches relaunched host")
+        app?.sendMenuConfig(MenuConfigPayload(actions: [ActionMenuItem(id: "text", name: "New", icon: "", tag: 2)]))
+        XCTAssertEqual(delivery.menuConfig(as: MenuConfigPayload.self)?.actions.map(\.id), ["text"])
+    }
+
     func testClockDiscontinuityRejectsExactDestructiveReplayAndResyncs() throws {
         for jump in [0.0, 60.0] {
             let clock = TestIPCClock(wall: 100, monotonic: 200)

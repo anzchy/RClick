@@ -212,6 +212,7 @@ nonisolated final class Messager: NSObject, Sendable {
         var lastConfig: Data?
         var invalidated: (@Sendable () -> Void)?
         var failures = IPCFailurePolicy()
+        var rejectionCounts: [IPCRejectionReason: IPCFailurePolicy] = [:]
         var decodeDrops = IPCFailurePolicy()
         var outgoingDrops = IPCFailurePolicy()
     }
@@ -341,17 +342,30 @@ nonisolated final class Messager: NSObject, Sendable {
             }
         } catch {
             if case IPCSecurityError.clockDiscontinuity = error { resynchronize() }
+            let reason = IPCRejectionReason(error)
             let report = state.withLock { state in
-                let decision = state.failures.reject(now: clock.monotonicTime, authenticationFailure: (error as? IPCSecurityError)?.warrantsNotice ?? true)
-                return (decision.log, decision.notice, state.failures.rejectedCount)
+                // Notice remains once per process. Logs have independent category
+                // budgets so expected session churn cannot hide a bad signature.
+                let now = clock.monotonicTime
+                let notice = state.failures.reject(now: now, authenticationFailure: (error as? IPCSecurityError)?.warrantsNotice ?? true).notice
+                let decision = state.rejectionCounts[reason, default: IPCFailurePolicy()].reject(now: now, authenticationFailure: false)
+                return (decision.log, notice, state.rejectionCounts[reason, default: IPCFailurePolicy()].rejectedCount)
             }
-            if report.0 { logger.error("Rejected IPC messages: \(report.2, privacy: .public)") }
+            if report.0 {
+                if reason.isExpected {
+                    logger.debug("Rejected IPC messages: category=\(reason.rawValue, privacy: .public) count=\(report.2, privacy: .public)")
+                } else {
+                    logger.error("Rejected IPC messages: category=\(reason.rawValue, privacy: .public) count=\(report.2, privacy: .public)")
+                }
+                diagnosticLog?(IPCDiagnostic(kind: .rejected(reason), count: report.2))
+            }
             if !isExtension, report.1 { Task { @MainActor in (self.rejectionNotice ?? IPCRejectionNotice.shared).record() } }
         }
     }
     private func recordDrop(_ kind: IPCDiagnostic.Kind) {
         let report = state.withLock { state -> (Bool, Int) in
             switch kind {
+            case .rejected: return (false, 0)
             case .undecodableClick:
                 let decision = state.decodeDrops.reject(now: clock.monotonicTime, authenticationFailure: false)
                 return (decision.log, state.decodeDrops.rejectedCount)
@@ -362,6 +376,7 @@ nonisolated final class Messager: NSObject, Sendable {
         }
         guard report.0 else { return }
         switch kind {
+        case .rejected: return
         case .undecodableClick: logger.error("Undecodable IPC clicks dropped: \(report.1, privacy: .public)")
         case .oversizedOutgoing: logger.error("Oversized outgoing IPC messages dropped: \(report.1, privacy: .public)")
         }
@@ -533,8 +548,40 @@ nonisolated final class IPCExtensionDelivery: Sendable {
     func expireClick(_ id: String) -> Bool { state.withLock { $0.pending.expire(id) } }
 }
 
+/// Closed, count-only diagnostics. Expected means the defensive rejection can
+/// occur during discovery, delayed delivery or recovery; it does not authenticate
+/// the traffic or establish why an individual message arrived.
+nonisolated enum IPCRejectionReason: String, Sendable, CaseIterable {
+    case noKey, malformed, unauthenticated, direction, session, freshness, replay, capacity, configVersion, configRollback
+    case clockDiscontinuity, keychain, unexpected
+
+    init(_ error: any Error) {
+        guard let security = error as? IPCSecurityError else { self = .unexpected; return }
+        self = switch security {
+        case .noKey: .noKey
+        case .malformed: .malformed
+        case .unauthenticated: .unauthenticated
+        case .direction: .direction
+        case .session: .session
+        case .freshness: .freshness
+        case .replay: .replay
+        case .capacity: .capacity
+        case .configVersion: .configVersion
+        case .configRollback: .configRollback
+        case .clockDiscontinuity: .clockDiscontinuity
+        case .keychain: .keychain
+        }
+    }
+    var isExpected: Bool {
+        switch self {
+        case .session, .freshness, .replay, .configRollback, .clockDiscontinuity: true
+        default: false
+        }
+    }
+}
+
 nonisolated struct IPCDiagnostic: Sendable {
-    enum Kind: Sendable { case undecodableClick, oversizedOutgoing }
+    enum Kind: Sendable, Equatable { case undecodableClick, oversizedOutgoing, rejected(IPCRejectionReason) }
     let kind: Kind
     let count: Int
 }
