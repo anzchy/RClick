@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.3.5] - TBD
 
+This first fork release also documents upstream changes from 2.3.2–2.3.4 that never had changelog sections, so the v2.3.4…v2.3.5 compare link covers only part of this section.
+
 ### Added
 - Opt-in Cut and same-volume Paste (move here), with exclusive keep-both names, partial-failure retry and a durable recovery journal (#8, #9; PR #36)
 - Opt-in Undo last move for the latest same-volume Paste, for up to 24 hours including after relaunch; identity checks protect replaced items and original folders (#11)
