@@ -65,7 +65,8 @@ final class IPCAuthenticationTests: XCTestCase {
         for wire in queued { center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire) }
         await Task { @MainActor in }.value // Drain any incorrectly accepted onClickEvent work.
         XCTAssertFalse(logs.withLock { $0.isEmpty })
-        XCTAssertTrue(logs.withLock { $0.allSatisfy { $0.kind == .rejected(.freshness) } })
+        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, [.rejected(.freshness), .rejected(.freshness)])
+        XCTAssertEqual(logs.withLock { $0.map(\.level) }, [.notice, .error])
         XCTAssertEqual(handled.withLock { $0 }, 0)
         XCTAssertEqual(acks.withLock { $0 }, 0, "late click retains the existing no-ack behavior")
         var pending = PendingClicks()
@@ -80,11 +81,36 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertFalse(source.contains("logger.debug(\"Rejected IPC messages:"), "debug rows were absent from the device capture")
     }
 
+    func testRejectedClicksStayErrorsWithIndependentRateLimits() throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let logs = Mutex<[IPCDiagnostic]>([])
+        let app = Messager(isExtension: false, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock,
+                           diagnosticLog: { event in logs.withLock { $0.append(event) } })
+        let dispatched = Mutex(0)
+        app.onExtensionMessage(.click) { _ in dispatched.withLock { $0 += 1 } }
+        func post(_ action: String) throws {
+            let wire = MessageSecurity.sign(IPCEnvelope(direction: .toMain, action: action, id: UUID().uuidString,
+                session: "old-launch", timestamp: clock.wallTime, nonce: try SystemIPCRandom().bytes(count: 16)), key: key).wireString()
+            center.post(name: Notification.Name(Messager.extensionToMainNotification), object: wire)
+        }
+        try post("heartbeat")
+        try post("click") // Bootstrap budget must not hide a lost action.
+        try post("click") // Error flood is still bounded.
+        clock.advance(10)
+        try post("click")
+        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, Array(repeating: .rejected(.session), count: 3))
+        XCTAssertEqual(logs.withLock { $0.map(\.level) }, [.notice, .error, .error])
+        XCTAssertEqual(logs.withLock { $0.map(\.count) }, [1, 1, 3])
+        XCTAssertEqual(dispatched.withLock { $0 }, 0)
+    }
+
     func testEveryRejectionHasAClosedCategoryAndExpectedSeverity() {
         let cases: [(IPCSecurityError, IPCRejectionReason, Bool)] = [
             (.noKey, .noKey, false), (.malformed, .malformed, false),
             (.unauthenticated, .unauthenticated, false), (.direction, .direction, false),
-            (.session, .session, true), (.freshness, .freshness, true), (.replay, .replay, true),
+            (.session, .session, true), (.freshness, .freshness, true), (.replay, .replay, false),
             (.capacity, .capacity, false), (.configVersion, .configVersion, false),
             (.configRollback, .configRollback, true), (.clockDiscontinuity, .clockDiscontinuity, true),
             (.keychain(-34018), .keychain, false)
@@ -92,6 +118,8 @@ final class IPCAuthenticationTests: XCTestCase {
         for (error, reason, expected) in cases {
             XCTAssertEqual(IPCRejectionReason(error), reason)
             XCTAssertEqual(reason.isExpected, expected, reason.rawValue)
+            XCTAssertEqual(reason.logLevel(isClick: false), expected ? .notice : .error, reason.rawValue)
+            XCTAssertEqual(reason.logLevel(isClick: true), .error, reason.rawValue)
         }
         struct UnknownFailure: Error {}
         XCTAssertEqual(IPCRejectionReason(UnknownFailure()), .unexpected)
@@ -132,6 +160,7 @@ final class IPCAuthenticationTests: XCTestCase {
             .rejected(.direction), .rejected(.malformed), .rejected(.unauthenticated), .rejected(.clockDiscontinuity)
         ])
         XCTAssertEqual(logs.withLock { $0.map(\.count) }, Array(repeating: 1, count: 8))
+        XCTAssertEqual(logs.withLock { $0.map(\.level) }, [.error, .notice, .notice, .error, .error, .error, .error, .notice])
         XCTAssertEqual(ext.currentSession, "", "clock barrier still invalidates discovery")
 
         let keylessLogs = Mutex<[IPCDiagnostic]>([])
