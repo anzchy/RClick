@@ -123,6 +123,31 @@ final class IPCAuthenticationTests: XCTestCase {
         withExtendedLifetime(saturated) {}
     }
 
+    func testExhaustedDiscoveryRemainsAnUnexpectedCapacityDiagnostic() throws {
+        let center = NotificationCenter()
+        let clock = TestIPCClock(wall: 100, monotonic: 200)
+        let key = Data(repeating: 0x42, count: 32)
+        let logs = Mutex<[IPCDiagnostic]>([])
+        let ext = Messager(isExtension: true, center: center, keyProvider: InMemoryKeyProvider(data: key), clock: clock,
+                           diagnosticLog: { event in logs.withLock { $0.append(event) } })
+        func announce(_ session: String) throws {
+            let wire = MessageSecurity.sign(IPCEnvelope(direction: .toExtension, action: "running", id: UUID().uuidString,
+                session: session, timestamp: clock.wallTime, nonce: try SystemIPCRandom().bytes(count: 16)), key: key).wireString()
+            center.post(name: Notification.Name(Messager.mainToExtensionNotification), object: wire)
+        }
+        // Fill retired history without saturating the short-lived nonce cache.
+        for launch in 0...1024 {
+            clock.advance(1)
+            try announce(String(launch))
+        }
+        XCTAssertTrue(logs.withLock { $0.isEmpty })
+        clock.step(wall: 60, monotonic: 0)
+        try announce("next") // Barrier exhausts discovery instead of evicting retired sessions.
+        try announce("next")
+        XCTAssertEqual(logs.withLock { $0.map(\.kind) }, [.rejected(.clockDiscontinuity), .rejected(.capacity)])
+        XCTAssertEqual(ext.currentSession, "", "history exhaustion must remain fail closed")
+    }
+
     func testRelaunchBeforeConfigUsesLoadingStateAndThenCurrentConfig() throws {
         let center = NotificationCenter()
         let clock = TestIPCClock(wall: 100, monotonic: 200)

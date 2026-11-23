@@ -193,8 +193,8 @@ nonisolated final class IPCReceiver: Sendable {
                 let bootstrap = envelope.session.isEmpty && ["heartbeat", "request-config"].contains(envelope.action)
                 guard bootstrap || (!state.session.isEmpty && envelope.session == state.session) else { throw IPCSecurityError.session }
             } else if announcesSession {
-                guard !envelope.session.isEmpty, !state.retired.contains(envelope.session),
-                      !state.discoveryExhausted else { throw IPCSecurityError.session }
+                guard !envelope.session.isEmpty, !state.retired.contains(envelope.session) else { throw IPCSecurityError.session }
+                guard !state.discoveryExhausted else { throw IPCSecurityError.capacity }
                 if envelope.session != state.lastAdoptedSession {
                     // Unknown launches must postdate the current launch's first
                     // adoption, not merely have a still-fresh captured timestamp.
