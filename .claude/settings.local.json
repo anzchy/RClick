@@ -26,7 +26,8 @@
       "Bash(xcodebuild -project RClick.xcodeproj -scheme RClick -destination 'platform=macOS' build)",
       "WebSearch",
       "WebFetch(domain:stackoverflow.com)",
-      "Bash(pluginkit *)"
+      "Bash(pluginkit *)",
+      "Bash(herdr agent start:*)"
     ]
   }
 }
