@@ -57,6 +57,7 @@ roster's private record; no claim depends on reading it. A result that only a pr
 | [PR #34](https://github.com/anzchy/RClick/pull/34) › Device | `78a1fc6` (a PR #34 head) | `d94db82` (final head `066c542`; `git diff 78a1fc6 066c542` touches only `specs/`) | `i28-i32-device-20261118` | Copy Path and Copy File Name on literal percent names; the file-URL FAIL that issue #25 tracked; its NOT VERIFIED list |
 | [PR #35](https://github.com/anzchy/RClick/pull/35) › Device | `0f598ad` (PR #35 head) | `723b6c5`, same tree | none named | the per-install Keychain key, a replayed click rejected, recovery after relaunch, the rejection notice; its NOT VERIFIED list and the release gate (issue #40) |
 | [Issue #12 comment](https://github.com/anzchy/RClick/issues/12#issuecomment-7041176305) | `38d356a` (main) | `38d356a` | `i-device-20261120` | Copy Path, Cut, Paste and New File rows on a Debug build, the offline menu as observed; its NOT VERIFIED rows; defects filed as #51 to #54 |
+| [Issue #12 comment (second run)](https://github.com/anzchy/RClick/issues/12#issuecomment-7098085166) | `a5f25ac` (main) | `a5f25ac` | `i-device-20261123` | The sandbox check for Paste and Undo (S1), Paste regression, the #53 observations, Undo in both layouts (round trip, name clash, replaced or deleted item, original folder replaced, after a relaunch, offline), Open With on a literal `%41` name, custom file types, Settings import, the unified log for the file actions, the About tab and the update check; its NOT VERIFIED rows; no product FAIL |
 | [Issue #49 comment](https://github.com/anzchy/RClick/issues/49#issuecomment-7058423784) | `e729e01` (#49's code, rebased on main `453241c`) | | `i-device-20261121` | New File from the real Finder menu in both layouts, several templates per type (flat and folded, folded also after a relaunch), the edit sheet's template rows, same-Mac export and import, Restore Defaults, the offline menu as observed; its NOT VERIFIED rows; no product FAIL |
 
 PR #23 and PR #27 describe an independent tester driving a signed build; issue #26 records that the
@@ -72,10 +73,10 @@ menu bar item, updates, launch at login or localization.
 Each finding names the feature block that carries the detail and at least one source. When a finding is fixed,
 delete its line in the same change.
 
-1. `open-with`: **FIXED in code by #59, device check pending.** `AppPresets.resolveOpenTargets` used to apply
+1. `open-with`: **FIXED by #59, device PASS (issue #12 second run).** `AppPresets.resolveOpenTargets` used to apply
    `removingPercentEncoding` to every click target, so an item whose name holds a literal `%xx` opened under a
    different path. Click targets are now raw paths; only real `file://` URL strings are decoded (tests at
-   `resolveOpenTargets` and at the `openApp` seam with a literal `%41` name). Not run on a device.
+   `resolveOpenTargets` and at the `openApp` seam with a literal `%41` name). Device (run `i-device-20261123`): Open With on `100%41.txt` opened that file, not its sibling `100A.txt`.
 2. `delete-direct`, `hide`, `unhide`, `airdrop`, `open-with`, `common-dirs`: **FIXED in code by #39, device check
    pending.** `ActionService` (and the `BookmarkManager` calls reached from the file actions) used to interpolate
    target and folder paths into log calls. Every log line of the file actions now carries counts, outcomes, a
@@ -92,7 +93,7 @@ delete its line in the same change.
    current config; a failure to read an item's identity or to write the pasteboard is only logged
    (`RClick/Runtime/ActionService.swift:713-719`); the production caller `FinderSyncExt.makeActionItem` has no test.
    Issue #42.
-5. `paste-move`: **FIXED in code by #48, device check pending (#12).** The destination used to be re-checked by its
+5. `paste-move`: **FIXED by #48, device PASS (issue #12 second run: Cut then Paste on a bookmark-granted folder inside the sandbox moves the file; the descriptor calls work).** The destination used to be re-checked by its
    lexical path inside the coordinated block, so swapping an ancestor for a symlink could land an item in a trashed
    folder or a package. Paste now opens the destination and the source parent as descriptors (no-follow, identity
    compared with the cut-time identity), classifies the descriptor's real path and renames relative to the
@@ -100,17 +101,17 @@ delete its line in the same change.
    moved into a Trash after the last real-path read still receives the item (narrowed, not closed). NOT VERIFIED:
    the descriptor calls inside the sandboxed app on a granted folder (#12). #10, #11 and #12 stay release blockers for
    a build containing Paste.
-6. `paste-move`, `connection-state`, `new-file`: **FIXED in code by #53, device check pending (#12).** Paste (move
+6. `paste-move`, `connection-state`, `new-file`: **FIXED by #53, device PASS (issue #12 second run: Paste not offered on a file or package, "Changed since cut" for a vanished item, the whole New File group disabled offline).** Paste (move
    here) is now offered only for one selected folder (not a package) or the window background; a cut item deleted
    before Paste is reported "Changed since cut" and a clipboard with no pending paths left is cleared; with RClick
    offline the whole New File group is disabled. The quarantine attribute on New File outputs is the App Sandbox's
    own quarantine on files a sandboxed process creates (flag `0082`, no RClick code involved): expected, no change.
-7. `new-file`, `new-file-settings`: **FIXED in code by #51, device check pending.** A custom type whose extension was
+7. `new-file`, `new-file-settings`: **FIXED by #51, device PASS (issue #12 second run: `zzc` and `.tar.gz` create `Untitled.zzc` and `Untitled.tar.gz`, `zz c` is rejected; `..zzc` is saved as a second `.zzc` type).** A custom type whose extension was
    typed without a dot created `Untitled<ext>`. The sheet now normalises on save (trim, one leading dot, trailing
    dots removed, inner dots such as `tar.gz` kept; empty, all-dots, slash or inner-whitespace input is rejected) and
    creation tolerates a legacy stored dotless value. Open (audit): very long leading-dot input has quadratic
    normalisation work on the main actor.
-8. `settings-backup`, `menu-layout`: **FIXED in code by #52, device check pending.** Import now applies every
+8. `settings-backup`, `menu-layout`: **FIXED by #52, device PASS (issue #12 second run: the menu follows an import without a relaunch).** Import now applies every
    preference that export writes (eight preferences, including `foldActionsMenu`) and refreshes the menu; a
    round-trip test (export, change every preference, import, export again) proves equality; keys missing from an
    old backup keep the current value. The live menu-bar toggle on import is device-only.
@@ -378,7 +379,7 @@ delete its line in the same change.
   after a Copy Path); PASS the journal (counts only; a Paste that moved nothing does not replace the record).
   Observed: an item deleted before Paste is reported with a raw system message and no file URL is left on the
   clipboard (#53). NOT VERIFIED: into the Trash, Quit during a move. Moves between disks (#10) were
-  not run; Undo (#11) did not exist at that run and has NOT been device-tested.
+  not run. Undo (#11) did not exist at that run; the second run (`i-device-20261123`, issue #12 comment) device-tested it: it is offered after a Paste (file and background menu, inside Actions when folded) and hidden otherwise; it restores items to their original folder and name (inode and sha256 equal), numbers a clash, skips and reports a replaced or deleted item, refuses a replaced original folder (symlink) without recreating it, survives a Quit and relaunch, and is disabled offline; it is single-shot even after a partial restore (#79). The real Trash window and Quit during a move are still NOT VERIFIED.
 - **Gaps:** CHANGELOG [Unreleased] › Added says Finder/device validation and the Undo release gate remain pending;
   issue #48 makes #48, #10, #11 and #12 release blockers for a build containing Paste. Findings 5 and 6.
 
@@ -397,7 +398,7 @@ delete its line in the same change.
 - **Tests:** `AppPresetsTests.targetsRespectPresetOverridesAndKeepDirectoriesAndMissingPaths`,
   `ActionServiceTests.appEntityPersistsOpensNewInstance`, `MenuCompatibilityTests` (visibility and options survive
   persistence and IPC).
-- **Device:** never run (`APP-01`, `APP-03` in the device recipes; no public evidence covers an Open With click).
+- **Device:** Open With on a literal `%41` name passed (issue #12 second run, `i-device-20261123`: TextEdit added with Add App because it had no preset); the app-preset visibility rows (`APP-01`, `APP-03`) were never run as their own rows.
 
 ### `open-in-terminal`
 - **What:** the Terminal item opens a selected file's containing folder (automatic for terminal-like presets,
