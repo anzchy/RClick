@@ -36,15 +36,7 @@ final class BookmarkManager: ObservableObject {
         self.logSink = logSink
     }
 
-    private struct BookmarkLogger {
-        let system: Logger
-        let sink: (@Sendable (String) -> Void)?
-        func debug(_ message: String) { system.debug("\(message, privacy: .public)"); sink?(message) }
-        func info(_ message: String) { system.info("\(message, privacy: .public)"); sink?(message) }
-        func warning(_ message: String) { system.warning("\(message, privacy: .public)"); sink?(message) }
-        func error(_ message: String) { system.error("\(message, privacy: .public)"); sink?(message) }
-    }
-    private var logger: BookmarkLogger { BookmarkLogger(system: systemLogger, sink: logSink) }
+    private var logger: ActionLogger { ActionLogger(system: systemLogger, sink: logSink) }
 
     // MARK: - 恢复
 
@@ -65,7 +57,7 @@ final class BookmarkManager: ObservableObject {
                     bookmarkDataIsStale: &isStale
                 )
             } catch {
-                logger.error("Bookmark restore failed; reason=invalidData code=\((error as NSError).code) count=1")
+                logger.error(ActionLogMessage("Bookmark restore failed; reason=invalidData code=").number((error as NSError).code).text(" count=1"))
                 context.delete(entity)
                 continue
             }
@@ -73,7 +65,7 @@ final class BookmarkManager: ObservableObject {
             if isStale {
                 // 刷新 bookmark
                 guard url.startAccessingSecurityScopedResource() else {
-                    logger.warning("Bookmark refresh skipped; reason=accessUnavailable count=1")
+                    logger.warning(ActionLogMessage("Bookmark refresh skipped; reason=accessUnavailable count=1"))
                     continue
                 }
                 do {
@@ -84,14 +76,14 @@ final class BookmarkManager: ObservableObject {
                     )
                     entity.bookmarkData = newData
                 } catch {
-                    logger.error("Bookmark refresh failed; reason=filesystem code=\((error as NSError).code) count=1")
+                    logger.error(ActionLogMessage("Bookmark refresh failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
                 }
                 url.stopAccessingSecurityScopedResource()
             }
 
             // startAccessing 失败 = 临时不可达（外置盘未挂载等），不立即删，下次启动再试
             guard url.startAccessingSecurityScopedResource() else {
-                logger.warning("Bookmark restore skipped; reason=accessUnavailable count=1")
+                logger.warning(ActionLogMessage("Bookmark restore skipped; reason=accessUnavailable count=1"))
                 continue
             }
 
@@ -99,10 +91,10 @@ final class BookmarkManager: ObservableObject {
             if !authorizedDirectories.contains(normalized) {
                 authorizedDirectories.append(normalized)
             }
-            logger.debug("Bookmark restored; count=1")
+            logger.debug(ActionLogMessage("Bookmark restored; count=1"))
         }
         try? context.save()
-        logger.info("Bookmark restore completed; count=\(self.authorizedDirectories.count)")
+        logger.info(ActionLogMessage("Bookmark restore completed; count=").number(self.authorizedDirectories.count))
     }
 
     // MARK: - 访问检查
@@ -176,7 +168,7 @@ final class BookmarkManager: ObservableObject {
             )
 
             guard url.startAccessingSecurityScopedResource() else {
-                logger.error("Bookmark save skipped; reason=accessUnavailable count=1")
+                logger.error(ActionLogMessage("Bookmark save skipped; reason=accessUnavailable count=1"))
                 return
             }
 
@@ -190,9 +182,9 @@ final class BookmarkManager: ObservableObject {
             context.insert(entity)
             try context.save()
 
-            logger.debug("Bookmark saved; count=1")
+            logger.debug(ActionLogMessage("Bookmark saved; count=1"))
         } catch {
-            logger.error("Bookmark save failed; reason=filesystem code=\((error as NSError).code) count=1")
+            logger.error(ActionLogMessage("Bookmark save failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
         }
     }
 
@@ -216,7 +208,7 @@ final class BookmarkManager: ObservableObject {
             }
             try? context.save()
         }
-        logger.debug("Bookmark removed; count=1")
+        logger.debug(ActionLogMessage("Bookmark removed; count=1"))
     }
 
     // MARK: - 设置页工具
