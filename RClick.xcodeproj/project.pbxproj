@@ -523,7 +523,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.3.4;
+				MARKETING_VERSION = 2.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -562,7 +562,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.3.4;
+				MARKETING_VERSION = 2.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -641,7 +641,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.3.4;
+				MARKETING_VERSION = 2.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick.FinderSyncExt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -676,7 +676,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.3.4;
+				MARKETING_VERSION = 2.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.anzchy.RClick.FinderSyncExt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
