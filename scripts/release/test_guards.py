@@ -67,5 +67,28 @@ class TagGuardTests(unittest.TestCase):
                 self.assertNotEqual(self.check('v2.3.5', **kwargs).returncode, 0)
 
 
+class NotesGuardTests(unittest.TestCase):
+    def check(self, version):
+        return subprocess.run(['sh', str(SCRIPTS / 'check-notes.sh'), version,
+                               str(ROOT / 'fixtures')], text=True, capture_output=True)
+
+    def test_ready(self):
+        result = self.check('ready')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('PASS', result.stdout)
+
+    def test_missing(self):
+        result = self.check('missing')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('missing', result.stderr)
+
+    def test_unfinished_words(self):
+        for version in ('pending', 'tbd'):
+            with self.subTest(version=version):
+                result = self.check(version)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('unfinished', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
