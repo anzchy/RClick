@@ -5,6 +5,15 @@ if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
   echo 'Usage: check-notes.sh VERSION [NOTES_DIRECTORY]' >&2
   exit 1
 fi
+# Same numeric grammar as tags; leading zeros remain literal. Reject newlines.
+case "$1" in
+  *'
+'*) echo 'Release notes version must be numeric MAJOR.MINOR.PATCH' >&2; exit 1 ;;
+esac
+if ! printf '%s\n' "$1" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo 'Release notes version must be numeric MAJOR.MINOR.PATCH' >&2
+  exit 1
+fi
 notes=${2:-docs/release}/$1-notes.md
 if [ ! -f "$notes" ]; then
   echo "Release notes missing: $notes" >&2
