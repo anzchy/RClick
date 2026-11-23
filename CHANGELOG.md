@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Several template snapshots per New File type, editable ordering, Blank entries and Finder submenus; backups retain metadata and report omitted template files (#49; PR #50)
 - Valid DOCX, PPTX and XLSX templates; directory/package templates are copied intact; Office/iWork types require a usable template (#24, #49)
 - Settings backup and import, log export, and a working Reset All Settings (c849fb2; #52)
-- Copy File Name and multi-selection plain-text Copy Path / Copy File Name, one item per line (#22, #25, #28, #32)
+- Copy File Name and multi-selection plain-text Copy Path / Copy File Name, one item per line (d4439a7; #25, #28, #32)
 - Built-in app presets, per-app toolbar/context-menu visibility, icon styles and automatic/on/off containing-folder behavior (aec622a)
 - Offline Copy Path, a quiet host-relaunch hint, and Settings on manual launch/reopen (b11f08e)
 
