@@ -77,6 +77,13 @@ class NotesGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('PASS', result.stdout)
 
+    def test_empty_or_whitespace(self):
+        for version in ('empty', 'whitespace'):
+            with self.subTest(version=version):
+                result = self.check(version)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('no non-whitespace content', result.stderr)
+
     def test_missing(self):
         result = self.check('missing')
         self.assertNotEqual(result.returncode, 0)
