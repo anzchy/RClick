@@ -14,8 +14,20 @@ import os.log
 
 @MainActor
 final class ActionService {
-    @AppLog(category: "ActionService")
-    private var logger
+    /// The same rendered line goes to OSLog and the optional test recorder.
+    /// Keep this sink local to file actions; other categories retain their logger.
+    nonisolated private struct ActionLogger: Sendable {
+        let system: Logger
+        let sink: (@Sendable (String) -> Void)?
+        func debug(_ message: String) { system.debug("\(message)"); sink?(message) }
+        func info(_ message: String) { system.info("\(message)"); sink?(message) }
+        func warning(_ message: String) { system.warning("\(message)"); sink?(message) }
+        func error(_ message: String) { system.error("\(message)"); sink?(message) }
+        func publicInfo(_ message: String) { system.info("\(message, privacy: .public)"); sink?(message) }
+        func publicWarning(_ message: String) { system.warning("\(message, privacy: .public)"); sink?(message) }
+    }
+    @AppLog(category: "ActionService") private var systemLogger
+    private let logger: ActionLogger
 
     private let state: ActionStateProviding
     private let permission: PermissionProviding
@@ -62,11 +74,13 @@ final class ActionService {
         quitWait: TimeInterval = 35,
         coordinationTimeout: TimeInterval = 30,
         moveLogSink: (@Sendable (MoveLogEvent, String) -> Void)? = nil,
+        logSink: (@Sendable (String) -> Void)? = nil,
         cutWarning: @escaping (String) -> Void = { CutWarningState.shared.show($0) },
         cutVolumeIsReadOnly: @escaping (URL) -> Bool = {
             (try? $0.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) == true
         }
     ) {
+        self.logger = ActionLogger(system: _systemLogger.wrappedValue, sink: logSink)
         self.state = state
         self.permission = permission
         self.confirmation = confirmation
@@ -755,8 +769,8 @@ final class ActionService {
     private func logMove(_ event: MoveLogEvent) {
         let message = event.message
         switch event.kind {
-        case .moved, .partial, .recoveryExpired: logger.info("\(message, privacy: .public)")
-        default: logger.warning("\(message, privacy: .public)")
+        case .moved, .partial, .recoveryExpired: logger.publicInfo(message)
+        default: logger.publicWarning(message)
         }
         moveLogSink?(event, message)
     }
@@ -1104,7 +1118,7 @@ final class ActionService {
 
     @discardableResult
     func deleteFoldorFile(_ target: [String], _ trigger: String, optionKeyPressed: Bool = false) async -> FileActionResult {
-        logger.info("---- deleteFoldorFile trigger:\(trigger) option:\(optionKeyPressed)")
+        logger.info("Delete Direct started; count=\(target.count)")
 
         if trigger == "ctx-container" {
             let alert = NSAlert()
@@ -1127,7 +1141,7 @@ final class ActionService {
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: AppLocalization.localized("OK"))
                 alert.runModal()
-                logger.warning("试图删除受保护的系统文件夹，操作已被阻止：\(path)")
+                logger.warning("Delete Direct skipped; reason=protectedFolder count=1")
                 continue
             }
 
@@ -1144,11 +1158,11 @@ final class ActionService {
             let dirURL = URL(fileURLWithPath: path).deletingLastPathComponent()
             if !permission.hasAccess(to: dirURL) {
                 guard await permission.promptForPermission(for: dirURL) != nil else {
-                    logger.warning("用户取消授权，跳过删除：\(path)")
+                    logger.warning("Delete Direct skipped; reason=permissionCancelled count=1")
                     continue
                 }
                 guard permission.hasAccess(to: dirURL) else {
-                    logger.warning("授权未覆盖目标目录，跳过删除：\(path)")
+                    logger.warning("Delete Direct skipped; reason=missingAccess count=1")
                     continue
                 }
             }
@@ -1160,7 +1174,7 @@ final class ActionService {
         // 绕过废纸篓的删除默认必须确认；按住 Option 点击是唯一跳过确认的方式。
         if !optionKeyPressed {
             guard confirmation.confirmPermanentDelete(paths: authorized) else {
-                logger.info("用户取消了删除确认，共 \(authorized.count) 项未删除")
+                logger.info("Delete Direct cancelled; reason=confirmation count=\(authorized.count)")
                 return FileActionResult()
             }
         }
@@ -1186,7 +1200,7 @@ final class ActionService {
             return result
         }
         for failure in result.failures {
-            logger.error("delete \(failure.path) file run error \(failure.error)")
+            logger.error("Delete Direct failed; reason=filesystem code=\((failure.error as NSError).code) count=1")
         }
         return result
     }
