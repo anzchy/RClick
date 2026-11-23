@@ -14,17 +14,6 @@ import os.log
 
 @MainActor
 final class ActionService {
-    /// The same rendered line goes to OSLog and the optional test recorder.
-    /// Messages contain only counts and closed outcome/reason labels, so they
-    /// remain readable in the unified log. Other categories retain their logger.
-    nonisolated private struct ActionLogger: Sendable {
-        let system: Logger
-        let sink: (@Sendable (String) -> Void)?
-        func debug(_ message: String) { system.debug("\(message, privacy: .public)"); sink?(message) }
-        func info(_ message: String) { system.info("\(message, privacy: .public)"); sink?(message) }
-        func warning(_ message: String) { system.warning("\(message, privacy: .public)"); sink?(message) }
-        func error(_ message: String) { system.error("\(message, privacy: .public)"); sink?(message) }
-    }
     @AppLog(category: "ActionService") private var systemLogger
     private let logger: ActionLogger
 
@@ -163,12 +152,12 @@ final class ActionService {
     /// 用指定应用打开选中文件/目录（沙盒门控：先 hasAccess，失败兜底再授权重试）
     func openApp(rid: String, target: [String]) async {
         guard let rcitem = state.getAppItem(rid: rid) else {
-            logger.warning("Open With refused; reason=unknownApp count=\(target.count)")
+            logger.warning(ActionLogMessage("Open With refused; reason=unknownApp count=").number(target.count))
             return
         }
 
         let appUrl = rcitem.url
-        logger.debug("Open With started; count=\(target.count)")
+        logger.debug(ActionLogMessage("Open With started; count=").number(target.count))
 
         // 通过共享目标解析处理「选中文件时打开所在目录」选项
         for resolved in AppPresets.resolveOpenTargets(
@@ -187,7 +176,7 @@ final class ActionService {
         // 门控先行：未授权先弹窗，避免"只是打开一个文件"也要用户授权整个父目录的弹窗偏重
         if !permission.hasAccess(to: accessURL) {
             guard await permission.promptForPermission(for: accessURL) != nil else {
-                logger.warning("Open With skipped; reason=permissionCancelled count=1")
+                logger.warning(ActionLogMessage("Open With skipped; reason=permissionCancelled count=1"))
                 return
             }
         }
@@ -203,7 +192,7 @@ final class ActionService {
                     await self.openRetryAfterPermission(url: url, appUrl: appUrl, accessURL: accessURL, opensNewInstance: opensNewInstance, firstError: error)
                 }
             } else if runningApp != nil {
-                logger.debug("Open With succeeded; count=1")
+                logger.debug(ActionLogMessage("Open With succeeded; count=1"))
             }
         }
     }
@@ -211,21 +200,21 @@ final class ActionService {
     private func openRetryAfterPermission(url: URL, appUrl: URL, accessURL: URL, opensNewInstance: Bool, firstError: Error) async {
         let logger = self.logger  // 捕获 Sendable logger
         guard await permission.promptForPermission(for: accessURL) != nil else {
-            logger.error("Open With failed; reason=permissionCancelled code=\((firstError as NSError).code) count=1")
+            logger.error(ActionLogMessage("Open With failed; reason=permissionCancelled code=").number((firstError as NSError).code).text(" count=1"))
             return
         }
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = opensNewInstance
         openApplication([url], appUrl, config) { _, retryError in
             if let retryError {
-                logger.error("Open With retry failed; reason=workspace code=\((retryError as NSError).code) count=1")
+                logger.error(ActionLogMessage("Open With retry failed; reason=workspace code=").number((retryError as NSError).code).text(" count=1"))
             }
         }
     }
 
     /// 打开常用目录（沙盒门控：目录需已授权，B4 之后添加时即存 bookmark，此处为兜底）
     func openCommonDirs(target: [String]) async {
-        logger.debug("Open common directories started; count=\(target.count)")
+        logger.debug(ActionLogMessage("Open common directories started; count=").number(target.count))
 
         for dirPath in target {
             let path = dirPath
@@ -233,7 +222,7 @@ final class ActionService {
 
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning("Open common directory skipped; reason=permissionCancelled count=1")
+                    logger.warning(ActionLogMessage("Open common directory skipped; reason=permissionCancelled count=1"))
                     continue
                 }
             }
@@ -247,7 +236,7 @@ final class ActionService {
     func actionHandler(rid: String, target: [String], trigger: String, optionKeyPressed: Bool = false) async {
         await journalRecovery?.value
         guard let rcitem = state.getActionItem(rid: RCAction.entityID(for: rid)) else {
-            logger.warning("Action refused; reason=unknownAction count=\(target.count)")
+            logger.warning(ActionLogMessage("Action refused; reason=unknownAction count=").number(target.count))
             return
         }
 
@@ -264,15 +253,15 @@ final class ActionService {
         switch rcitem.id {
         case "cut":
             guard rcitem.enabled else {
-                logger.info("Cut refused: stored action is disabled")
+                logger.info(ActionLogMessage("Cut refused: stored action is disabled"))
                 return
             }
             guard trigger == MenuTrigger.contextualItems.rawValue else {
-                logger.info("Cut refused: trigger is not an item-selection menu")
+                logger.info(ActionLogMessage("Cut refused: trigger is not an item-selection menu"))
                 return
             }
             guard !target.isEmpty else {
-                logger.info("Cut refused: selection is empty")
+                logger.info(ActionLogMessage("Cut refused: selection is empty"))
                 return
             }
             await prepareCut(target)
@@ -289,7 +278,7 @@ final class ActionService {
         case "airdrop":
             await showAirDrop(target, trigger)
         default:
-            logger.warning("no action id matched")
+            logger.warning(ActionLogMessage("no action id matched"))
         }
     }
 
@@ -506,7 +495,7 @@ final class ActionService {
             return result
         }
         await refreshUndoJournal()
-        logger.info("Undo completed; restored count=\(result.completed.count) failed count=\(result.failures.count)")
+        logger.info(ActionLogMessage("Undo completed; restored count=").number(result.completed.count).text(" failed count=").number(result.failures.count))
         if !result.failures.isEmpty {
             let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
             cutWarning(String(format: AppLocalization.localized("Some items could not be restored:\n%@"), lines.joined(separator: "\n")))
@@ -769,8 +758,8 @@ final class ActionService {
     private func logMove(_ event: MoveLogEvent) {
         let message = event.message
         switch event.kind {
-        case .moved, .partial, .recoveryExpired: logger.info(message)
-        default: logger.warning(message)
+        case .moved, .partial, .recoveryExpired: logger.info(.move(event))
+        default: logger.warning(.move(event))
         }
         moveLogSink?(event, message)
     }
@@ -879,7 +868,7 @@ final class ActionService {
 
     private func prepareCut(_ target: [String]) async {
         guard !preparingCut, !terminationPending else {
-            logger.info("Cut ignored: another operation is reserved or Quit is pending")
+            logger.info(ActionLogMessage("Cut ignored: another operation is reserved or Quit is pending"))
             return
         }
         preparingCut = true
@@ -889,23 +878,23 @@ final class ActionService {
         let parents = urls.map { $0.deletingLastPathComponent() }.filter { seen.insert($0.path).inserted }
         for parent in parents where !permission.hasAccess(to: parent) {
             guard await permission.promptForPermission(for: parent) != nil else {
-                logger.info("Cut cancelled: source-parent permission panel dismissed")
+                logger.info(ActionLogMessage("Cut cancelled: source-parent permission panel dismissed"))
                 return
             }
             guard permission.hasAccess(to: parent) else {
-                logger.warning("Cut refused: source-parent grant does not cover the selection")
+                logger.warning(ActionLogMessage("Cut refused: source-parent grant does not cover the selection"))
                 return
             }
         }
         // An earlier grant may have been revoked while a later panel was open.
         guard parents.allSatisfy({ permission.hasAccess(to: $0) }) else {
-            logger.warning("Cut refused: source-parent access was revoked during preparation")
+            logger.warning(ActionLogMessage("Cut refused: source-parent access was revoked during preparation"))
             return
         }
         // Check after authorization: sandbox-denied traversal is deliberately
         // fail-closed in isProtectedFolder, but must not suppress the access panel.
         if let protected = target.first(where: { Utils.isProtectedFolder($0) }) {
-            logger.warning("Cut refused: selection contains a protected folder")
+            logger.warning(ActionLogMessage("Cut refused: selection contains a protected folder"))
             cutWarning(String(format: AppLocalization.localized("Protected system folders cannot be cut: %@"), protected))
             return
         }
@@ -915,7 +904,7 @@ final class ActionService {
             let parent = url.deletingLastPathComponent()
             let values = try? parent.resourceValues(forKeys: [.isWritableKey])
             if cutVolumeIsReadOnly(url) || values?.isWritable == false || !fileOperations.isWritable(parent) {
-                logger.warning("Cut refused: source volume is read-only or its parent is not writable")
+                logger.warning(ActionLogMessage("Cut refused: source volume is read-only or its parent is not writable"))
                 cutWarning(String(format: AppLocalization.localized("The source is on a read-only disk or in an unwritable folder: %@"), url.path))
                 return
             }
@@ -924,19 +913,19 @@ final class ActionService {
         do {
             identities = try urls.map { try fileOperations.fileIdentity(of: $0) }
         } catch {
-            logger.error("Cut failed: source identity could not be read; selection count: \(target.count)")
+            logger.error(ActionLogMessage("Cut failed: source identity could not be read; selection count: ").number(target.count))
             return
         }
         guard let count = PendingCut(pasteboard: cutPasteboard).writeCut(target) else {
-            logger.error("Cut failed: clipboard write was rejected or could not be verified; selection count: \(target.count)")
+            logger.error(ActionLogMessage("Cut failed: clipboard write was rejected or could not be verified; selection count: ").number(target.count))
             return
         }
         cutRecord = CutRecord(paths: target, identities: identities, changeCount: count)
-        logger.info("Cut recorded; selection count: \(target.count)")
+        logger.info(ActionLogMessage("Cut recorded; selection count: ").number(target.count))
     }
 
     func showAirDrop(_ target: [String], _ trigger: String) async {
-        logger.info("AirDrop started; count=\(target.count)")
+        logger.info(ActionLogMessage("AirDrop started; count=").number(target.count))
         let fm = FileManager.default
         var fileURLs: [URL] = []
 
@@ -952,7 +941,7 @@ final class ActionService {
 
         for item in target {
             let path = item
-            logger.info("AirDrop processing item; count=1")
+            logger.info(ActionLogMessage("AirDrop processing item; count=1"))
 
             if Utils.isProtectedFolder(path) {
                 let alert = NSAlert()
@@ -961,14 +950,14 @@ final class ActionService {
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: AppLocalization.localized("OK"))
                 alert.runModal()
-                logger.warning("AirDrop skipped; reason=protectedFolder count=1")
+                logger.warning(ActionLogMessage("AirDrop skipped; reason=protectedFolder count=1"))
                 continue
             }
 
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: path, isDirectory: &isDir) {
                 if isDir.boolValue {
-                    logger.warning("AirDrop skipped; reason=folder count=1")
+                    logger.warning(ActionLogMessage("AirDrop skipped; reason=folder count=1"))
                     let alert = NSAlert()
                     alert.messageText = AppLocalization.localized("Notice")
                     alert.informativeText = String(format: AppLocalization.localized("Folders cannot be shared via AirDrop: %@"), path)
@@ -982,7 +971,7 @@ final class ActionService {
                     let dirURL = fileURL.deletingLastPathComponent()
                     if !permission.hasAccess(to: dirURL) {
                         guard await permission.promptForPermission(for: dirURL) != nil else {
-                            logger.warning("AirDrop skipped; reason=permissionCancelled count=1")
+                            logger.warning(ActionLogMessage("AirDrop skipped; reason=permissionCancelled count=1"))
                             continue
                         }
                     }
@@ -994,25 +983,25 @@ final class ActionService {
         if !fileURLs.isEmpty {
             if let airDropService = NSSharingService(named: .sendViaAirDrop) {
                 airDropService.perform(withItems: fileURLs)
-                logger.info("AirDrop submitted; count=\(fileURLs.count)")
+                logger.info(ActionLogMessage("AirDrop submitted; count=").number(fileURLs.count))
             } else {
-                logger.warning("无法获取 AirDrop 服务")
+                logger.warning(ActionLogMessage("无法获取 AirDrop 服务"))
             }
         }
     }
 
     func unhideFilesAndDirs(_ target: [String], _ trigger: String) async {
-        logger.info("Unhide started; count=\(target.count)")
+        logger.info(ActionLogMessage("Unhide started; count=").number(target.count))
         if let dirPath = target.first {
             let fileManager = FileManager.default
             let path = dirPath
-            logger.info("Processing directory; count=1")
+            logger.info(ActionLogMessage("Processing directory; count=1"))
             let url = URL(fileURLWithPath: path)
 
             // 确保有目录的访问权限
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning("Unhide skipped; reason=permissionCancelled count=1")
+                    logger.warning(ActionLogMessage("Unhide skipped; reason=permissionCancelled count=1"))
                     return
                 }
             }
@@ -1024,13 +1013,13 @@ final class ActionService {
                         var resourceValues = URLResourceValues()
                         resourceValues.isHidden = false
                         try fileURL.setResourceValues(resourceValues)
-                        logger.info("Unhide succeeded; count=1")
+                        logger.info(ActionLogMessage("Unhide succeeded; count=1"))
                     } catch {
-                        logger.error("Unhide failed; reason=filesystem code=\((error as NSError).code) count=1")
+                        logger.error(ActionLogMessage("Unhide failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
                     }
                 }
             } catch {
-                logger.error("Directory listing failed; reason=filesystem code=\((error as NSError).code) count=1")
+                logger.error(ActionLogMessage("Directory listing failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
             }
 
             do {
@@ -1038,27 +1027,27 @@ final class ActionService {
                 resourceValues.isHidden = false
                 var targetURL = url
                 try targetURL.setResourceValues(resourceValues)
-                logger.info("Unhide directory succeeded; count=1")
+                logger.info(ActionLogMessage("Unhide directory succeeded; count=1"))
             } catch {
-                logger.error("Unhide directory failed; reason=filesystem code=\((error as NSError).code) count=1")
+                logger.error(ActionLogMessage("Unhide directory failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
             }
-            logger.info("Unhide completed; directory count=1")
+            logger.info(ActionLogMessage("Unhide completed; directory count=1"))
         }
     }
 
     func hideFilesAndDirs(_ target: [String], _ trigger: String) async {
-        logger.info("Hide started; count=\(target.count)")
+        logger.info(ActionLogMessage("Hide started; count=").number(target.count))
         let fileManager = FileManager.default
 
         if trigger == "ctx-container", let dirPath = target.first {
             let path = dirPath
-            logger.info("Processing directory; count=1")
+            logger.info(ActionLogMessage("Processing directory; count=1"))
             let url = URL(fileURLWithPath: path)
 
             // 确保有目录的访问权限
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning("Hide skipped; reason=permissionCancelled count=1")
+                    logger.warning(ActionLogMessage("Hide skipped; reason=permissionCancelled count=1"))
                     return
                 }
             }
@@ -1067,29 +1056,29 @@ final class ActionService {
                 let contents = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants])
                 for case var fileURL in contents {
                     if Utils.isProtectedFolder(fileURL.path) {
-                        logger.warning("Hide skipped; reason=protectedFolder count=1")
+                        logger.warning(ActionLogMessage("Hide skipped; reason=protectedFolder count=1"))
                         continue
                     }
                     do {
                         var resourceValues = URLResourceValues()
                         resourceValues.isHidden = true
                         try fileURL.setResourceValues(resourceValues)
-                        logger.info("Hide succeeded; count=1")
+                        logger.info(ActionLogMessage("Hide succeeded; count=1"))
                     } catch {
-                        logger.error("Hide failed; reason=filesystem code=\((error as NSError).code) count=1")
+                        logger.error(ActionLogMessage("Hide failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
                     }
                 }
             } catch {
-                logger.error("Directory listing failed; reason=filesystem code=\((error as NSError).code) count=1")
+                logger.error(ActionLogMessage("Directory listing failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
             }
         } else if trigger == "ctx-items" {
             for dirPath in target {
                 let path = dirPath
-                logger.info("Hide processing item; count=1")
+                logger.info(ActionLogMessage("Hide processing item; count=1"))
                 let url = URL(fileURLWithPath: path)
 
                 if Utils.isProtectedFolder(path) {
-                    logger.warning("Hide skipped; reason=protectedFolder count=1")
+                    logger.warning(ActionLogMessage("Hide skipped; reason=protectedFolder count=1"))
                     continue
                 }
 
@@ -1097,7 +1086,7 @@ final class ActionService {
                 let dirURL = url.deletingLastPathComponent()
                 if !permission.hasAccess(to: dirURL) {
                     guard await permission.promptForPermission(for: dirURL) != nil else {
-                        logger.warning("Hide skipped; reason=permissionCancelled count=1")
+                        logger.warning(ActionLogMessage("Hide skipped; reason=permissionCancelled count=1"))
                         continue
                     }
                 }
@@ -1107,18 +1096,18 @@ final class ActionService {
                     resourceValues.isHidden = true
                     var targetURL = url
                     try targetURL.setResourceValues(resourceValues)
-                    logger.info("Hide succeeded; count=1")
+                    logger.info(ActionLogMessage("Hide succeeded; count=1"))
                 } catch {
-                    logger.error("Hide failed; reason=filesystem code=\((error as NSError).code) count=1")
+                    logger.error(ActionLogMessage("Hide failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
                 }
             }
         }
-        logger.info("Hide completed")
+        logger.info(ActionLogMessage("Hide completed"))
     }
 
     @discardableResult
     func deleteFoldorFile(_ target: [String], _ trigger: String, optionKeyPressed: Bool = false) async -> FileActionResult {
-        logger.info("Delete Direct started; count=\(target.count)")
+        logger.info(ActionLogMessage("Delete Direct started; count=").number(target.count))
 
         if trigger == "ctx-container" {
             let alert = NSAlert()
@@ -1141,7 +1130,7 @@ final class ActionService {
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: AppLocalization.localized("OK"))
                 alert.runModal()
-                logger.warning("Delete Direct skipped; reason=protectedFolder count=1")
+                logger.warning(ActionLogMessage("Delete Direct skipped; reason=protectedFolder count=1"))
                 continue
             }
 
@@ -1158,11 +1147,11 @@ final class ActionService {
             let dirURL = URL(fileURLWithPath: path).deletingLastPathComponent()
             if !permission.hasAccess(to: dirURL) {
                 guard await permission.promptForPermission(for: dirURL) != nil else {
-                    logger.warning("Delete Direct skipped; reason=permissionCancelled count=1")
+                    logger.warning(ActionLogMessage("Delete Direct skipped; reason=permissionCancelled count=1"))
                     continue
                 }
                 guard permission.hasAccess(to: dirURL) else {
-                    logger.warning("Delete Direct skipped; reason=missingAccess count=1")
+                    logger.warning(ActionLogMessage("Delete Direct skipped; reason=missingAccess count=1"))
                     continue
                 }
             }
@@ -1174,7 +1163,7 @@ final class ActionService {
         // 绕过废纸篓的删除默认必须确认；按住 Option 点击是唯一跳过确认的方式。
         if !optionKeyPressed {
             guard confirmation.confirmPermanentDelete(paths: authorized) else {
-                logger.info("Delete Direct cancelled; reason=confirmation count=\(authorized.count)")
+                logger.info(ActionLogMessage("Delete Direct cancelled; reason=confirmation count=").number(authorized.count))
                 return FileActionResult()
             }
         }
@@ -1200,7 +1189,7 @@ final class ActionService {
             return result
         }
         for failure in result.failures {
-            logger.error("Delete Direct failed; reason=filesystem code=\((failure.error as NSError).code) count=1")
+            logger.error(ActionLogMessage("Delete Direct failed; reason=filesystem code=").number((failure.error as NSError).code).text(" count=1"))
         }
         return result
     }
@@ -1213,7 +1202,7 @@ final class ActionService {
         templateWarning: (String) -> Void = { CutWarningState.shared.show($0) }
     ) async {
         guard let dirPath = targetDirectoryForNewFile(target) else {
-            logger.warning("when createFile, but not have target directory")
+            logger.warning(ActionLogMessage("when createFile, but not have target directory"))
             return
         }
 
@@ -1222,7 +1211,7 @@ final class ActionService {
         // 确保有目标目录的访问权限
         if !permission.hasAccess(to: dirURL) {
             guard await permission.promptForPermission(for: dirURL) != nil else {
-                logger.warning("用户取消授权，跳过创建文件")
+                logger.warning(ActionLogMessage("用户取消授权，跳过创建文件"))
                 return
             }
         }
@@ -1236,16 +1225,16 @@ final class ActionService {
             let fileURL = URL(fileURLWithPath: filePath)
             do {
                 try Data().write(to: fileURL)
-                logger.info("New File succeeded; count=1")
+                logger.info(ActionLogMessage("New File succeeded; count=1"))
                 revealInFinderAndRename(fileURL)
             } catch {
-                logger.error("New File failed; reason=filesystem code=\((error as NSError).code) count=1")
+                logger.error(ActionLogMessage("New File failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
             }
             return
         }
 
         guard let rcitem = state.getFileType(rid: rid) else {
-            logger.warning("New File refused; reason=unknownFileType count=1")
+            logger.warning(ActionLogMessage("New File refused; reason=unknownFileType count=1"))
             return
         }
 
@@ -1265,7 +1254,7 @@ final class ActionService {
             || requiredFormats.contains(resourceExtension.lowercased()) || bundledTemplate != nil
         let permitsEmpty = !requiresTemplate
         func warnTemplateUnavailable() {
-            self.logger.warning("New File refused; reason=templateUnavailable count=1")
+            self.logger.warning(ActionLogMessage("New File refused; reason=templateUnavailable count=1"))
             templateWarning(String(format: AppLocalization.localized("The template for %@ is missing or unreadable, so no file was created."), rcitem.displayName))
         }
         let users = rcitem.userTemplates.filter(\.enabled)
@@ -1308,7 +1297,7 @@ final class ActionService {
             try contents.write(to: fileURL, options: .withoutOverwriting)
             revealInFinderAndRename(fileURL)
         } catch {
-            logger.error("New File failed; reason=writeFailed count=1")
+            logger.error(ActionLogMessage("New File failed; reason=writeFailed count=1"))
         }
     }
 
@@ -1375,7 +1364,7 @@ final class ActionService {
     private func presentAccessibilityHintIfNeeded() {
         let defaults = UserDefaults.group
         guard !defaults.bool(forKey: Key.didShowRenamePermissionHint) else {
-            logger.debug("Accessibility permission still missing; auto-rename skipped")
+            logger.debug(ActionLogMessage("Accessibility permission still missing; auto-rename skipped"))
             return
         }
         defaults.set(true, forKey: Key.didShowRenamePermissionHint)
@@ -1416,7 +1405,7 @@ final class ActionService {
         }
 
         guard now() < deadline else {
-            logger.warning("Auto-rename skipped; reason=finderInactive count=1")
+            logger.warning(ActionLogMessage("Auto-rename skipped; reason=finderInactive count=1"))
             return
         }
 
