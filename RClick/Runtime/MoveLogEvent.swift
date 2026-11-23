@@ -41,6 +41,16 @@ nonisolated struct ActionLogMessage: Sendable {
     func number(_ value: Int) -> Self {
         var copy = self; copy.rendered += String(value); return copy
     }
+    enum Action: Sendable {
+        case hide, unhide
+        var label: StaticString {
+            switch self {
+            case .hide: "Hide"
+            case .unhide: "Unhide"
+            }
+        }
+    }
+    static func action(_ action: Action) -> Self { Self(action.label) }
     enum ErrorDomain: Sendable {
         case cocoa, posix, other
         init(_ error: NSError) {
