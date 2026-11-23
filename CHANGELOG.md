@@ -7,69 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-- Normalize leading and trailing dots in custom file extensions, preserve multipart extensions such as tar.gz, and explain invalid whitespace or empty extensions
-- Settings import immediately restores every exported preference and refreshes the Finder menu; older backups keep values for omitted keys
-- Normalize custom file extensions when saving and creating files, including legacy types saved without a leading dot
-- Open With preserves literal percent sequences in Finder filenames while decoding actual file URLs
-- 2026-11-21: Modified the fork to remove GitHub stars and upstream app promotions, retain GPL attribution, use fork repository links and release identities, handle missing releases without an error, and replace personal path examples
-- Restore Defaults for New File and Reset All Settings remove user template snapshots from the app’s Templates folder and restore Blank; original imported files are preserved
-- Use the fork app identity, isolated app/extension communication, and a new, empty App Group container; existing settings and folder bookmarks are not migrated
-- Copy Path now copies every selected item, one path per line, as plain text. Copy File Name copies every selected item's name the same way
-- Keep Finder workspace icon caches warm with background preloading and main-thread image resizing
-- Use lightweight heartbeat replies and reconnect from the last peer activity
-- Direct Delete now always asks for confirmation before permanently removing files. Hold Option while choosing it to skip the prompt
+## [2.3.5] - TBD
 
 ### Added
-- Hide Undo until interrupted Paste recovery completes, and refuse restoration into a replaced original folder
-- Undo last move restores the latest same-volume Paste for up to 24 hours, including after relaunch, with identity checks, exclusive numbered names and a summary for skipped items; Finder and sandbox device validation remain pending
-- Implemented multiple snapshots per New File type, including custom types, with a Blank entry, per-template Finder submenus and an editable template list; backups retain metadata and report omitted template files; custom types requiring a template are hidden until one is available; device validation remains pending
-- Opt-in same-volume Paste (move here), with exclusive no-overwrite moves, partial-failure retry and a durable journal for Undo; Finder/device validation remains pending
-- Opt-in Cut action marks selected Finder files as a pending cut locally without changing files
-- Settings backup: export the full configuration as JSON, import it on the same or another Mac, and export the app's logs
-- Copy File Name action, which puts the selected item's name (without its path) on the clipboard
-- Built-in app presets, per-app toolbar/context-menu visibility, and none/simple/original icon styles
-- Automatic/on/off containing-folder behavior for terminal and other apps, with compatible persistence and IPC
-- Offline Copy Path and a clickable hint that quietly relaunches the host
-- Settings open on manual launch/reopen while hint-triggered and detected login launches stay quiet
+- Opt-in Cut and same-volume Paste (move here), with exclusive keep-both names, partial-failure retry and a durable recovery journal (#8, #9; PR #36)
+- Opt-in Undo last move for the latest same-volume Paste, for up to 24 hours including after relaunch; identity checks protect replaced items and original folders (#11)
+- Several template snapshots per New File type, editable ordering, Blank entries and Finder submenus; backups retain metadata and report omitted template files (#49; PR #50)
+- Valid DOCX, PPTX and XLSX templates; directory/package templates are copied intact; Office/iWork types require a usable template (#24, #49)
+- Settings backup and import, log export, and a working Reset All Settings (c849fb2; #52)
+- Copy File Name and multi-selection plain-text Copy Path / Copy File Name, one item per line (#22, #25, #28, #32)
+- Built-in app presets, per-app toolbar/context-menu visibility, icon styles and automatic/on/off containing-folder behavior (aec622a)
+- Offline Copy Path, a quiet host-relaunch hint, and Settings on manual launch/reopen (b11f08e)
+
+### Changed
+- Use the fork identity and isolated App Group and communication channels; upstream settings and folder grants are not migrated (#22; PR #23)
+- About and update checks use the fork repository; remove star requests and upstream app promotions while retaining GPL attribution (#57)
+- Remove the custom_menu.json layout and its Settings controls; menus follow configured apps, actions, file types and common folders (967291e)
+- Resetting New File defaults or all settings removes owned template snapshots and restores Blank, preserving original imported files (#49)
+- Keep Finder icon caches warm and use lightweight heartbeat replies with reconnection based on peer activity (0a47497)
 
 ### Fixed
-- File actions log only counts and outcomes, keeping selected paths, names, and file error descriptions out of ActionService logs
-- Resolve Paste directory aliases with realpath before pinning, so files directly in /private/tmp and destinations there can be moved
-- Keep Paste hidden on selected packages, allow writable/searchable Drop Box destinations, and discard cut entries whose parent was replaced by a file
-- Pin Paste source parents as well as destinations so an ancestor swap cannot substitute another item at rename
-- Disable the entire New File submenu while the main app is offline
-- Report vanished cut items as “Changed since cut” and remove their stale clipboard entries, clearing the cut marker when no retryable items remain
-- Show Paste (move here) on a single folder or the window background, and hide it on file and multiple-selection menus
-- Pin Paste destinations with an open directory descriptor, recheck their real location and refuse unsafe ancestor swaps before an exclusive move
-- Offer updates when GitHub release titles or notes are absent, including older releases in the feed
-- Use the app name for the shared warning window, including New File warnings
-- Preserve directory/package templates when creating new files
-- Preserve empty-file creation for custom text/code types while requiring valid Office/iWork templates
-- New File uses valid DOCX/PPTX templates and refuses missing templates; unchanged built-in Pages, Keynote and Numbers entries are removed unless they have a user template; edited extensions are preserved
-- Copy Path is text-only and no longer attempts the file-URL write that caused a sandbox error in the Finder extension; absence of that log message awaits a real-device check
-- Record move and recovery outcome kinds with enum reasons and item counts, without file names, paths or identities
-- Preserve pending Cut, clipboard and Undo journal when Paste targets the same folder; mixed batches retain unchanged items alongside failures
-- Refuse Paste into iCloud Drive, nested dotted Trash folders and CloudStorage provider Trash folders, including descendants and aliases; installed-provider validation remains pending
-- Recheck Paste destination identity, volume and safety inside coordination to refuse changed folders; device race validation remains pending
-- Quarantine damaged Paste journals and retain unresolved move history for up to 24 hours so it cannot lock out later Pastes
-- Allow ubiquitous Paste destinations when an iCloud sync root cannot be determined; device validation remains pending
-- Built-in new-file format and Apple product names now resolve in every supported language without missing-localization warnings
-- Copy Path and Copy File Name preserve literal percent sequences in selected paths and names instead of decoding them into different names
-- Authenticate every Finder message with a per-install key, launch session and replay protection; reject tampered clicks and unrelated acknowledgements. A non-modal menu-bar notice offers Finder relaunch guidance after unverifiable messages are rejected
-- Delete Direct, Hide and AirDrop now refuse protected folders: the check previously failed to match Finder paths. The home folder, ~/Documents, ~/Library and / are now protected too; file actions also preserve literal percent sequences in Finder paths so they act on the selected item
-- Updates no longer report success when the install failed. Installation errors are surfaced, the staged bundle's version is checked before it replaces the old app, and a failed relaunch keeps the current app running instead of quitting
-- Updating from outside /Applications installs the new version and moves the old copy to the Trash, and an older RClick instance now quits itself as soon as a newer one starts. Two copies used to stay on disk and handle every Finder click twice
-- External disks and mounted disk images no longer wear RClick's app icon in the Finder sidebar. RClick declares the `externaldrive` symbol, so those entries keep a drive icon instead
-- Reset All Settings now restores apps, actions, file types, common folders and preferences instead of only writing a log line
-- New-file auto-rename no longer depends on fixed delays: it waits for Finder to become active, so it stops missing the rename step on slow folders
-- Auto-rename now explains the missing Accessibility permission once (granted to the RClick app, not the Finder extension) instead of failing silently
-- Direct Delete skipped the confirmation even when the menu item was not marked "skip confirmation". It now skips only when Option was held while the menu was built, matching the title the user saw
-- Update Finder extension and Accessibility settings links and version-specific guidance
-- Refresh permission status on window focus and while the page is visible
+- Restrict Paste to a single folder or window background, hide it on packages, support writable/searchable Drop Box destinations and directory aliases, pin source/destination parents and reject unsafe ancestor swaps (#48, #53)
+- Report and discard vanished cut sources, preserve same-folder no-ops and retryable failures, quarantine damaged journals and recover interrupted moves without blocking later Paste (#9, #48, #53)
+- Refuse unsafe Paste destinations including known iCloud and provider storage roots and nested Trash folders; recheck destination identity and safety inside coordination (#9)
+- Disable the entire New File submenu while the main app is offline (#53)
+- Normalize custom extensions on save and creation, including legacy dotless values, boundary dots and multipart extensions; reject whitespace and empty extensions (#51)
+- Settings import immediately restores every exported preference and refreshes Finder; omitted keys in older backups retain their values (#52)
+- Preserve literal percent sequences in selected paths, names and Open With targets (#5, #28, #32, #59)
+- Copy Path is text-only, avoiding the sandbox-rejected file-URL clipboard write (#25)
+- Preserve edited built-in extensions and custom empty text/code files; hide unsupported Pages/Keynote/Numbers entries unless a user template is available; localize built-in format names in all supported languages (#24, #49)
+- Direct Delete confirms unless Option was held when the menu was built; auto-rename waits for Finder activation and explains the app's missing Accessibility permission once (142b884, 6d8b791)
+- Surface failed update installations, validate the staged app version before replacement, keep the running app on relaunch failure and retire older duplicate instances; install into /Applications and trash the old copy when updating from elsewhere (4ab0b17)
+- Accept missing release titles/notes and empty release feeds, and choose the highest published version including prereleases (#57)
+- Preserve external-drive sidebar icons, update extension/Accessibility settings guidance and refresh permission status while visible (ae089e6, 42bb7af)
+- Use the app name for shared warning windows (#24)
 
-### Removed
-- The `custom_menu.json` layout and the Settings → General → Custom Menu controls. The menu is now always built from the apps, actions, new-file types and common folders configured in Settings
+### Security
+- Authenticate Finder IPC with a per-install key, launch sessions, freshness and replay protection; reject unsigned/tampered messages and unrelated acknowledgements, with a non-modal recovery notice (#6, #43; PR #35)
+- Refuse protected folders for Delete Direct, Hide and AirDrop, including the account home, Documents, Library and filesystem root (#5; PR #29)
+- File-action and bookmark diagnostics report safe counts, outcomes and closed error categories without selected paths, names or raw file errors (#9, #39)
+
+Device validation of the final release build remains pending (#12), as does first IPC key creation on a clean Mac with the release-signed build (#40). Cross-volume Paste (#10) is outside this release. See the release notes draft for the pending checks.
 
 ## [2.3.1] - 2026-10-14
 
@@ -204,6 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+[Unreleased]: https://github.com/anzchy/RClick/compare/v2.3.5...HEAD
+[2.3.5]: https://github.com/anzchy/RClick/compare/v2.3.4...v2.3.5
 [2.0.4]: https://github.com/wflixu/RClick/releases/tag/v2.0.4
 [2.0.3]: https://github.com/wflixu/RClick/releases/tag/v2.0.3
 [2.0.1]: https://github.com/wflixu/RClick/releases/tag/v2.0.1
