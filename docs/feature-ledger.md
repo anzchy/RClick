@@ -576,7 +576,7 @@ delete its line in the same change.
   layouts, not the rendered menu).
 - **Device:** the folded and inline actions layouts PASS for Cut (issue #12 comment); otherwise never run as its own
   row. New File in the folded and flat layouts, with type submenus in both: PASS (issue #49 device comment at `e729e01`; run `i-device-20261121`, private record).
-- **Gaps:** finding 8 fixed in code by #52, device check pending.
+- **Gaps:** finding 8 fixed by #52 (device PASS, issue #12 second run).
 
 ### `connection-state`
 - **What:** the extension caches "last message from the app" for 30 s (`Shared/PeerActivity.swift`). Offline it
