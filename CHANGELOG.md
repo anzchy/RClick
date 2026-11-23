@@ -29,6 +29,7 @@ This first fork release also documents upstream changes from 2.3.2–2.3.4 that 
 - Keep Finder icon caches warm and use lightweight heartbeat replies with reconnection based on peer activity (0a47497)
 
 ### Fixed
+- Categorize rejected IPC messages with separate rate-limited counts; expected session, delayed/duplicate delivery and recovery rejections use debug logging, while invalid messages remain errors (#76)
 - Restrict Paste to a single folder or window background, hide it on packages, support writable/searchable Drop Box destinations and directory aliases, pin source/destination parents and reject unsafe ancestor swaps (#48, #53)
 - Report and discard vanished cut sources, preserve same-folder no-ops and retryable failures, quarantine damaged journals and recover interrupted moves without blocking later Paste (#9, #48, #53)
 - Refuse Trash folders (including iCloud Drive and cloud-provider Trash), system roots and packages as Paste destinations, refuse moving items out of their cloud container, and recheck destination identity and safety inside coordination (#9)
