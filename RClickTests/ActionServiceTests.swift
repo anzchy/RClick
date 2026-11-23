@@ -591,7 +591,7 @@ extension ActionServiceTests {
         func record(_ line: String) { lines.withLock { $0.append(line) } }
     }
 
-    @Test(arguments: ["delete", "hide", "unhide"])
+    @Test(arguments: ["delete", "hide", "unhide", "open"])
     func fileActionLogsExcludeSelection(action: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("SECRET-folder-%41-ü-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -600,7 +600,15 @@ extension ActionServiceTests {
         try Data("keep".utf8).write(to: file)
         let permission = MockPermission()
         let recorder = CapturedActionLog()
-        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
+        let state = MockState()
+        state.apps = [OpenWithApp(id: "secret-editor", appURL: root.appendingPathComponent("SECRET-Editor.app"))]
+        let opened = CapturedActionLog()
+        let service = ActionService(state: state, permission: permission, confirmation: MockConfirmation(),
+            openApplication: { urls, _, _, completion in
+                opened.record("opened")
+                completion(nil, NSError(domain: NSCocoaErrorDomain, code: 257,
+                    userInfo: [NSFilePathErrorKey: urls[0].path, NSLocalizedDescriptionKey: urls[0].path]))
+            },
             logSink: { recorder.record($0) })
         switch action {
         case "delete":
@@ -619,6 +627,13 @@ extension ActionServiceTests {
             permission.hasAccessResult = true
             await service.unhideFilesAndDirs([root.path], "ctx-container")
             await service.unhideFilesAndDirs([root.appendingPathComponent("missing").path], "ctx-container")
+        case "open":
+            await service.openApp(rid: "secret-editor", target: [file.path]) // denied
+            permission.hasAccessResult = true
+            await service.openApp(rid: "secret-editor", target: [file.path])
+            // Drain the Workspace failure callback's MainActor task deterministically.
+            while permission.promptCalls.count < 2 { await Task.yield() }
+            #expect(opened.lines.withLock { $0.count } == 1)
         default: Issue.record("Unknown action")
         }
         let lines = recorder.lines.withLock { $0 }
