@@ -583,3 +583,38 @@ final class ActionServiceTests {
         #expect(sandbox.openCount(grantedDir) == 0)    // 租约在批次结束后归还
     }
 }
+
+
+extension ActionServiceTests {
+    nonisolated private final class CapturedActionLog: Sendable {
+        let lines = Mutex<[String]>([])
+        func record(_ line: String) { lines.withLock { $0.append(line) } }
+    }
+
+    @Test(arguments: ["delete"])
+    func fileActionLogsExcludeSelection(action: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("SECRET-folder-%41-ü-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("SECRET-name-%41-ü.txt")
+        try Data("keep".utf8).write(to: file)
+        let permission = MockPermission()
+        let recorder = CapturedActionLog()
+        let service = ActionService(state: MockState(), permission: permission, confirmation: MockConfirmation(),
+            logSink: { recorder.record($0) })
+        switch action {
+        case "delete":
+            await service.deleteFoldorFile([file.path], "ctx-items")
+            permission.hasAccessResult = true
+            await service.deleteFoldorFile([file.path], "ctx-items")
+            await service.deleteFoldorFile([file.path], "ctx-items") // missing-file error embeds path
+        default: Issue.record("Unknown action")
+        }
+        let lines = recorder.lines.withLock { $0 }
+        #expect(!lines.isEmpty, "A disconnected sink must fail")
+        #expect(lines.contains { $0.contains("count") }, "Counts must remain observable")
+        for secret in [file.path, file.lastPathComponent, root.lastPathComponent, "%41", "SECRET-"] {
+            #expect(!lines.contains { $0.contains(secret) }, "File-derived text reached the log sink")
+        }
+    }
+}
