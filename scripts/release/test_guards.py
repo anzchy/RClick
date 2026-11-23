@@ -87,7 +87,25 @@ class NotesGuardTests(unittest.TestCase):
     def test_missing(self):
         result = self.check('missing')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('missing', result.stderr)
+        self.assertIn('Release notes missing:', result.stderr)
+
+    @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0,
+                     'root bypasses chmod(000) file read restrictions')
+    def test_read_error(self):
+        # Only a plain data file is created; no executable fixtures.
+        with tempfile.TemporaryDirectory() as directory:
+            notes = Path(directory) / '2.3.5-notes.md'
+            notes.write_text('# Ready notes\n')
+            notes.chmod(0)
+            try:
+                result = subprocess.run(
+                    ['sh', str(SCRIPTS / 'check-notes.sh'), '2.3.5', directory],
+                    text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Cannot read release notes:', result.stderr)
+                self.assertNotIn('PASS', result.stdout)
+            finally:
+                notes.chmod(0o600)
 
     def test_unfinished_words(self):
         for version in ('pending', 'tbd'):
