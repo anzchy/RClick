@@ -73,6 +73,13 @@ final class IPCAuthenticationTests: XCTestCase {
         XCTAssertTrue(pending.expire("click"), "without an ack the extension's deadline still expires")
     }
 
+    func testRejectionLogsUseRetainedNoticeInsteadOfDebug() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Shared/Messager.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("logger.notice(\"Rejected IPC messages:"), "expected drops need retained notice logs")
+        XCTAssertFalse(source.contains("logger.debug(\"Rejected IPC messages:"), "debug rows were absent from the device capture")
+    }
+
     func testEveryRejectionHasAClosedCategoryAndExpectedSeverity() {
         let cases: [(IPCSecurityError, IPCRejectionReason, Bool)] = [
             (.noKey, .noKey, false), (.malformed, .malformed, false),

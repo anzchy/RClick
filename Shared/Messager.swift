@@ -352,12 +352,13 @@ nonisolated final class Messager: NSObject, Sendable {
                 return (decision.log, notice, state.rejectionCounts[reason, default: IPCFailurePolicy()].rejectedCount)
             }
             if report.0 {
-                if reason.isExpected {
-                    logger.debug("Rejected IPC messages: category=\(reason.rawValue, privacy: .public) count=\(report.2, privacy: .public)")
+                let level: IPCDiagnostic.Level = reason.isExpected ? .notice : .error
+                if level == .notice {
+                    logger.notice("Rejected IPC messages: category=\(reason.rawValue, privacy: .public) count=\(report.2, privacy: .public)")
                 } else {
                     logger.error("Rejected IPC messages: category=\(reason.rawValue, privacy: .public) count=\(report.2, privacy: .public)")
                 }
-                diagnosticLog?(IPCDiagnostic(kind: .rejected(reason), count: report.2))
+                diagnosticLog?(IPCDiagnostic(kind: .rejected(reason), count: report.2, level: level))
             }
             if !isExtension, report.1 { Task { @MainActor in (self.rejectionNotice ?? IPCRejectionNotice.shared).record() } }
         }
@@ -581,9 +582,11 @@ nonisolated enum IPCRejectionReason: String, Sendable, CaseIterable {
 }
 
 nonisolated struct IPCDiagnostic: Sendable {
+    enum Level: Sendable { case notice, error }
     enum Kind: Sendable, Equatable { case undecodableClick, oversizedOutgoing, rejected(IPCRejectionReason) }
     let kind: Kind
     let count: Int
+    var level: Level = .error
 }
 
 nonisolated protocol IPCCycleScheduler: Sendable {
