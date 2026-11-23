@@ -591,6 +591,26 @@ extension ActionServiceTests {
         func record(_ line: String) { lines.withLock { $0.append(line) } }
     }
 
+    /// A missing callback must produce a test failure, never an unbounded wait.
+    private func waitForPrompts(_ permission: MockPermission, count: Int, maxYields: Int = 10_000) async -> Bool {
+        for _ in 0..<maxYields {
+            if permission.promptCalls.count >= count { return true }
+            await Task.yield()
+        }
+        if permission.promptCalls.count >= count { return true }
+        Issue.record("Permission callback did not arrive within the yield budget")
+        return false
+    }
+
+    @Test func missingPermissionCallbackRecordsFailure() async {
+        let permission = MockPermission()
+        var completed = true
+        await withKnownIssue("The bounded wait must fail if the callback never arrives") {
+            completed = await waitForPrompts(permission, count: 2, maxYields: 0)
+        }
+        #expect(!completed)
+    }
+
     @Test(arguments: ["delete", "hide", "unhide", "open", "common", "airdrop", "new", "moveAndCopy"])
     func fileActionLogsExcludeSelection(action: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("SECRET-folder-%41-ü-\(UUID().uuidString)")
@@ -637,7 +657,7 @@ extension ActionServiceTests {
             permission.hasAccessResult = true
             await service.openApp(rid: "secret-editor", target: [file.path])
             // Drain the Workspace failure callback's MainActor task deterministically.
-            while permission.promptCalls.count < 2 { await Task.yield() }
+            guard await waitForPrompts(permission, count: 2) else { return }
             #expect(opened.lines.withLock { $0.count } == 1)
         case "common":
             await service.openCommonDirs(target: [root.path]) // deny, never launch Finder
