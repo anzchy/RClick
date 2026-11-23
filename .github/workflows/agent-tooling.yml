@@ -60,7 +60,7 @@ jobs:
         working-directory: pr-head
         run: |
           python3 -m unittest discover -s .agents/skills/rclick-delegator/scripts -p 'test_*.py'
-      - name: Test Codex role rules
+      - name: Test Codex role rules and release guards
         working-directory: pr-head
         run: |
           python3 -m unittest discover -s scripts/codex-rules -p 'test_*.py'

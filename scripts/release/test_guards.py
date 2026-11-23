@@ -16,11 +16,11 @@ class TagGuardTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
         self.git('init', '-q')
-        self.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+        self.git('-c', 'commit.gpgsign=false', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
                  'commit', '-q', '--allow-empty', '-m', 'main')
         self.main = self.git('rev-parse', 'HEAD').strip()
         self.git('update-ref', 'refs/remotes/origin/main', self.main)
-        self.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+        self.git('-c', 'commit.gpgsign=false', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
                  'commit', '-q', '--allow-empty', '-m', 'off main')
         self.off_main = self.git('rev-parse', 'HEAD').strip()
 
@@ -74,19 +74,26 @@ class NotesGuardTests(unittest.TestCase):
                                str(ROOT / 'fixtures')], text=True, capture_output=True)
 
     def test_ready(self):
-        result = self.check('ready')
+        result = self.check('2.3.5')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('PASS', result.stdout)
 
+    def test_invalid_version(self):
+        for version in ('../2.3.5', '2.3.5/../2.3.5', 'ready', '2.3.5\n'):
+            with self.subTest(version=version):
+                result = self.check(version)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('version must be numeric', result.stderr)
+
     def test_empty_or_whitespace(self):
-        for version in ('empty', 'whitespace'):
+        for version in ('2.3.8', '2.3.9'):
             with self.subTest(version=version):
                 result = self.check(version)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('no non-whitespace content', result.stderr)
 
     def test_missing(self):
-        result = self.check('missing')
+        result = self.check('2.3.10')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Release notes missing:', result.stderr)
 
@@ -109,7 +116,7 @@ class NotesGuardTests(unittest.TestCase):
                 notes.chmod(0o600)
 
     def test_unfinished_words(self):
-        for version in ('pending', 'tbd'):
+        for version in ('2.3.6', '2.3.7'):
             with self.subTest(version=version):
                 result = self.check(version)
                 self.assertNotEqual(result.returncode, 0)
