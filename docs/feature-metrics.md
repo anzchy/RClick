@@ -1,7 +1,7 @@
 <!-- GENERATED FILE. Do not edit by hand: run `node scripts/feature-ledger/gen-feature-ledger.mjs`. -->
 # RClick feature metrics
 
-Generated from commit `80ff1676c1e5a09e5db7c610e2b9b3fde7db29af` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
+Generated from commit `c533b317d5de50017c6deefbc4097115be03ca8f` by `scripts/feature-ledger/gen-feature-ledger.mjs` from the spine `docs/feature-ledger/feature-map.json`.
 This is the quantitative half of the feature ledger. Every cell below is measured from the repository; nothing is typed by hand or estimated.
 The qualitative half, `docs/feature-ledger.md`, cites these cells and never restates them. Maintenance: `docs/agents/feature-ledger.md`.
 
