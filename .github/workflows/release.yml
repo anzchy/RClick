@@ -28,6 +28,8 @@ jobs:
       # --- 0. 准备工作 ---
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
 
       - name: Select Xcode
         run: |
@@ -38,7 +40,18 @@ jobs:
       - name: Get Version from Tag
         id: version
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          set -euo pipefail
+          PROJECT_VERSION=$(plutil -convert xml1 -o - "$PROJECT/project.pbxproj" | python3 -c '
+          import plistlib, sys
+          objects = plistlib.loads(sys.stdin.buffer.read())["objects"]
+          app, = [o for o in objects.values() if o.get("isa") == "PBXNativeTarget" and o.get("name") == "RClick"]
+          configs = objects[app["buildConfigurationList"]]["buildConfigurations"]
+          release, = [objects[c] for c in configs if objects[c]["name"] == "Release"]
+          print(release["buildSettings"]["MARKETING_VERSION"])
+          ')
+          sh scripts/release/validate-tag.sh "$GITHUB_REF_NAME" "$PROJECT_VERSION" HEAD origin/main
+          VERSION="${GITHUB_REF_NAME#v}"
+          sh scripts/release/check-notes.sh "$VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Will release version: $VERSION"
 
@@ -378,6 +391,14 @@ jobs:
           STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
           if [ "$STATUS" != "Accepted" ]; then
             echo "DMG notarization failed: $STATUS"
+            SUBMISSION_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+            if [ -n "$SUBMISSION_ID" ]; then
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --key-id "$KEY_ID" \
+                --issuer "$ISSUER_ID" \
+                --key "AuthKey_${KEY_ID}.p8" \
+                --team-id "$TEAM_ID" 2>&1 || true
+            fi
             exit 1
           fi
 
@@ -412,16 +433,8 @@ jobs:
             ${{ env.ZIP_NAME }}
             ${{ env.ZIP_NAME }}.sha256
             ${{ env.DMG_NAME }}
-          generate_release_notes: true
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # --- 10. 失败时删除 Tag ---
-      - name: Cleanup Tag on Failure
-        if: failure()
-        run: |
-          echo "Build failed, deleting tag: ${{ github.ref_name }}"
-          git push origin --delete "${{ github.ref_name }}" || true
+          body_path: docs/release/${{ steps.version.outputs.version }}-notes.md
+          draft: true
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -64,6 +64,7 @@ jobs:
         working-directory: pr-head
         run: |
           python3 -m unittest discover -s scripts/codex-rules -p 'test_*.py'
+          python3 -m unittest discover -s scripts/release -p 'test_*.py'
       # macos-device-test is not here: its tests drive macOS tools (screencapture, osascript, pluginkit) and the
       # Mac-only desktop GUI lock, and run in scripts/gates.sh on the Mac.
       - name: Test rclick-verify and ci-linux-preflight
