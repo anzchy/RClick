@@ -200,14 +200,14 @@ final class ActionService {
     private func openRetryAfterPermission(url: URL, appUrl: URL, accessURL: URL, opensNewInstance: Bool, firstError: Error) async {
         let logger = self.logger  // 捕获 Sendable logger
         guard await permission.promptForPermission(for: accessURL) != nil else {
-            logger.error(ActionLogMessage("Open With failed; reason=permissionCancelled code=").number((firstError as NSError).code).text(" count=1"))
+            logger.error(ActionLogMessage("Open With failed; reason=permissionCancelled domain=").domain(.init(firstError as NSError)).text(" code=").number((firstError as NSError).code).text(" count=1"))
             return
         }
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = opensNewInstance
         openApplication([url], appUrl, config) { _, retryError in
             if let retryError {
-                logger.error(ActionLogMessage("Open With retry failed; reason=workspace code=").number((retryError as NSError).code).text(" count=1"))
+                logger.error(ActionLogMessage("Open With retry failed; reason=workspace domain=").domain(.init(retryError as NSError)).text(" code=").number((retryError as NSError).code).text(" count=1"))
             }
         }
     }
@@ -991,17 +991,17 @@ final class ActionService {
     }
 
     func unhideFilesAndDirs(_ target: [String], _ trigger: String) async {
-        logger.info(ActionLogMessage("Unhide started; count=").number(target.count))
+        logger.info(ActionLogMessage.action(.unhide).text(" started; count=").number(target.count))
         if let dirPath = target.first {
             let fileManager = FileManager.default
             let path = dirPath
-            logger.info(ActionLogMessage("Processing directory; count=1"))
+            logger.info(ActionLogMessage.action(.unhide).text(" processing directory; count=1"))
             let url = URL(fileURLWithPath: path)
 
             // 确保有目录的访问权限
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning(ActionLogMessage("Unhide skipped; reason=permissionCancelled count=1"))
+                    logger.warning(ActionLogMessage.action(.unhide).text(" skipped; reason=permissionCancelled count=1"))
                     return
                 }
             }
@@ -1013,13 +1013,13 @@ final class ActionService {
                         var resourceValues = URLResourceValues()
                         resourceValues.isHidden = false
                         try fileURL.setResourceValues(resourceValues)
-                        logger.info(ActionLogMessage("Unhide succeeded; count=1"))
+                        logger.info(ActionLogMessage.action(.unhide).text(" succeeded; count=1"))
                     } catch {
-                        logger.error(ActionLogMessage("Unhide failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                        logger.error(ActionLogMessage.action(.unhide).text(" failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
                     }
                 }
             } catch {
-                logger.error(ActionLogMessage("Directory listing failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                logger.error(ActionLogMessage.action(.unhide).text(" directory listing failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
             }
 
             do {
@@ -1027,27 +1027,27 @@ final class ActionService {
                 resourceValues.isHidden = false
                 var targetURL = url
                 try targetURL.setResourceValues(resourceValues)
-                logger.info(ActionLogMessage("Unhide directory succeeded; count=1"))
+                logger.info(ActionLogMessage.action(.unhide).text(" directory succeeded; count=1"))
             } catch {
-                logger.error(ActionLogMessage("Unhide directory failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                logger.error(ActionLogMessage.action(.unhide).text(" directory failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
             }
-            logger.info(ActionLogMessage("Unhide completed; directory count=1"))
+            logger.info(ActionLogMessage.action(.unhide).text(" completed; directory count=1"))
         }
     }
 
     func hideFilesAndDirs(_ target: [String], _ trigger: String) async {
-        logger.info(ActionLogMessage("Hide started; count=").number(target.count))
+        logger.info(ActionLogMessage.action(.hide).text(" started; count=").number(target.count))
         let fileManager = FileManager.default
 
         if trigger == "ctx-container", let dirPath = target.first {
             let path = dirPath
-            logger.info(ActionLogMessage("Processing directory; count=1"))
+            logger.info(ActionLogMessage.action(.hide).text(" processing directory; count=1"))
             let url = URL(fileURLWithPath: path)
 
             // 确保有目录的访问权限
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning(ActionLogMessage("Hide skipped; reason=permissionCancelled count=1"))
+                    logger.warning(ActionLogMessage.action(.hide).text(" skipped; reason=permissionCancelled count=1"))
                     return
                 }
             }
@@ -1056,29 +1056,29 @@ final class ActionService {
                 let contents = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants])
                 for case var fileURL in contents {
                     if Utils.isProtectedFolder(fileURL.path) {
-                        logger.warning(ActionLogMessage("Hide skipped; reason=protectedFolder count=1"))
+                        logger.warning(ActionLogMessage.action(.hide).text(" skipped; reason=protectedFolder count=1"))
                         continue
                     }
                     do {
                         var resourceValues = URLResourceValues()
                         resourceValues.isHidden = true
                         try fileURL.setResourceValues(resourceValues)
-                        logger.info(ActionLogMessage("Hide succeeded; count=1"))
+                        logger.info(ActionLogMessage.action(.hide).text(" succeeded; count=1"))
                     } catch {
-                        logger.error(ActionLogMessage("Hide failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                        logger.error(ActionLogMessage.action(.hide).text(" failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
                     }
                 }
             } catch {
-                logger.error(ActionLogMessage("Directory listing failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                logger.error(ActionLogMessage.action(.hide).text(" directory listing failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
             }
         } else if trigger == "ctx-items" {
             for dirPath in target {
                 let path = dirPath
-                logger.info(ActionLogMessage("Hide processing item; count=1"))
+                logger.info(ActionLogMessage.action(.hide).text(" processing item; count=1"))
                 let url = URL(fileURLWithPath: path)
 
                 if Utils.isProtectedFolder(path) {
-                    logger.warning(ActionLogMessage("Hide skipped; reason=protectedFolder count=1"))
+                    logger.warning(ActionLogMessage.action(.hide).text(" skipped; reason=protectedFolder count=1"))
                     continue
                 }
 
@@ -1086,7 +1086,7 @@ final class ActionService {
                 let dirURL = url.deletingLastPathComponent()
                 if !permission.hasAccess(to: dirURL) {
                     guard await permission.promptForPermission(for: dirURL) != nil else {
-                        logger.warning(ActionLogMessage("Hide skipped; reason=permissionCancelled count=1"))
+                        logger.warning(ActionLogMessage.action(.hide).text(" skipped; reason=permissionCancelled count=1"))
                         continue
                     }
                 }
@@ -1096,13 +1096,13 @@ final class ActionService {
                     resourceValues.isHidden = true
                     var targetURL = url
                     try targetURL.setResourceValues(resourceValues)
-                    logger.info(ActionLogMessage("Hide succeeded; count=1"))
+                    logger.info(ActionLogMessage.action(.hide).text(" succeeded; count=1"))
                 } catch {
-                    logger.error(ActionLogMessage("Hide failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                    logger.error(ActionLogMessage.action(.hide).text(" failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
                 }
             }
         }
-        logger.info(ActionLogMessage("Hide completed"))
+        logger.info(ActionLogMessage.action(.hide).text(" completed"))
     }
 
     @discardableResult
@@ -1189,7 +1189,7 @@ final class ActionService {
             return result
         }
         for failure in result.failures {
-            logger.error(ActionLogMessage("Delete Direct failed; reason=filesystem code=").number((failure.error as NSError).code).text(" count=1"))
+            logger.error(ActionLogMessage("Delete Direct failed; reason=filesystem domain=").domain(.init(failure.error as NSError)).text(" code=").number((failure.error as NSError).code).text(" count=1"))
         }
         return result
     }
@@ -1228,7 +1228,7 @@ final class ActionService {
                 logger.info(ActionLogMessage("New File succeeded; count=1"))
                 revealInFinderAndRename(fileURL)
             } catch {
-                logger.error(ActionLogMessage("New File failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                logger.error(ActionLogMessage("New File failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
             }
             return
         }

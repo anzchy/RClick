@@ -57,7 +57,7 @@ final class BookmarkManager: ObservableObject {
                     bookmarkDataIsStale: &isStale
                 )
             } catch {
-                logger.error(ActionLogMessage("Bookmark restore failed; reason=invalidData code=").number((error as NSError).code).text(" count=1"))
+                logger.error(ActionLogMessage("Bookmark restore failed; reason=invalidData domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
                 context.delete(entity)
                 continue
             }
@@ -76,7 +76,7 @@ final class BookmarkManager: ObservableObject {
                     )
                     entity.bookmarkData = newData
                 } catch {
-                    logger.error(ActionLogMessage("Bookmark refresh failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+                    logger.error(ActionLogMessage("Bookmark refresh failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
                 }
                 url.stopAccessingSecurityScopedResource()
             }
@@ -184,7 +184,7 @@ final class BookmarkManager: ObservableObject {
 
             logger.debug(ActionLogMessage("Bookmark saved; count=1"))
         } catch {
-            logger.error(ActionLogMessage("Bookmark save failed; reason=filesystem code=").number((error as NSError).code).text(" count=1"))
+            logger.error(ActionLogMessage("Bookmark save failed; reason=filesystem domain=").domain(.init(error as NSError)).text(" code=").number((error as NSError).code).text(" count=1"))
         }
     }
 

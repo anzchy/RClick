@@ -646,6 +646,7 @@ extension ActionServiceTests {
             permission.hasAccessResult = true
             await service.hideFilesAndDirs([file.path], "ctx-items")
             await service.hideFilesAndDirs([root.path], "ctx-container")
+            await service.hideFilesAndDirs([root.appendingPathComponent("missing").path], "ctx-container")
             await service.hideFilesAndDirs([root.appendingPathComponent("missing").path], "ctx-items")
         case "unhide":
             await service.unhideFilesAndDirs([root.path], "ctx-container") // denied
@@ -686,6 +687,11 @@ extension ActionServiceTests {
         default: Issue.record("Unknown action")
         }
         let lines = recorder.lines.withLock { $0 }
+        if action == "hide" || action == "unhide" {
+            let label = action == "hide" ? "Hide" : "Unhide"
+            #expect(lines.contains("\(label) processing directory; count=1"))
+            #expect(lines.contains { $0.hasPrefix("\(label) directory listing failed; reason=filesystem domain=NSCocoaErrorDomain code=") })
+        }
         #expect(!lines.isEmpty, "A disconnected sink must fail")
         #expect(lines.contains { $0.contains("count") }, "Counts must remain observable")
         let knownLine = [
