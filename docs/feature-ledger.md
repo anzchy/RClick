@@ -76,10 +76,14 @@ delete its line in the same change.
    `removingPercentEncoding` to every click target, so an item whose name holds a literal `%xx` opened under a
    different path. Click targets are now raw paths; only real `file://` URL strings are decoded (tests at
    `resolveOpenTargets` and at the `openApp` seam with a literal `%41` name). Not run on a device.
-2. `delete-direct`, `hide`, `unhide`, `airdrop`, `open-with`, `common-dirs`: `ActionService` interpolates target
-   paths into log calls (for example `RClick/Runtime/ActionService.swift:129`, `:186`, `:742`, `:792`, `:990`) with
-   no `privacy:` argument. Issue #39. Whether they reach the persisted log unredacted is **UNVERIFIED** (the
-   `@AppLog` wrapper, `RClick/Shared/AppLogger.swift`, returns a plain `os.Logger`).
+2. `delete-direct`, `hide`, `unhide`, `airdrop`, `open-with`, `common-dirs`: **FIXED in code by #39, device check
+   pending.** `ActionService` (and the `BookmarkManager` calls reached from the file actions) used to interpolate
+   target and folder paths into log calls. Every log line of the file actions now carries counts, outcomes, a
+   closed action label and an NSError domain plus code only: the log seam accepts only an `ActionLogMessage` built
+   from static strings, integers and closed enums, so a path cannot be added by accident. Not fixed (listed in the
+   follow-up issue): path or raw-error logging outside the file actions (settings import/export, data migration,
+   startup failure, the updater's `print` calls, a missing-localization-key line). NOT VERIFIED: a real unified-log
+   capture on a device.
 3. `ipc`: the first creation of the per-install key on a fresh macOS user account with a release-signed build is a
    release gate nobody has run (issue #40). Follow-ups left open by #6: a clock barrier seen only by the extension
    retires the session the app still uses (M1), the retired-session history is capped and never evicts (M2), and
@@ -249,8 +253,8 @@ delete its line in the same change.
   selected item removed, with and without confirmation (PR #29 › Device at `971b658`; run `i5-device-20261117d`).
   PASS Cancel and confirm on fixtures (PR #35 › Device at `0f598ad`). NOT VERIFIED: a protected path (PR #29 ›
   Device: not attempted by design), the access-lease revoke race (PR #27 › Device lists it).
-- **Gaps:** a partial failure is only logged; the user sees no message (PR #27 › Device). Target paths are logged
-  (finding 2).
+- **Gaps:** a partial failure is only logged; the user sees no message (PR #27 › Device). Target paths are no longer
+  logged (finding 2, fixed in code by #39).
 
 ### `hide`
 - **What:** sets the hidden flag on the selected items (menu on items), skipping protected folders. On the window
