@@ -15,16 +15,15 @@ import os.log
 @MainActor
 final class ActionService {
     /// The same rendered line goes to OSLog and the optional test recorder.
-    /// Keep this sink local to file actions; other categories retain their logger.
+    /// Messages contain only counts and closed outcome/reason labels, so they
+    /// remain readable in the unified log. Other categories retain their logger.
     nonisolated private struct ActionLogger: Sendable {
         let system: Logger
         let sink: (@Sendable (String) -> Void)?
-        func debug(_ message: String) { system.debug("\(message)"); sink?(message) }
-        func info(_ message: String) { system.info("\(message)"); sink?(message) }
-        func warning(_ message: String) { system.warning("\(message)"); sink?(message) }
-        func error(_ message: String) { system.error("\(message)"); sink?(message) }
-        func publicInfo(_ message: String) { system.info("\(message, privacy: .public)"); sink?(message) }
-        func publicWarning(_ message: String) { system.warning("\(message, privacy: .public)"); sink?(message) }
+        func debug(_ message: String) { system.debug("\(message, privacy: .public)"); sink?(message) }
+        func info(_ message: String) { system.info("\(message, privacy: .public)"); sink?(message) }
+        func warning(_ message: String) { system.warning("\(message, privacy: .public)"); sink?(message) }
+        func error(_ message: String) { system.error("\(message, privacy: .public)"); sink?(message) }
     }
     @AppLog(category: "ActionService") private var systemLogger
     private let logger: ActionLogger
@@ -226,7 +225,7 @@ final class ActionService {
 
     /// 打开常用目录（沙盒门控：目录需已授权，B4 之后添加时即存 bookmark，此处为兜底）
     func openCommonDirs(target: [String]) async {
-        logger.debug("开始打开常用目录，目标路径：\(target)")
+        logger.debug("Open common directories started; count=\(target.count)")
 
         for dirPath in target {
             let path = dirPath
@@ -234,7 +233,7 @@ final class ActionService {
 
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning("用户取消授权，跳过打开目录：\(path)")
+                    logger.warning("Open common directory skipped; reason=permissionCancelled count=1")
                     continue
                 }
             }
@@ -248,7 +247,7 @@ final class ActionService {
     func actionHandler(rid: String, target: [String], trigger: String, optionKeyPressed: Bool = false) async {
         await journalRecovery?.value
         guard let rcitem = state.getActionItem(rid: RCAction.entityID(for: rid)) else {
-            logger.warning("when actionHandler, but not have action \(rid)")
+            logger.warning("Action refused; reason=unknownAction count=\(target.count)")
             return
         }
 
@@ -507,6 +506,7 @@ final class ActionService {
             return result
         }
         await refreshUndoJournal()
+        logger.info("Undo completed; restored count=\(result.completed.count) failed count=\(result.failures.count)")
         if !result.failures.isEmpty {
             let lines = result.failures.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent): \(moveFailureDescription($0.error))" }
             cutWarning(String(format: AppLocalization.localized("Some items could not be restored:\n%@"), lines.joined(separator: "\n")))
@@ -769,8 +769,8 @@ final class ActionService {
     private func logMove(_ event: MoveLogEvent) {
         let message = event.message
         switch event.kind {
-        case .moved, .partial, .recoveryExpired: logger.publicInfo(message)
-        default: logger.publicWarning(message)
+        case .moved, .partial, .recoveryExpired: logger.info(message)
+        default: logger.warning(message)
         }
         moveLogSink?(event, message)
     }
@@ -936,7 +936,7 @@ final class ActionService {
     }
 
     func showAirDrop(_ target: [String], _ trigger: String) async {
-        logger.info("---- showAirDrop trigger:\(trigger)")
+        logger.info("AirDrop started; count=\(target.count)")
         let fm = FileManager.default
         var fileURLs: [URL] = []
 
@@ -952,7 +952,7 @@ final class ActionService {
 
         for item in target {
             let path = item
-            logger.info("airdrop path \(path)")
+            logger.info("AirDrop processing item; count=1")
 
             if Utils.isProtectedFolder(path) {
                 let alert = NSAlert()
@@ -961,14 +961,14 @@ final class ActionService {
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: AppLocalization.localized("OK"))
                 alert.runModal()
-                logger.warning("试图分享受保护的系统文件夹，操作已被阻止：\(path)")
+                logger.warning("AirDrop skipped; reason=protectedFolder count=1")
                 continue
             }
 
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: path, isDirectory: &isDir) {
                 if isDir.boolValue {
-                    logger.warning("不能通过 AirDrop 分享文件夹：\(path)")
+                    logger.warning("AirDrop skipped; reason=folder count=1")
                     let alert = NSAlert()
                     alert.messageText = AppLocalization.localized("Notice")
                     alert.informativeText = String(format: AppLocalization.localized("Folders cannot be shared via AirDrop: %@"), path)
@@ -982,7 +982,7 @@ final class ActionService {
                     let dirURL = fileURL.deletingLastPathComponent()
                     if !permission.hasAccess(to: dirURL) {
                         guard await permission.promptForPermission(for: dirURL) != nil else {
-                            logger.warning("用户取消授权，跳过 AirDrop：\(path)")
+                            logger.warning("AirDrop skipped; reason=permissionCancelled count=1")
                             continue
                         }
                     }
@@ -994,7 +994,7 @@ final class ActionService {
         if !fileURLs.isEmpty {
             if let airDropService = NSSharingService(named: .sendViaAirDrop) {
                 airDropService.perform(withItems: fileURLs)
-                logger.info("已通过 AirDrop 分享文件：\(fileURLs.map { $0.path }.joined(separator: ", "))")
+                logger.info("AirDrop submitted; count=\(fileURLs.count)")
             } else {
                 logger.warning("无法获取 AirDrop 服务")
             }
@@ -1236,16 +1236,16 @@ final class ActionService {
             let fileURL = URL(fileURLWithPath: filePath)
             do {
                 try Data().write(to: fileURL)
-                logger.info("created editable file: \(fileURL.path)")
+                logger.info("New File succeeded; count=1")
                 revealInFinderAndRename(fileURL)
             } catch {
-                logger.error("create editable file error: \(error.localizedDescription)")
+                logger.error("New File failed; reason=filesystem code=\((error as NSError).code) count=1")
             }
             return
         }
 
         guard let rcitem = state.getFileType(rid: rid) else {
-            logger.warning("when createFile, but not have fileType \(rid) ")
+            logger.warning("New File refused; reason=unknownFileType count=1")
             return
         }
 
@@ -1416,7 +1416,7 @@ final class ActionService {
         }
 
         guard now() < deadline else {
-            logger.warning("Finder did not become active; auto-rename skipped for \(fileURL.path)")
+            logger.warning("Auto-rename skipped; reason=finderInactive count=1")
             return
         }
 

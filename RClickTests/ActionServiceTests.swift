@@ -68,7 +68,7 @@ final class ActionServiceTests {
         var showCommonDirs = false
 
         func getAppItem(rid: String) -> OpenWithApp? { apps.first { $0.id == rid } }
-        func getActionItem(rid: String) -> RCAction? { nil }
+        func getActionItem(rid: String) -> RCAction? { actions.first { $0.id == rid } }
         func getFileType(rid: String) -> NewFile? { nil }
     }
 
@@ -591,7 +591,7 @@ extension ActionServiceTests {
         func record(_ line: String) { lines.withLock { $0.append(line) } }
     }
 
-    @Test(arguments: ["delete", "hide", "unhide", "open"])
+    @Test(arguments: ["delete", "hide", "unhide", "open", "common", "airdrop", "new", "moveAndCopy"])
     func fileActionLogsExcludeSelection(action: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("SECRET-folder-%41-ü-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -602,14 +602,19 @@ extension ActionServiceTests {
         let recorder = CapturedActionLog()
         let state = MockState()
         state.apps = [OpenWithApp(id: "secret-editor", appURL: root.appendingPathComponent("SECRET-Editor.app"))]
+        var cut = RCAction.cut; cut.enabled = true; state.actions = [cut]
+        let board = NSPasteboard(name: .init("RClickTests-log-\(UUID())"))
+        defer { board.releaseGlobally() }
         let opened = CapturedActionLog()
-        let service = ActionService(state: state, permission: permission, confirmation: MockConfirmation(),
+        let service = ActionService(state: state, permission: permission, confirmation: MockConfirmation(), pasteboard: board,
+            revealNewFile: { _ in },
             openApplication: { urls, _, _, completion in
                 opened.record("opened")
                 completion(nil, NSError(domain: NSCocoaErrorDomain, code: 257,
                     userInfo: [NSFilePathErrorKey: urls[0].path, NSLocalizedDescriptionKey: urls[0].path]))
             },
-            logSink: { recorder.record($0) })
+            journalStore: PasteActionServiceTests.JournalStore(),
+            logSink: { recorder.record($0) }, cutWarning: { _ in }, cutVolumeIsReadOnly: { _ in false })
         switch action {
         case "delete":
             await service.deleteFoldorFile([file.path], "ctx-items")
@@ -634,11 +639,46 @@ extension ActionServiceTests {
             // Drain the Workspace failure callback's MainActor task deterministically.
             while permission.promptCalls.count < 2 { await Task.yield() }
             #expect(opened.lines.withLock { $0.count } == 1)
+        case "common":
+            await service.openCommonDirs(target: [root.path]) // deny, never launch Finder
+        case "airdrop":
+            await service.showAirDrop([file.path], "ctx-items") // deny, never start sharing UI
+        case "new":
+            permission.hasAccessResult = true
+            await service.createFile(rid: NewFileMenuItem.customFileId, target: [root.path])
+            await service.createFile(rid: NewFileMenuItem.customFileId, target: [file.appendingPathComponent("missing").path])
+        case "moveAndCopy":
+            permission.hasAccessResult = true
+            service.copyPath([file.path]); service.copyFileName([file.path])
+            #expect(recorder.lines.withLock { $0.isEmpty }) // clipboard actions intentionally emit no log
+            let destination = root.appendingPathComponent("SECRET-destination-%41-ü")
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            await service.actionHandler(rid: "cut", target: [file.path], trigger: "ctx-items")
+            #expect(recorder.lines.withLock { $0.contains("Cut recorded; selection count: 1") })
+            await service.actionHandler(rid: "paste-move", target: [destination.path], trigger: "ctx-container")
+            #expect(service.undoMoveAvailable)
+            #expect(recorder.lines.withLock { $0.contains("Paste kind=moved moved=1 total=1 affected=1 reasons=none") })
+            let beforeUndo = recorder.lines.withLock { $0.count }
+            await service.actionHandler(rid: "undo-move", target: [], trigger: "ctx-container")
+            #expect(recorder.lines.withLock { $0.count } > beforeUndo)
+            #expect(FileManager.default.fileExists(atPath: file.path))
+            #expect(!service.undoMoveAvailable)
         default: Issue.record("Unknown action")
         }
         let lines = recorder.lines.withLock { $0 }
         #expect(!lines.isEmpty, "A disconnected sink must fail")
         #expect(lines.contains { $0.contains("count") }, "Counts must remain observable")
+        let knownLine = [
+            "delete": "Delete Direct failed; reason=filesystem",
+            "hide": "Hide succeeded; count=1",
+            "unhide": "Unhide succeeded; count=1",
+            "open": "Open With failed; reason=permissionCancelled",
+            "common": "Open common directory skipped; reason=permissionCancelled count=1",
+            "airdrop": "AirDrop skipped; reason=permissionCancelled count=1",
+            "new": "New File succeeded; count=1",
+            "moveAndCopy": "Undo completed; restored count=1 failed count=0"
+        ][action]!
+        #expect(lines.contains { $0.contains(knownLine) }, "A known outcome must reach the sink")
         for secret in [file.path, file.lastPathComponent, root.lastPathComponent, "%41", "SECRET-"] {
             #expect(!lines.contains { $0.contains(secret) }, "File-derived text reached the log sink")
         }
