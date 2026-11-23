@@ -1002,17 +1002,17 @@ final class ActionService {
     }
 
     func unhideFilesAndDirs(_ target: [String], _ trigger: String) async {
-        logger.info("开始取消隐藏文件和目录，目标路径：\(target)")
+        logger.info("Unhide started; count=\(target.count)")
         if let dirPath = target.first {
             let fileManager = FileManager.default
             let path = dirPath
-            logger.info("处理主目录：\(path)")
+            logger.info("Processing directory; count=1")
             let url = URL(fileURLWithPath: path)
 
             // 确保有目录的访问权限
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning("用户取消授权，跳过取消隐藏：\(path)")
+                    logger.warning("Unhide skipped; reason=permissionCancelled count=1")
                     return
                 }
             }
@@ -1024,13 +1024,13 @@ final class ActionService {
                         var resourceValues = URLResourceValues()
                         resourceValues.isHidden = false
                         try fileURL.setResourceValues(resourceValues)
-                        logger.info("成功取消隐藏：\(fileURL.path)")
+                        logger.info("Unhide succeeded; count=1")
                     } catch {
-                        logger.error("取消隐藏失败：\(fileURL.path): \(error)")
+                        logger.error("Unhide failed; reason=filesystem code=\((error as NSError).code) count=1")
                     }
                 }
             } catch {
-                logger.error("获取目录内容失败：\(error)")
+                logger.error("Directory listing failed; reason=filesystem code=\((error as NSError).code) count=1")
             }
 
             do {
@@ -1038,27 +1038,27 @@ final class ActionService {
                 resourceValues.isHidden = false
                 var targetURL = url
                 try targetURL.setResourceValues(resourceValues)
-                logger.info("成功取消隐藏主目录：\(path)")
+                logger.info("Unhide directory succeeded; count=1")
             } catch {
-                logger.error("取消隐藏主目录失败：\(path): \(error)")
+                logger.error("Unhide directory failed; reason=filesystem code=\((error as NSError).code) count=1")
             }
-            logger.info("取消隐藏操作完成，共处理目录：\(path)")
+            logger.info("Unhide completed; directory count=1")
         }
     }
 
     func hideFilesAndDirs(_ target: [String], _ trigger: String) async {
-        logger.info("开始隐藏文件和目录，目标路径：\(target), 触发器：\(trigger)")
+        logger.info("Hide started; count=\(target.count)")
         let fileManager = FileManager.default
 
         if trigger == "ctx-container", let dirPath = target.first {
             let path = dirPath
-            logger.info("处理主目录：\(path)")
+            logger.info("Processing directory; count=1")
             let url = URL(fileURLWithPath: path)
 
             // 确保有目录的访问权限
             if !permission.hasAccess(to: url) {
                 guard await permission.promptForPermission(for: url) != nil else {
-                    logger.warning("用户取消授权，跳过隐藏：\(path)")
+                    logger.warning("Hide skipped; reason=permissionCancelled count=1")
                     return
                 }
             }
@@ -1067,29 +1067,29 @@ final class ActionService {
                 let contents = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants])
                 for case var fileURL in contents {
                     if Utils.isProtectedFolder(fileURL.path) {
-                        logger.warning("跳过受保护的文件路径：\(fileURL.path)")
+                        logger.warning("Hide skipped; reason=protectedFolder count=1")
                         continue
                     }
                     do {
                         var resourceValues = URLResourceValues()
                         resourceValues.isHidden = true
                         try fileURL.setResourceValues(resourceValues)
-                        logger.info("成功隐藏：\(fileURL.path)")
+                        logger.info("Hide succeeded; count=1")
                     } catch {
-                        logger.error("隐藏失败：\(fileURL.path): \(error)")
+                        logger.error("Hide failed; reason=filesystem code=\((error as NSError).code) count=1")
                     }
                 }
             } catch {
-                logger.error("获取目录内容失败：\(error)")
+                logger.error("Directory listing failed; reason=filesystem code=\((error as NSError).code) count=1")
             }
         } else if trigger == "ctx-items" {
             for dirPath in target {
                 let path = dirPath
-                logger.info("处理路径：\(path)")
+                logger.info("Hide processing item; count=1")
                 let url = URL(fileURLWithPath: path)
 
                 if Utils.isProtectedFolder(path) {
-                    logger.warning("跳过受保护的文件路径：\(path)")
+                    logger.warning("Hide skipped; reason=protectedFolder count=1")
                     continue
                 }
 
@@ -1097,7 +1097,7 @@ final class ActionService {
                 let dirURL = url.deletingLastPathComponent()
                 if !permission.hasAccess(to: dirURL) {
                     guard await permission.promptForPermission(for: dirURL) != nil else {
-                        logger.warning("用户取消授权，跳过隐藏：\(path)")
+                        logger.warning("Hide skipped; reason=permissionCancelled count=1")
                         continue
                     }
                 }
@@ -1107,13 +1107,13 @@ final class ActionService {
                     resourceValues.isHidden = true
                     var targetURL = url
                     try targetURL.setResourceValues(resourceValues)
-                    logger.info("成功隐藏：\(path)")
+                    logger.info("Hide succeeded; count=1")
                 } catch {
-                    logger.error("隐藏失败：\(path): \(error)")
+                    logger.error("Hide failed; reason=filesystem code=\((error as NSError).code) count=1")
                 }
             }
         }
-        logger.info("隐藏操作完成")
+        logger.info("Hide completed")
     }
 
     @discardableResult

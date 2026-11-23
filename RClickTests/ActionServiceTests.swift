@@ -591,7 +591,7 @@ extension ActionServiceTests {
         func record(_ line: String) { lines.withLock { $0.append(line) } }
     }
 
-    @Test(arguments: ["delete"])
+    @Test(arguments: ["delete", "hide", "unhide"])
     func fileActionLogsExcludeSelection(action: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("SECRET-folder-%41-ü-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -608,6 +608,17 @@ extension ActionServiceTests {
             permission.hasAccessResult = true
             await service.deleteFoldorFile([file.path], "ctx-items")
             await service.deleteFoldorFile([file.path], "ctx-items") // missing-file error embeds path
+        case "hide":
+            await service.hideFilesAndDirs([file.path], "ctx-items") // denied
+            permission.hasAccessResult = true
+            await service.hideFilesAndDirs([file.path], "ctx-items")
+            await service.hideFilesAndDirs([root.path], "ctx-container")
+            await service.hideFilesAndDirs([root.appendingPathComponent("missing").path], "ctx-items")
+        case "unhide":
+            await service.unhideFilesAndDirs([root.path], "ctx-container") // denied
+            permission.hasAccessResult = true
+            await service.unhideFilesAndDirs([root.path], "ctx-container")
+            await service.unhideFilesAndDirs([root.appendingPathComponent("missing").path], "ctx-container")
         default: Issue.record("Unknown action")
         }
         let lines = recorder.lines.withLock { $0 }
