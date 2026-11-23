@@ -1,5 +1,6 @@
 """Offline release guards: real local Git graphs, static notes, no fake executables."""
 import os
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -113,6 +114,34 @@ class NotesGuardTests(unittest.TestCase):
                 result = self.check(version)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('unfinished', result.stderr)
+
+
+class ProjectVersionTests(unittest.TestCase):
+    def check(self, data):
+        return subprocess.run([sys.executable, str(SCRIPTS / 'project-version.py')],
+                              input=data, capture_output=True)
+
+    @unittest.skipUnless(sys.platform == 'darwin',
+                         'real OpenStep pbxproj conversion requires macOS plutil; XML fixtures run everywhere')
+    def test_real_project(self):
+        data = subprocess.check_output(['plutil', '-convert', 'xml1', '-o', '-',
+                                        str(ROOT.parents[1] / 'RClick.xcodeproj/project.pbxproj')])
+        result = self.check(data)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, b'2.3.5\n')
+
+    def test_multiple_targets_and_configurations(self):
+        result = self.check((ROOT / 'fixtures/multi-target.pbxproj').read_bytes())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, b'2.3.5\n')
+
+    def test_zero_or_conflicting_matches(self):
+        for fixture in ('zero-target', 'conflicting-targets', 'zero-release', 'conflicting-releases'):
+            with self.subTest(fixture=fixture):
+                result = self.check((ROOT / f'fixtures/{fixture}.pbxproj').read_bytes())
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b'Cannot determine app Release MARKETING_VERSION:', result.stderr)
+                self.assertEqual(result.stdout, b'')
 
 
 if __name__ == '__main__':
