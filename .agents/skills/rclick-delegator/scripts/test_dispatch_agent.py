@@ -429,12 +429,59 @@ class DispatchTests(unittest.TestCase):
                 self.assertNotIn(['pane', 'send-text', 'w1:p2', self.prompt.read_text()], self.calls())
                 self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
 
+    def test_status_fallback_rejects_unsent_composer_text(self):
+        for kind, glyph in (('codex', '›'), ('claude', '❯')):
+            for text in (self.prompt.read_text(), 'any pending text', 'Try sending this'):
+                for status in ('working', 'idle'):
+                    with self.subTest(kind=kind, text=text, status=status):
+                        self.log.unlink(missing_ok=True)
+                        screen = '────────────────────\n' + glyph + ' ' + text + '\n────────────────────\nContext 3% used'
+                        result = self.run_dispatch(kind=kind, SCREEN=screen,
+                                                   PANE_STATUS=status, ENTERS_NEEDED='999')
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertNotIn('DISPATCHED', result.stdout)
+                        self.assertIn('pane tail:\n' + screen, result.stderr)
+                        self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_status_fallback_requires_a_visible_empty_composer(self):
+        for kind, glyph in (('claude', '❯'), ('codex', '›')):
+            for screen in ('Unrecognized active layout', glyph + '\nwrapped unsent text\nContext 3% used'):
+                with self.subTest(kind=kind, screen=screen):
+                    self.log.unlink(missing_ok=True)
+                    result = self.run_dispatch(kind=kind, SCREEN=screen, PANE_STATUS='working')
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn('DISPATCHED', result.stdout)
+                    self.assertEqual(self.calls()[-1], ['listener', 'stop', '--event', 'i61-test-r1-1120'])
+
+    def test_status_fallback_accepts_empty_composer_and_known_placeholder(self):
+        for kind, composer in (('claude', '❯'), ('claude', '❯ Try "write a test"'),
+                               ('codex', '›'), ('codex', '› Ask Codex to do anything')):
+            with self.subTest(kind=kind, composer=composer):
+                self.log.unlink(missing_ok=True)
+                screen = '✢ Enchanting… (7s · ↓ 184 tokens)\n⚠ Unknown notice\n────────────────────\n' + composer + '\n────────────────────\nContext 3% used'
+                # Unknown chrome prevents the ordinary activity classifier matching.
+                screen = screen.replace('⚠ Unknown notice', 'Unknown chrome\n⚠ Unknown notice')
+                result = self.run_dispatch(kind=kind, SCREEN=screen, PANE_STATUS='working')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('DISPATCHED', result.stdout)
+                self.assertIn('confirmed working pane status', result.stderr)
+                self.assertFalse(any(c[:2] == ['listener', 'stop'] for c in self.calls()))
+
+    def test_fresh_composer_placeholder_requires_quoted_text(self):
+        fresh = (SCRIPTS / 'fixtures/claude-screens/claude-fresh-after-clear.txt').read_text()
+        for composer, expected in (('❯ Try "write a test"', 0), ('❯ Try sending this', 1)):
+            with self.subTest(composer=composer):
+                self.log.unlink(missing_ok=True)
+                result = self.run_dispatch(args=['--check-fresh', '--pane', 'w1:p2', '--kind', 'claude'],
+                                           RESET_ENTERS_NEEDED='0', CLAUDE_RESET_SCREEN=fresh.replace('❯\n', composer + '\n'))
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+
     def test_classifier_miss_keeps_listener_when_pane_status_is_working(self):
         for kind in ('claude', 'codex'):
             for wrapped in ('0', '1'):
                 with self.subTest(kind=kind, wrapped=wrapped):
                     self.log.unlink(missing_ok=True)
-                    result = self.run_dispatch(kind=kind, SCREEN='Unrecognized active layout',
+                    result = self.run_dispatch(kind=kind, SCREEN='Unrecognized active layout\n' + ('❯' if kind == 'claude' else '›') + '\n────────────────────\nContext 3% used',
                                                PANE_STATUS='working', WRAPPED_PANE_STATUS=wrapped)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn('DISPATCHED i61-test-r1-1120', result.stdout)

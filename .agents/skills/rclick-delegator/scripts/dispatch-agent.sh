@@ -72,7 +72,7 @@ def claude_freshness_reason(screen):
     if not welcomes:
         return 'missing Claude Code welcome banner'
     composers = [i for i, line in enumerate(lines) if line.startswith('❯')]
-    if not composers or lines[composers[-1]] != '❯' and not lines[composers[-1]].startswith('❯ Try '):
+    if not composers or lines[composers[-1]] != '❯' and not re.fullmatch(r'❯ Try "[^"\n]+"', lines[composers[-1]]):
         return 'missing empty composer'
     composer, welcome = composers[-1], welcomes[-1]
 
@@ -227,11 +227,24 @@ def confirm_started(screen, target):
     status = pane.get('agent_status')
     if isinstance(status, dict):
         status = status.get('value')
-    if status == 'working':
+    # Metadata may be stale: it cannot prove that text left the composer.
+    glyph = '❯' if args.kind == 'claude' else '›'
+    lines = [line.strip() for line in screen.splitlines() if line.strip()]
+    composers = [i for i, line in enumerate(lines) if line.startswith(glyph)]
+    empty = False
+    if composers:
+        index = composers[-1]
+        empty = (lines[index] == glyph or
+                 (args.kind == 'claude' and bool(re.fullmatch(r'❯ Try "[^"\n]+"', lines[index]))) or
+                 (args.kind == 'codex' and lines[index] == '› Ask Codex to do anything'))
+        # A bare glyph followed by wrapped input is still an unsent composer.
+        below = lines[index + 1:]
+        empty = empty and bool(below) and (claude_separator(below[0]) or
+                                          (args.kind == 'codex' and below[0].startswith('Context ')))
+    if status == 'working' and empty:
         return 'confirmed working pane status'
     # A fresh reset preceded this send. Match this exact prompt echo, so an old
     # spinner or a prompt still sitting in the composer cannot prove startup.
-    glyph = '❯' if args.kind == 'claude' else '›'
     lines = [line.strip() for line in screen.splitlines()]
     echoes = [i for i, line in enumerate(lines) if line == glyph + ' ' + prompt]
     if echoes:
