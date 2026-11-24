@@ -16,6 +16,7 @@ jobs:
   build-and-release:
     name: Build, Sign, Notarize & Release
     runs-on: macos-latest
+    timeout-minutes: 90
     env:
       APP_NAME: RClick
       APP_BUNDLE_ID: cn.anzchy.RClick
@@ -287,45 +288,19 @@ jobs:
       # --- 5. 公证 ---
       - name: Notarize
         env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-          PRIVATE_KEY: ${{ secrets.NOTARY_PRIVATE_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-
-          echo "$PRIVATE_KEY" > "AuthKey_${KEY_ID}.p8"
-
-          RESULT=$(xcrun notarytool submit "$NOTARIZE_ZIP" \
-            --key-id "$KEY_ID" \
-            --issuer "$ISSUER_ID" \
-            --key "AuthKey_${KEY_ID}.p8" \
-            --team-id "$TEAM_ID" \
-            --wait \
-            --output-format json)
-
-          echo "$RESULT" | python3 -m json.tool || echo "$RESULT"
-
-          STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
-          if [ "$STATUS" != "Accepted" ]; then
-            echo "Notarization failed: $STATUS"
-            SUBMISSION_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
-            if [ -n "$SUBMISSION_ID" ]; then
-              xcrun notarytool log "$SUBMISSION_ID" \
-                --key-id "$KEY_ID" \
-                --issuer "$ISSUER_ID" \
-                --key "AuthKey_${KEY_ID}.p8" \
-                --team-id "$TEAM_ID" 2>&1 || true
-            fi
-            exit 1
-          fi
-
-          echo "Notarization successful"
+          bash scripts/release/notarize.sh "$NOTARIZE_ZIP"
+          unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
 
       # --- 6. 绑定公证票据 ---
       - name: Staple
         run: |
           xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
           spctl --assess --type execute --verbose=4 "$APP_PATH"
 
       # --- 7. 创建 DMG ---
@@ -362,40 +337,17 @@ jobs:
       # --- 7b. DMG 公证 ---
       - name: Notarize DMG
         env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-          PRIVATE_KEY: ${{ secrets.NOTARY_PRIVATE_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-
-          echo "$PRIVATE_KEY" > "AuthKey_${KEY_ID}.p8"
-
-          RESULT=$(xcrun notarytool submit "$DMG_NAME" \
-            --key-id "$KEY_ID" \
-            --issuer "$ISSUER_ID" \
-            --key "AuthKey_${KEY_ID}.p8" \
-            --team-id "$TEAM_ID" \
-            --wait \
-            --output-format json)
-
-          echo "$RESULT" | python3 -m json.tool || echo "$RESULT"
-
-          STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
-          if [ "$STATUS" != "Accepted" ]; then
-            echo "DMG notarization failed: $STATUS"
-            SUBMISSION_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
-            if [ -n "$SUBMISSION_ID" ]; then
-              xcrun notarytool log "$SUBMISSION_ID" \
-                --key-id "$KEY_ID" \
-                --issuer "$ISSUER_ID" \
-                --key "AuthKey_${KEY_ID}.p8" \
-                --team-id "$TEAM_ID" 2>&1 || true
-            fi
-            exit 1
-          fi
+          bash scripts/release/notarize.sh "$DMG_NAME"
+          unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
 
           xcrun stapler staple "$DMG_NAME"
+          xcrun stapler validate "$DMG_NAME"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG_NAME"
           echo "DMG notarized and stapled"
 
       # --- 8. 创建 .app.zip（给自动更新器用）---
