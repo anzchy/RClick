@@ -22,9 +22,9 @@ fi
 # Uppercase whole words only; punctuation/table separators count as boundaries.
 # Handle grep errors separately so unreadable notes cannot pass.
 result=0
-LC_ALL=C grep -Eq '(^|[^[:alnum:]_])(PENDING|TBD)([^[:alnum:]_]|$)' "$notes" || result=$?
+LC_ALL=C grep -Eq '(^|[^[:alnum:]_])(PENDING|TBD|OWNER_TESTED_SHA7)([^[:alnum:]_]|$)' "$notes" || result=$?
 case "$result" in
-  0) echo "Release notes unfinished (PENDING or TBD): $notes" >&2; exit 1 ;;
+  0) echo "Release notes unfinished (PENDING, TBD or OWNER_TESTED_SHA7): $notes" >&2; exit 1 ;;
   1) ;;
   *) echo "Cannot read release notes: $notes" >&2; exit 1 ;;
 esac
