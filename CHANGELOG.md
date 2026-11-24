@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.3.5] - TBD
+## [2.3.5] - 2026-11-24
 
 This first fork release also documents upstream changes from 2.3.2–2.3.4 that never had changelog sections, so the v2.3.4…v2.3.5 compare link covers only part of this section.
 
