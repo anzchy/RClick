@@ -4,9 +4,8 @@
 set +x
 set -euo pipefail
 umask 077
-trap 'unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID' EXIT
 
-python3 - "$@" <<'PY'
+python3 -I - "$@" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -43,7 +42,7 @@ authentication = ['--apple-id', credentials['APPLE_ID'],
                   '--password', credentials['APPLE_APP_SPECIFIC_PASSWORD'],
                   '--team-id', credentials['APPLE_TEAM_ID']]
 try:
-    result = run(['submit', sys.argv[1], '--wait', '--output-format', 'json'])
+    result = run(['submit', sys.argv[1], '--wait', '--timeout', '1h', '--output-format', 'json'])
     try:
         submission = json.loads(result.stdout)
         if not isinstance(submission, dict):

@@ -16,6 +16,7 @@ jobs:
   build-and-release:
     name: Build, Sign, Notarize & Release
     runs-on: macos-latest
+    timeout-minutes: 90
     env:
       APP_NAME: RClick
       APP_BUNDLE_ID: cn.anzchy.RClick

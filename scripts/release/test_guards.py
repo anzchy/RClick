@@ -218,7 +218,7 @@ if args[:2] == ['notarytool', 'log']:
         calls = self.calls()
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]['argv'], ['notarytool', 'submit', str(self.artifact),
-                         '--wait', '--output-format', 'json',
+                         '--wait', '--timeout', '1h', '--output-format', 'json',
                          '--apple-id', self.credentials['APPLE_ID'],
                          '--password', self.credentials['APPLE_APP_SPECIFIC_PASSWORD'],
                          '--team-id', self.credentials['APPLE_TEAM_ID']])
@@ -307,6 +307,28 @@ if args[:2] == ['notarytool', 'log']:
                         self.assertNotIn(value, json.dumps(call))
                 for value in self.credentials.values():
                     self.assertNotIn(value, result.stdout + result.stderr)
+
+    def test_workflow_rejection_stops_before_stapling_and_assessment(self):
+        workflow = (ROOT.parents[1] / '.github/workflows/release.yml').read_text()
+        for name in ('Notarize', 'Notarize DMG'):
+            with self.subTest(step=name):
+                self.calls_file.unlink(missing_ok=True)
+                block = workflow.split(f'      - name: {name}\n', 1)[1].split('      #', 1)[0]
+                commands = '\n'.join(line[10:] for line in block.split('        run: |\n')[1].splitlines())
+                if name == 'Notarize':
+                    staple = workflow.split('      - name: Staple\n', 1)[1].split('      #', 1)[0]
+                    commands += '\n' + '\n'.join(line[10:] for line in staple.split('        run: |\n')[1].splitlines())
+                result = subprocess.run(['bash', '-e', '-c', commands], cwd=ROOT.parents[1],
+                                        env={**self.env, 'FAKE_STATUS': 'Invalid',
+                                             'NOTARIZE_ZIP': str(self.artifact),
+                                             'DMG_NAME': str(self.artifact), 'APP_PATH': str(self.artifact)},
+                                        text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                calls = self.calls()
+                self.assertEqual([call['argv'][:2] for call in calls],
+                                 [['notarytool', 'submit'], ['notarytool', 'log']])
+                self.assertFalse(any(call['tool'] == 'spctl' or call['argv'][:1] == ['stapler']
+                                     for call in calls))
 
     def test_workflow_uses_apple_id_for_both_artifacts(self):
         workflow = (ROOT.parents[1] / '.github/workflows/release.yml').read_text()
