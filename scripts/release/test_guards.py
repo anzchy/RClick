@@ -115,6 +115,11 @@ class NotesGuardTests(unittest.TestCase):
             finally:
                 notes.chmod(0o600)
 
+    def test_owner_tested_sha_placeholder(self):
+        result = self.check('2.3.11')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('OWNER_TESTED_SHA7', result.stderr)
+
     def test_unfinished_words(self):
         for version in ('2.3.6', '2.3.7'):
             with self.subTest(version=version):
